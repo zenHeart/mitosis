@@ -1,6 +1,8 @@
 name: Mitosis Build
 
 on:
+  push:
+    branches: [master]
   issues:
     types: [opened, labeled]
   issue_comment:
