@@ -2,7 +2,7 @@
 
 > 一生二，二生三，三生万物 — AI 构建 AI，无限繁衍
 
-[![部署](https://img.shields.io/badge/Deploy-GitHub%20Pages-blue?logo=github)](https://mitosis.zenheart.site)
+[![部署](https://img.shields.io/badge/Deploy-GitHub%20Pages-blue?logo=github)](https://blog.zenheart.site/mitosis/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 **Mitosis** 是一个自举应用构建平台。平台本身由 Mitosis 构建，每个由 Mitosis 构建的应用，本身也是一个完整的 Mitosis 实例。用户用自然语言描述需求，Agent 自主完成规划、编码、测试和部署——形成无限自举循环。
@@ -20,7 +20,7 @@
 ## 快速开始
 
 ```bash
-# 1. 访问 https://mitosis.zenheart.site
+# 1. 访问 https://blog.zenheart.site/mitosis/
 # 2. 使用 GitHub 登录
 # 3. 步骤二：初始化配置
 #    - MVP 阶段：仅配置 Step Token（纯 GitHub 基建）

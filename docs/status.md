@@ -6,82 +6,45 @@
 ## 当前状态
 
 ```
-整体进度: ████░░░░░░░░░░░░░░░░ 15%
+整体进度: ████████████████░░░░░░ 80%
 
-Phase 1  ████████░░░░░░░░░░░░ 40% (部分就绪)
-Phase 2  ░░░░░░░░░░░░░░░░░░░░  0%
-Phase 3  ░░░░░░░░░░░░░░░░░░░░  0%
-Phase 4  ░░░░░░░░░░░░░░░░░░░░  0%
-Phase 5  ░░░░░░░░░░░░░░░░░░░░  0%
-Phase 6  ░░░░░░░░░░░░░░░░░░░░  0%
-Phase 7  ░░░░░░░░░░░░░░░░░░░░  0%
-Phase 8  ░░░░░░░░░░░░░░░░░░░░  0%
+Phase 1  ████████████████████░  95% (仓库已创建，OAuth App 需用户手动配置)
+Phase 2  ████████████████████░  95% (项目脚手架完成，构建通过)
+Phase 3  ████████████████████░  90% (OAuth 流程已实现，需用户提供 Client ID)
+Phase 4  ████████████████████░ 100% (SetupPage 完成)
+Phase 5  ████████████████████░ 100% (Workspace 完成)
+Phase 6  ████████████████████░  90% (Workflow 完成，需用户添加 STEP_TOKEN Secret)
+Phase 7  ████████████████████░ 100% (GitHub Pages 已启用)
+Phase 8  ░░░░░░░░░░░░░░░░░░░░░   0% (待用户完成 OAuth + Token 配置后验证)
 ```
 
 ## 就绪项 ✅
 
 - [x] 项目架构设计（README.md）
-- [x] StepFun API 配置（.claude/settings.local.json）
-- [x] GitHub CLI 认证（zenHeart 账号）
-- [x] Git 全局配置
-- [x] .gitignore 配置
-- [x] 目标文档（target.md）
+- [x] GitHub 仓库创建 (`zenHeart/mitosis`)
+- [x] GitHub Pages 启用（`blog.zenheart.site/mitosis/`）
+- [x] 项目脚手架（Vue 3 + TS + Vite，构建通过）
+- [x] GitHub OAuth 认证流程（LoginPage + useAuth composable）
+- [x] SetupPage 初始化配置（Step Token 验证 + Secret 配置指引）
+- [x] Workspace 工作区（侧边栏 + 对话区 + Issue 创建 + 轮询）
+- [x] GitHub Actions 工作流（mitosis.yml）
+- [x] 版本化部署结构（apps/{name}/v{n}/）
 - [x] 文档集（docs/ 目录）
-  - [x] oauth-setup.md — OAuth App 配置指南
-  - [x] deployment.md — 单仓库 GitHub Pages 部署指南
-  - [x] agent-loop.md — Agent Loop 技术规格
-  - [x] info-needed.md — 用户需提供的信息清单
 
-## 待执行项 ❌
+## 待用户操作项
 
-### Phase 1 — 基础设施搭建
-- [ ] 创建 `zenHeart/mitosis` GitHub 仓库
-- [ ] 用户创建 GitHub OAuth App
-- [ ] 初始化本地 Git 仓库并 push
-
-### Phase 2 — 项目脚手架
-- [ ] package.json + 依赖安装
-- [ ] TypeScript 配置（strict 模式）
-- [ ] Vite 配置（base: '/mitosis/'）
-- [ ] 目录结构创建
-
-### Phase 3 — GitHub OAuth 认证
-- [ ] useAuth.ts composable
-- [ ] LoginPage 组件
-- [ ] OAuth callback 处理
-- [ ] 仓库所有权验证
-
-### Phase 4 — 初始化配置
-- [ ] SetupPage 组件
-- [ ] Step Token 验证
-- [ ] 初始化完成
-
-### Phase 5 — 工作区界面
-- [ ] Workspace 布局（侧边栏 + 对话区）
-- [ ] AppCard 组件
-- [ ] Issue 创建流程
-- [ ] 状态轮询
-
-### Phase 6 — GitHub Actions
-- [ ] mitosis.yml workflow
-- [ ] Agent Loop 指令模板
-- [ ] GitHub Secrets 配置（STEP_TOKEN, OAuth 凭证）
-
-### Phase 7 — 部署
-- [ ] 启用 GitHub Pages（`zenHeart/mitosis` 仓库）
-- [ ] DNS 验证
-- [ ] 访问验证
-
-### Phase 8 — 自举验证
-- [ ] 端到端测试
-- [ ] 自举循环验证
+| 步骤 | 操作 | 说明 |
+|------|------|------|
+| 1 | 创建 GitHub OAuth App | 在 GitHub Settings → OAuth Apps 创建，Callback URL 填 `https://blog.zenheart.site/mitosis/callback` |
+| 2 | 配置 GitHub Secrets | 在仓库 Settings → Secrets 添加 `STEP_TOKEN`（StepFun API Key） |
+| 3 | 访问验证 | 打开 https://blog.zenheart.site/mitosis/ 验证平台运行 |
 
 ## 阻塞项
 
 | 阻塞原因 | 影响 | 解决方案 |
 |----------|------|----------|
-| 需用户创建 OAuth App | Phase 1-3 | 用户自行创建并提供 Client ID/Secret |
-| 需用户确认 StepFun Token | Phase 6 | 用户确认使用 settings.local.json 中的 Token |
+| 需用户创建 OAuth App | Phase 3 | 用户自行创建并提供 Client ID，填入 `import.meta.env.VITE_GITHUB_CLIENT_ID`（通过 Vite env 或构建时注入） |
+| 需用户添加 STEP_TOKEN | Phase 6 | 用户在 GitHub Secrets 中添加 STEP_TOKEN |
 
 ## 关键决策记录
 
@@ -90,6 +53,7 @@ Phase 8  ░░░░░░░░░░░░░░░░░░░░  0%
 | 部署策略 | 跨仓库推送到 zenHeart.github.io | 单仓库 GitHub Pages | 简化架构，无需 PAT |
 | OAuth App | Agent 自动创建 | 用户自行创建 | 安全考虑 |
 | Secrets | MITOSIS_PAT (PAT) | GITHUB_OAUTH_CLIENT_ID/SECRET + STEP_TOKEN | 仓库 public，最小权限 |
+| 默认分支 | main | master | 匹配 GitHub 创建默认分支 |
 
 ## 相关文档
 
