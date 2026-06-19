@@ -8,6 +8,16 @@ const loading = ref(false)
 const error = ref('')
 
 onMounted(() => {
+  // If redirected from 404.html (GitHub Pages SPA fallback),
+  // the OAuth code was saved to sessionStorage by 404.html
+  const savedCode = sessionStorage.getItem('mitosis_oauth_code')
+  if (savedCode) {
+    sessionStorage.removeItem('mitosis_oauth_code')
+    sessionStorage.removeItem('mitosis_oauth_redirect')
+    window.location.replace(getImplicitLoginUrl())
+    return
+  }
+
   // If GitHub returned an authorization code (Authorization Code Flow),
   // redirect to Implicit Flow which returns the token directly
   const params = new URLSearchParams(window.location.search)

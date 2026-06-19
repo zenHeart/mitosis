@@ -53,4 +53,4 @@ jobs:
           publish_dir: ./deploy
           publish_branch: gh-pages
           force_orphan: false
-          keep_files: true
+          keep_files: false
