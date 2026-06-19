@@ -1,13 +1,22 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
-import { getLoginUrl, extractTokenFromHash, fetchGitHubUser, saveSession } from '../composables/useAuth'
+import { getLoginUrl, getImplicitLoginUrl, extractTokenFromHash, fetchGitHubUser, saveSession } from '../composables/useAuth'
 
 const authStore = useAuthStore()
 const loading = ref(false)
 const error = ref('')
 
 onMounted(() => {
+  // If GitHub returned an authorization code (Authorization Code Flow),
+  // redirect to Implicit Flow which returns the token directly
+  const params = new URLSearchParams(window.location.search)
+  const code = params.get('code')
+  if (code) {
+    window.location.replace(getImplicitLoginUrl())
+    return
+  }
+
   const hash = window.location.hash
   if (hash && hash.includes('access_token')) {
     handleCallback(hash)

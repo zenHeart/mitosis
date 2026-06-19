@@ -14,6 +14,16 @@ export function getLoginUrl(): string {
   }).toString()}`
 }
 
+export function getImplicitLoginUrl(): string {
+  return `https://github.com/login/oauth/authorize?${new URLSearchParams({
+    client_id: GITHUB_CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    scope: 'read:user repo workflow',
+    allow_signup: 'true',
+    response_type: 'token',
+  }).toString()}`
+}
+
 export async function fetchGitHubUser(token: string): Promise<GitHubUser> {
   const res = await fetch('https://api.github.com/user', {
     headers: {
