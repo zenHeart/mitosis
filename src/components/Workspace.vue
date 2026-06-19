@@ -19,6 +19,7 @@ const thinking = ref(false)
 const stepToken = ref('')
 
 const repo = computed(() => `${authStore.user?.login || 'zenHeart'}/mitosis`)
+const isOwner = computed(() => authStore.user?.login === 'zenHeart')
 
 onMounted(async () => {
   if (typeof window !== 'undefined') {
@@ -47,6 +48,8 @@ async function loadApps() {
 }
 
 async function handleSend() {
+  // Only the repo owner can send build prompts
+  if (!isOwner.value) return
   const text = inputText.value.trim()
   if (!text || building.value || !authStore.token) return
 
@@ -98,7 +101,7 @@ async function handleSend() {
 }
 
 async function createBuild(appName: string, description: string) {
-  if (building.value || !authStore.token) return
+  if (building.value || !authStore.token || !isOwner.value) return
 
   building.value = true
   activeIssue.value = null
@@ -188,7 +191,7 @@ function handleNewChat() {
     </aside>
     <main class="chat-area">
       <div class="messages">
-        <div v-if="messages.length === 0" class="welcome">
+        <div v-if="messages.length === 0 && isOwner" class="welcome">
           <h3>👋 你好，{{ authStore.user?.login }}</h3>
           <p>描述你想构建的应用，AI 会帮你分析并实现。</p>
           <div class="examples">
@@ -196,6 +199,11 @@ function handleNewChat() {
             <button @click="inputText = '帮我做一个计算器，支持加减乘除'">🔢 计算器</button>
             <button @click="inputText = '帮我做一个 Markdown 编辑器，支持实时预览'">📝 Markdown 编辑器</button>
           </div>
+        </div>
+        <div v-else-if="messages.length === 0 && !isOwner" class="welcome">
+          <h3>👋 你好，{{ authStore.user?.login }}</h3>
+          <p>你是协作者身份，可以浏览已有的应用，但无法创建新应用。</p>
+          <p class="hint-text">仅仓库所有者可以使用 AI 构建功能。</p>
         </div>
         <div
           v-for="(msg, i) in messages"
@@ -212,7 +220,7 @@ function handleNewChat() {
         </div>
       </div>
       <div class="input-area">
-        <div class="input-wrapper">
+        <div v-if="isOwner" class="input-wrapper">
           <div class="cursor-glow"></div>
           <textarea
             v-model="inputText"
@@ -231,6 +239,9 @@ function handleNewChat() {
             <span v-if="thinking" class="spinner"></span>
             <span v-else>▲</span>
           </button>
+        </div>
+        <div v-else class="read-only-banner">
+          🔒 仅仓库所有者可使用 AI 构建功能
         </div>
       </div>
     </main>
@@ -535,5 +546,15 @@ function handleNewChat() {
 .send-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.read-only-banner {
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  text-align: center;
 }
 </style>

@@ -1,0 +1,315 @@
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import type { AppInfo } from '../types/app'
+
+const props = defineProps<{
+  initialApp?: string
+}>()
+
+const apps = ref<AppInfo[]>([])
+const loading = ref(true)
+const error = ref('')
+const selectedApp = ref<string | undefined>(props.initialApp)
+
+const REPO_OWNER = 'zenHeart'
+const REPO_NAME = 'mitosis'
+
+// Public GitHub API — no auth required for public repos
+async function listAppsPublic(): Promise<AppInfo[]> {
+  const res = await fetch(
+    `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/apps`
+  )
+  if (!res.ok) return []
+  const items = await res.json()
+  if (!Array.isArray(items)) return []
+
+  const apps: AppInfo[] = []
+  for (const item of items) {
+    if (item.type === 'dir') {
+      const versionsRes = await fetch(
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/apps/${item.name}`
+      )
+      if (versionsRes.ok) {
+        const versions = await versionsRes.json()
+        const versionDirs = Array.isArray(versions)
+          ? versions.filter((v: { type: string }) => v.type === 'dir')
+          : []
+        apps.push({
+          id: item.name,
+          name: item.name,
+          latestVersion: versionDirs.length,
+          url: `/apps/${item.name}/`,
+          createdAt: '',
+        })
+      }
+    }
+  }
+  return apps
+}
+
+function openApp(app: AppInfo) {
+  selectedApp.value = app.id
+  window.location.href = app.url
+}
+
+onMounted(async () => {
+  try {
+    apps.value = await listAppsPublic()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '加载失败'
+  } finally {
+    loading.value = false
+  }
+})
+</script>
+
+<template>
+  <div class="gallery">
+    <header class="gallery-header">
+      <div class="brand">
+        <span class="logo">🧬</span>
+        <h1>Mitosis</h1>
+      </div>
+      <p class="tagline">AI 构建 AI，无限繁衍</p>
+    </header>
+
+    <main class="gallery-main">
+      <section class="hero">
+        <h2>探索 AI 构建的应用</h2>
+        <p>以下应用由 AI Agent 自动构建，全部代码开源。</p>
+      </section>
+
+      <section class="apps-section">
+        <div v-if="loading" class="status">加载中...</div>
+        <div v-else-if="error" class="status error">{{ error }}</div>
+        <div v-else-if="apps.length === 0" class="status empty">
+          暂无应用，登录后可以开始构建。
+        </div>
+        <div v-else class="apps-grid">
+          <div
+            v-for="app in apps"
+            :key="app.id"
+            :class="['app-item', { selected: selectedApp === app.id }]"
+            @click="openApp(app)"
+          >
+            <div class="app-icon">📦</div>
+            <div class="app-details">
+              <span class="app-name">{{ app.name }}</span>
+              <span class="app-version">v{{ app.latestVersion }}</span>
+            </div>
+            <span class="app-action">打开 →</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="cta-section">
+        <p>想构建自己的应用？</p>
+        <a href="https://github.com/zenHeart/mitosis" target="_blank" rel="noopener" class="cta-btn">
+          ⭐ Star 后使用
+        </a>
+      </section>
+    </main>
+
+    <footer class="gallery-footer">
+      <p>Powered by <a href="https://github.com/zenHeart/mitosis" target="_blank" rel="noopener">Mitosis</a> · MIT License</p>
+    </footer>
+  </div>
+</template>
+
+<style scoped>
+.gallery {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+
+.gallery-header {
+  text-align: center;
+  padding: 3rem 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.logo {
+  font-size: 2.5rem;
+}
+
+.brand h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.tagline {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.gallery-main {
+  flex: 1;
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.hero {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.hero h2 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.hero p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.apps-section {
+  margin-bottom: 3rem;
+}
+
+.status {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.status.error {
+  color: var(--error);
+}
+
+.status.empty {
+  color: #666;
+}
+
+.apps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.app-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.app-item:hover {
+  border-color: var(--accent);
+  background: var(--bg-tertiary);
+  transform: translateY(-1px);
+}
+
+.app-item.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.app-icon {
+  font-size: 1.75rem;
+  flex-shrink: 0;
+}
+
+.app-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.app-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-version {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  align-self: fit-content;
+}
+
+.app-action {
+  font-size: 0.8rem;
+  color: var(--accent);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.app-item:hover .app-action {
+  opacity: 1;
+}
+
+.cta-section {
+  text-align: center;
+  padding: 2rem;
+  border-top: 1px solid var(--border);
+}
+
+.cta-section p {
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+}
+
+.cta-btn {
+  display: inline-block;
+  padding: 0.75rem 2rem;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: opacity 0.2s;
+}
+
+.cta-btn:hover {
+  opacity: 0.9;
+}
+
+.gallery-footer {
+  text-align: center;
+  padding: 1.5rem;
+  border-top: 1px solid var(--border);
+  color: #555;
+  font-size: 0.8rem;
+}
+
+.gallery-footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.gallery-footer a:hover {
+  text-decoration: underline;
+}
+</style>
