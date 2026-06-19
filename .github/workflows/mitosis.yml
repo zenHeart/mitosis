@@ -1,6 +1,8 @@
 name: Mitosis Build
 
 on:
+  push:
+    branches: [master]
   issues:
     types: [opened, labeled]
   issue_comment:
@@ -12,9 +14,6 @@ permissions:
 
 jobs:
   build:
-    if: |
-      contains(github.event.issue.labels.*.name, 'app/') ||
-      contains(github.event.issue.labels.*.name, 'build')
     runs-on: ubuntu-latest
 
     steps:
@@ -38,7 +37,29 @@ jobs:
           ISSUE_LABELS: ${{ github.event.issue.labels }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
+          EVENT="${{ github.event_name }}"
+
+          if [ "$EVENT" == "push" ]; then
+            echo "app_name=unknown" >> $GITHUB_OUTPUT
+            echo "version=v0" >> $GITHUB_OUTPUT
+            echo "Skipping: push event"
+            exit 0
+          fi
+
+          # For issue_comment events, require /build command
+          if [ "$EVENT" == "issue_comment" ]; then
+            if ! echo "$COMMENT_BODY" | grep -qi '/build'; then
+              echo "app_name=unknown" >> $GITHUB_OUTPUT
+              echo "version=v0" >> $GITHUB_OUTPUT
+              echo "Skipping: no /build command in comment"
+              exit 0
+            fi
+          fi
+
+          # Determine app name from labels or issue title
           if [ "$ISSUE_NUMBER" != "" ] && [ "$ISSUE_LABELS" != "" ]; then
             APP_NAME=$(echo "$ISSUE_LABELS" | grep -oP 'app/\K[^"]+' | head -1)
             if [ -z "$APP_NAME" ]; then
@@ -59,6 +80,7 @@ jobs:
           echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
 
       - name: Run Agent Loop
+        if: ${{ steps.parse.outputs.app_name != 'unknown' }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.STEP_TOKEN }}
           ANTHROPIC_BASE_URL: https://api.stepfun.com/step_plan
@@ -74,6 +96,7 @@ jobs:
             "$(cat worker/prompt.txt)"
 
       - name: Commit and push
+        if: ${{ steps.parse.outputs.app_name != 'unknown' }}
         env:
           APP_NAME: ${{ steps.parse.outputs.app_name }}
           NEXT_VERSION: ${{ steps.parse.outputs.version }}
@@ -89,7 +112,7 @@ jobs:
           fi
 
       - name: Close issue
-        if: ${{ github.event.issue.number != '' }}
+        if: ${{ github.event_name == 'issues' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
