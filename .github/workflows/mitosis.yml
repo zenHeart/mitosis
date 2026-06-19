@@ -57,19 +57,19 @@ jobs:
 
       - name: Run Agent Loop
         env:
-          STEP_TOKEN: ${{ secrets.STEP_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.STEP_TOKEN }}
+          ANTHROPIC_BASE_URL: https://api.stepfun.com/step_plan
           APP_NAME: ${{ steps.parse.outputs.app_name }}
           NEXT_VERSION: ${{ steps.parse.outputs.version }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
-          claude --api-key $STEP_TOKEN \
-            --api-base-url https://api.stepfun.com/step_plan \
+          claude -p \
             --model step-3.7-flash \
             --working-dir . \
             --allowed-tools "Read,Write,Edit,Bash" \
             --max-turns 50 \
             --output-format text \
-            --prompt "$(cat worker/prompt.txt)"
+            "$(cat worker/prompt.txt)"
 
       - name: Commit and push
         run: |
