@@ -1,0 +1,8 @@
+{
+  "name": "mitosis-oauth-proxy",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-19",
+  "observability": {
+    "enabled": true
+  }
+}

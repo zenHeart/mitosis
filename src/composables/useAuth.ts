@@ -5,6 +5,10 @@ import type { GitHubUser } from '../types/auth'
 const GITHUB_CLIENT_ID = __GITHUB_CLIENT_ID__
 const REDIRECT_URI = `${window.location.origin}/auth/callback`
 
+// Cloudflare Worker proxy URL — exchanges authorization code for access token
+// This is required because GitHub's /login/oauth/access_token does not support CORS
+const OAUTH_PROXY_URL = 'https://mitosis-oauth-proxy.zenheart1991.workers.dev'
+
 // ---- OAuth URLs ----
 
 export function getLoginUrl(): string {
@@ -13,8 +17,23 @@ export function getLoginUrl(): string {
     redirect_uri: REDIRECT_URI,
     scope: 'read:user repo workflow',
     allow_signup: 'true',
-    response_type: 'token',
+    response_type: 'code',
   }).toString()}`
+}
+
+// ---- Token Exchange (via Cloudflare Worker proxy) ----
+
+export async function exchangeCodeForToken(code: string): Promise<{ access_token: string }> {
+  const res = await fetch(OAUTH_PROXY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Token exchange failed' }))
+    throw new Error(err.error || err.detail || `HTTP ${res.status}`)
+  }
+  return res.json()
 }
 
 // ---- User API ----

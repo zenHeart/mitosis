@@ -30,6 +30,54 @@
 
 > **阶段二 — 初始化配置是可扩展的：** MVP 只需填入 Step Token，完全依赖 GitHub Pages + Actions。后续可通过初始化配置选择接入云服务（服务端运行时、数据库、存储等），让 Mitosis 构建的应用具备后端能力——平台自迭代扩展。
 
+## OAuth 后端代理（Cloudflare Worker）
+
+由于 GitHub Pages 是纯静态托管，浏览器无法直接调用 GitHub 的 `/login/oauth/access_token` 端点（CORS 限制）。Mitosis 使用 [Cloudflare Workers](https://developers.cloudflare.com/workers/) 部署一个轻量级 OAuth Token 兑换代理，解决此问题。
+
+### 架构
+
+```
+┌─────────────┐     ┌──────────────────────────────────┐     ┌─────────────┐
+│  浏览器 SPA  │────▶│  Cloudflare Worker (OAuth Proxy) │────▶│   GitHub    │
+│  (GitHub    │     │  mitosis-oauth-proxy.workers.dev │     │  OAuth API  │
+│   Pages)    │◀────│  兑换 code → access_token         │◀────│             │
+└─────────────┘     └──────────────────────────────────┘     └─────────────┘
+```
+
+### 部署 OAuth Proxy Worker
+
+Worker 源码位于本仓库的 `worker/` 目录：
+
+```bash
+cd worker
+
+# 1. 安装依赖
+npm install
+
+# 2. 登录 Cloudflare
+npx wrangler login
+
+# 3. 设置 Secrets
+npx wrangler secret put GITHUB_CLIENT_ID     # 你的 GitHub OAuth App Client ID
+npx wrangler secret put GITHUB_CLIENT_SECRET # 你的 GitHub OAuth App Client Secret
+
+# 4. 部署
+npx wrangler deploy
+```
+
+### GitHub OAuth App 配置
+
+在 [GitHub OAuth Apps](https://github.com/settings/developers) 中：
+
+| 字段 | 值 |
+|------|-----|
+| Homepage URL | `https://<用户名>.github.io/mitosis` |
+| Authorization callback URL | `https://<用户名>.github.io/mitosis/auth/callback` |
+
+> **注意：** 授权流程使用 **Authorization Code Flow**（`response_type=code`），Worker 代理负责用 `client_secret` 兑换 token。
+
+
+
 ### 自动生成的仓库结构
 
 ```

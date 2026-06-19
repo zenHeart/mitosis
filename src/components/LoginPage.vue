@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import {
   getLoginUrl,
+  exchangeCodeForToken,
   fetchGitHubUser,
   saveSession,
 } from '../composables/useAuth'
@@ -12,34 +13,28 @@ const loading = ref(false)
 const error = ref('')
 
 onMounted(async () => {
-  // Implicit Flow: GitHub returns token or error in URL hash fragment.
-  // 404.html redirects /auth/callback#token → /#token, preserving the hash.
-  const hash = window.location.hash
-  if (!hash) return
+  // Authorization Code Flow:
+  // 1. 404.html stores the `code` in sessionStorage and redirects to /
+  // 2. Here we read the code from sessionStorage and exchange it for a token
+  //    via the Cloudflare Worker proxy (bypassing CORS restrictions)
+  const code = sessionStorage.getItem('mitosis_oauth_code')
+  if (!code) return
 
-  const params = new URLSearchParams(hash.replace('#', '?'))
-  const errorParam = params.get('error')
-  if (errorParam) {
-    error.value = params.get('error_description') || errorParam
+  try {
+    loading.value = true
+    const { access_token } = await exchangeCodeForToken(code)
+    const user = await fetchGitHubUser(access_token)
+    saveSession(access_token, user)
+    authStore.setToken(access_token)
+    authStore.setUser(user)
+    // Clean up
+    sessionStorage.removeItem('mitosis_oauth_code')
     window.history.replaceState(null, '', '/')
-    return
-  }
-
-  const token = params.get('access_token')
-  if (token) {
-    try {
-      const user = await fetchGitHubUser(token)
-      saveSession(token, user)
-      authStore.setToken(token)
-      authStore.setUser(user)
-      // Clean URL
-      window.history.replaceState(null, '', '/')
-      emit('login-success')
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : '登录失败'
-    } finally {
-      loading.value = false
-    }
+    emit('login-success')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '登录失败'
+  } finally {
+    loading.value = false
   }
 })
 
