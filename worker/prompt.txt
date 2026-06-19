@@ -23,6 +23,9 @@
    - src/main.ts
    - src/App.vue
    - src/assets/main.css
-3. 进入 apps/__APP_NAME__/__NEXT_VERSION__/ 目录
-4. 运行 npm install 和 npm run build 验证构建成功
-5. 确认所有文件已创建且构建成功
+3. **必须** cd apps/__APP_NAME__/__NEXT_VERSION__/ 后再执行任何 npm 命令
+4. 运行 npm install 安装依赖
+5. 运行 npm run build 验证构建成功
+   - 如果构建失败：仔细阅读错误信息，修复问题后重新运行 npm run build
+   - 重复修复和构建直到成功
+6. 确认 dist/ 目录已生成且构建无错误

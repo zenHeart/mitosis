@@ -96,7 +96,7 @@ jobs:
           claude -p \
             --model step-3.7-flash \
             --allowed-tools "Read,Write,Edit,Bash" \
-            --max-turns 50 \
+            --max-turns 80 \
             --output-format text \
             "$PROMPT"
 
