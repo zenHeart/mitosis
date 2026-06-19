@@ -5,33 +5,39 @@
   <title>Mitosis</title>
   <script>
     // SPA fallback for GitHub Pages.
-    // GitHub Pages doesn't support client-side routing, so any path like /auth/callback
-    // returns this 404 page. We preserve OAuth data before redirecting to the SPA root.
+    // GitHub Pages doesn't support client-side routing, so unknown paths return this 404 page.
+    //
+    // Behavior:
+    // 1. If path is /auth/callback → preserve OAuth code, redirect to /
+    // 2. If path matches /apps/{name}/ → pass app name to SPA as query param (public viewing)
+    // 3. Otherwise → redirect to / for the main SPA
 
     var path = window.location.pathname;
     var search = window.location.search;
-    var hash = window.location.hash;
 
     if (path === '/auth/callback' || path === '/auth/callback/') {
-      // PKCE flow: code is in query params
+      // OAuth callback: preserve the authorization code before redirecting to /
       var params = new URLSearchParams(search);
       var code = params.get('code');
       if (code) {
         sessionStorage.setItem('mitosis_oauth_code', code);
         sessionStorage.setItem('mitosis_oauth_redirect', '1');
       }
+      // Preserve any PKCE verifier already in sessionStorage
+      window.location.replace('/');
+    } else if (path.match(/^\/apps\/[^\/]+\/$/)) {
+      // App path: serve the public SPA with app context
+      // The SPA will show the gallery focused on this app
+      var appName = path.split('/')[2];
+      var target = '/?app=' + encodeURIComponent(appName);
+      window.location.replace(target);
+    } else {
+      // All other paths: serve the main SPA
+      window.location.replace('/');
     }
-
-    // Redirect to the SPA root, preserving the hash fragment
-    // (needed for Implicit Flow: token is in #access_token=...)
-    var target = '/';
-    if (hash) {
-      target += hash;
-    }
-    window.location.replace(target);
   </script>
 </head>
 <body>
-  <p>Redirecting...</p>
+  <p>Loading...</p>
 </body>
 </html>
