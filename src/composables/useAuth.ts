@@ -1,16 +1,17 @@
 import type { GitHubUser } from '../types/auth'
 
-const GITHUB_CLIENT_ID = import.meta.env.VITE_GITHUB_CLIENT_ID || ''
+// @ts-ignore - injected at build time via vite define
+// eslint-disable-next-line no-undef
+const GITHUB_CLIENT_ID = __GITHUB_CLIENT_ID__
 const REDIRECT_URI = `${window.location.origin}/auth/callback`
 
 export function getLoginUrl(): string {
-  const params = new URLSearchParams({
+  return `https://github.com/login/oauth/authorize?${new URLSearchParams({
     client_id: GITHUB_CLIENT_ID,
     redirect_uri: REDIRECT_URI,
     scope: 'read:user repo workflow',
     allow_signup: 'true',
-  })
-  return `https://github.com/login/oauth/authorize?${params.toString()}`
+  }).toString()}`
 }
 
 export async function fetchGitHubUser(token: string): Promise<GitHubUser> {

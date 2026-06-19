@@ -109,4 +109,4 @@ jobs:
         run: |
           gh issue close ${{ github.event.issue.number }} \
             --repo ${{ github.repository }} \
-            --comment "✅ ${{ steps.parse.outputs.app_name }} ${{ steps.parse.outputs.version }} 构建完成！\n\n访问: https://blog.zenheart.site/mitosis/apps/${{ steps.parse.outputs.app_name }}/"
+            --comment "✅ ${{ steps.parse.outputs.app_name }} ${{ steps.parse.outputs.version }} 构建完成！\n\n访问: https://mitosis.zenheart.site/apps/${{ steps.parse.outputs.app_name }}/"
