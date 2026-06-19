@@ -31,11 +31,26 @@ jobs:
         env:
           VITE_GITHUB_CLIENT_ID: ${{ secrets.VITE_GITHUB_CLIENT_ID }}
 
+      - name: Prepare deployment
+        run: |
+          mkdir -p deploy
+          cp -r dist/* deploy/
+          # Copy built apps
+          if [ -d apps ]; then
+            find apps -type d -name dist -exec sh -c '
+              dest="deploy/$(dirname "$1")"
+              mkdir -p "$dest"
+              cp -r "$1"/* "$dest/"
+            ' _ {} \;
+          fi
+          # CNAME is already in dist if tracked, or add it
+          echo "mitosis.zenheart.site" > deploy/CNAME
+
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
+          publish_dir: ./deploy
           publish_branch: gh-pages
           force_orphan: false
           keep_files: true

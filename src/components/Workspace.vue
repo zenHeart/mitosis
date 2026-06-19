@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { usePolling } from '../composables/usePolling'
 import { createIssue, getIssue, listApps } from '../composables/useGitHubAPI'
+import { chatWithStepFun } from '../composables/useStepFun'
 import AppCard from './AppCard.vue'
 import type { BuildIssue, AppInfo } from '../types/app'
 
@@ -11,15 +12,30 @@ const { start, stopAll } = usePolling()
 
 const apps = ref<AppInfo[]>([])
 const inputText = ref('')
-const messages = ref<{ role: 'user' | 'system'; text: string; time: string }[]>([])
+const messages = ref<{ role: 'user' | 'assistant' | 'system'; text: string; time: string }[]>([])
 const building = ref(false)
 const activeIssue = ref<BuildIssue | null>(null)
+const thinking = ref(false)
+const stepToken = ref('')
 
 const repo = computed(() => `${authStore.user?.login || 'zenHeart'}/mitosis`)
 
 onMounted(async () => {
+  if (typeof window !== 'undefined') {
+    stepToken.value = localStorage.getItem('mitosis_step_token') || ''
+  }
   await loadApps()
 })
+
+function getConversationHistory() {
+  return messages.value
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .slice(-20)
+    .map(m => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.text,
+    }))
+}
 
 async function loadApps() {
   if (!authStore.token) return
@@ -36,26 +52,67 @@ async function handleSend() {
 
   messages.value.push({ role: 'user', text, time: new Date().toLocaleTimeString() })
   inputText.value = ''
+  thinking.value = true
+
+  try {
+    const history = getConversationHistory()
+    const systemPrompt = `你是一个应用构建助手。用户会描述他们想构建的应用。
+当用户描述了一个明确的应用需求时，你需要：
+1. 理解用户需求
+2. 给出简短的技术方案概述（2-3句话）
+3. 回复以 "BUILD_APP: [应用英文名]" 结尾，应用名用英文小写短横线连接
+
+如果用户只是在打招呼或聊天，正常回复即可，不要包含 BUILD_APP 标记。
+
+当前时间: ${new Date().toLocaleString('zh-CN')}`
+
+    const fullMessages = [
+      { role: 'system' as const, content: systemPrompt },
+      ...history,
+    ]
+
+    const response = await chatWithStepFun(stepToken.value, fullMessages)
+    const trimmed = response.trim()
+
+    messages.value.push({
+      role: 'assistant',
+      text: trimmed,
+      time: new Date().toLocaleTimeString(),
+    })
+
+    // Check if AI wants to build an app
+    const buildMatch = trimmed.match(/BUILD_APP:\s*([a-z0-9-]+)/i)
+    if (buildMatch) {
+      const appName = buildMatch[1].toLowerCase()
+      await createBuild(appName, text)
+    }
+  } catch (e) {
+    messages.value.push({
+      role: 'system',
+      text: `❌ 请求失败: ${e instanceof Error ? e.message : '未知错误'}`,
+      time: new Date().toLocaleTimeString(),
+    })
+  } finally {
+    thinking.value = false
+  }
+}
+
+async function createBuild(appName: string, description: string) {
+  if (building.value || !authStore.token) return
+
   building.value = true
   activeIssue.value = null
 
   try {
     const token = authStore.token!
-    const appName = extractAppName(text)
     const title = `build: ${appName} v0`
-    const body = text
+    const body = `## 需求描述\n\n${description}\n\n## 构建信息\n\n- 应用名称: ${appName}\n- 版本: v0\n- 触发方式: Web 界面`
 
-    const issue = await createIssue(
-      token,
-      repo.value,
-      title,
-      body,
-      [`app/${appName}`]
-    )
+    const issue = await createIssue(token, repo.value, title, body, [`app/${appName}`])
 
     messages.value.push({
       role: 'system',
-      text: `📝 已创建构建任务 #${issue.number}，正在排队...`,
+      text: `📝 已创建构建任务 #${issue.number} — ${appName} v0\n正在启动构建流程...`,
       time: new Date().toLocaleTimeString(),
     })
 
@@ -74,9 +131,13 @@ function onIssueUpdate(issue: BuildIssue) {
   activeIssue.value = issue
 
   if (issue.state === 'open') {
+    if (!issue.created_at || new Date(issue.created_at).getTime() === new Date().getTime()) {
+      // First poll - don't add duplicate message
+      return
+    }
     messages.value.push({
       role: 'system',
-      text: `🔨 正在构建中... (Issue #${issue.number})`,
+      text: `🔨 构建中... (Issue #${issue.number})`,
       time: new Date().toLocaleTimeString(),
     })
   } else if (issue.state === 'closed') {
@@ -129,11 +190,11 @@ function handleNewChat() {
       <div class="messages">
         <div v-if="messages.length === 0" class="welcome">
           <h3>👋 你好，{{ authStore.user?.login }}</h3>
-          <p>描述你想构建的应用，我来帮你实现。</p>
+          <p>描述你想构建的应用，AI 会帮你分析并实现。</p>
           <div class="examples">
-            <button @click="inputText = '帮我做一个 todo 应用'">📝 Todo 应用</button>
-            <button @click="inputText = '帮我做一个计算器'">🔢 计算器</button>
-            <button @click="inputText = '帮我做一个 Markdown 编辑器'">📝 编辑器</button>
+            <button @click="inputText = '帮我做一个 todo 应用，支持添加、删除和标记完成'">📝 Todo 应用</button>
+            <button @click="inputText = '帮我做一个计算器，支持加减乘除'">🔢 计算器</button>
+            <button @click="inputText = '帮我做一个 Markdown 编辑器，支持实时预览'">📝 Markdown 编辑器</button>
           </div>
         </div>
         <div
@@ -144,7 +205,7 @@ function handleNewChat() {
           <div class="message-content">{{ msg.text }}</div>
           <div class="message-time">{{ msg.time }}</div>
         </div>
-        <div v-if="building" class="message system">
+        <div v-if="thinking" class="message system">
           <div class="typing-indicator">
             <span></span><span></span><span></span>
           </div>
@@ -156,18 +217,19 @@ function handleNewChat() {
           <textarea
             v-model="inputText"
             class="chat-input"
-            placeholder="描述你想构建的应用..."
-            :disabled="building"
+            :placeholder="thinking ? 'AI 思考中...' : '描述你想构建的应用...'"
+            :disabled="thinking || building"
             rows="1"
             @keydown.enter.exact.prevent="handleSend"
           />
           <button
             @click="handleSend"
             class="send-btn"
-            :disabled="!inputText.trim() || building"
+            :disabled="!inputText.trim() || thinking || building"
             title="发送"
           >
-            ▲
+            <span v-if="thinking" class="spinner"></span>
+            <span v-else>▲</span>
           </button>
         </div>
       </div>
@@ -378,6 +440,19 @@ function handleNewChat() {
 
 .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
 .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
 @keyframes bounce {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
