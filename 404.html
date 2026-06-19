@@ -12,8 +12,6 @@
     var path = window.location.pathname;
     var search = window.location.search;
 
-    // If this is an OAuth callback, save the code to sessionStorage
-    // so the SPA can process it after the redirect
     if (path === '/auth/callback' || path === '/auth/callback/') {
       var params = new URLSearchParams(search);
       var code = params.get('code');
@@ -21,6 +19,8 @@
         sessionStorage.setItem('mitosis_oauth_code', code);
         sessionStorage.setItem('mitosis_oauth_redirect', '1');
       }
+      // Preserve any PKCE verifier that was stored before the redirect to GitHub
+      // (it's already in sessionStorage, but we ensure it survives the 404.html page reload)
     }
 
     // Redirect to the SPA root
