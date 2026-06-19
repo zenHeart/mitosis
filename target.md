@@ -35,7 +35,7 @@
 
 | # | 操作 | 说明 |
 |---|------|------|
-| 1 | 创建 GitHub OAuth App | Settings → OAuth Apps → New，Callback URL: `https://mitosis.zenheart.sitecallback` |
+| 1 | 创建 GitHub OAuth App | Settings → OAuth Apps → New，Callback URL: `https://mitosis.zenheart.site/callback` |
 | 2 | 添加 Client ID | 项目根目录创建 `.env`，添加 `VITE_GITHUB_CLIENT_ID=你的ClientID` |
 | 3 | 添加 STEP_TOKEN Secret | `gh secret set STEP_TOKEN --repo zenHeart/mitosis --body "你的Token"` |
 | 4 | 访问验证 | 打开 https://mitosis.zenheart.site |
@@ -667,7 +667,7 @@ jobs:
         run: |
           gh issue close ${{ github.event.issue.number }} \
             --repo ${{ github.repository }} \
-            --comment "✅ ${{ steps.parse.outputs.app_name }} ${{ steps.parse.outputs.version }} 构建完成！\n\n访问: https://mitosis.zenheart.siteapps/${{ steps.parse.outputs.app_name }}/"
+            --comment "✅ ${{ steps.parse.outputs.app_name }} ${{ steps.parse.outputs.version }} 构建完成！\n\n访问: https://mitosis.zenheart.site/apps/${{ steps.parse.outputs.app_name }}/"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
@@ -710,7 +710,7 @@ gh secret set GITHUB_OAUTH_CLIENT_SECRET --repo zenHeart/mitosis --body "你的C
 - [ ] 提交带 `app/xxx` label 的 Issue 后 Actions 自动触发
 - [ ] Claude Code CLI 成功执行
 - [ ] 代码被提交到 `apps/{name}/v{n}/`
-- [ ] 构建产物在 `zenHeart/mitosis` 仓库的 GitHub Pages 上可访问（`mitosis.zenheart.siteapps/{name}/v{n}/`）
+- [ ] 构建产物在 `zenHeart/mitosis` 仓库的 GitHub Pages 上可访问（`mitosis.zenheart.site/apps/{name}/v{n}/`）
 - [ ] Issue 自动关闭并附带完成评论
 
 ---
@@ -729,11 +729,9 @@ cd /Users/zenheart/code/github/mitosis
 npm install
 npm run build
 
-# 2. 将构建产物提交到仓库根目录（GitHub Pages 自动部署）
-# 将 dist/ 中的文件移动到仓库根目录供 Pages 使用
-mkdir -p .pages
-cp -r dist/* .pages/
-git add .pages/
+# 2. 将构建产物复制到仓库根目录（GitHub Pages 自动部署）
+cp -r dist/* .
+git add index.html assets/ CNAME
 git commit -m "chore: add GitHub Pages build artifacts"
 git push origin master
 ```
@@ -758,7 +756,7 @@ git push origin master
 - [ ] 配置完成后进入工作区（需 OAuth App + STEP_TOKEN 配置）
 - [ ] 在对话区输入需求后创建 Issue（需 OAuth 登录）
 - [ ] GitHub Actions 触发并执行 Agent 构建（需 STEP_TOKEN Secret）
-- [ ] 构建完成后应用在 `mitosis.zenheart.siteapps/{name}/` 可访问
+- [ ] 构建完成后应用在 `mitosis.zenheart.site/apps/{name}/` 可访问
 
 ---
 
@@ -905,7 +903,7 @@ GitHub Pages 配置:
 - [x] **WORK-02:** 用户输入需求后成功创建 GitHub Issue
 - [ ] **WORK-03:** GitHub Actions 自动触发（需 STEP_TOKEN Secret 配置后验证）
 - [ ] **WORK-04:** Agent 成功构建应用并提交代码（需 STEP_TOKEN 后验证）
-- [ ] **WORK-05:** 构建产物部署到 `mitosis.zenheart.siteapps/{name}/`（需 Agent Loop 运行后验证）
+- [ ] **WORK-05:** 构建产物部署到 `mitosis.zenheart.site/apps/{name}/`（需 Agent Loop 运行后验证）
 - [x] **WORK-06:** 应用卡片在侧边栏正确展示
 - [x] **WORK-07:** 点击"打开应用"链接可正常访问
 
