@@ -23,5 +23,6 @@
    - src/main.ts
    - src/App.vue
    - src/assets/main.css
-3. 运行 npm install 和 npm run build 验证
-4. 提交代码到仓库
+3. 进入 apps/__APP_NAME__/__NEXT_VERSION__/ 目录
+4. 运行 npm install 和 npm run build 验证构建成功
+5. 确认所有文件已创建且构建成功

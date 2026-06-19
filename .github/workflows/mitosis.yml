@@ -108,13 +108,15 @@ jobs:
         run: |
           git config user.name "mitosis-bot"
           git config user.email "mitosis@users.noreply.github.com"
-          if [ -d "apps/$APP_NAME/$NEXT_VERSION" ]; then
-            git add apps/$APP_NAME/$NEXT_VERSION/
+          cd apps/$APP_NAME/$NEXT_VERSION
+          git init
+          git add -A
+          # Commit only if there are staged changes (agent may or may not have committed)
+          if ! git diff --cached --quiet; then
             git commit -m "feat: build $APP_NAME $NEXT_VERSION (issue #${{ github.event.issue.number }})"
-            git push origin master
-          else
-            echo "No app directory created, skipping commit"
           fi
+          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git 2>/dev/null || true
+          git push -u origin master
 
       - name: Close issue
         if: ${{ github.event_name == 'issues' }}
