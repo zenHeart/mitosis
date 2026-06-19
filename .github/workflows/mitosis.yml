@@ -65,35 +65,7 @@ jobs:
             --allowed-tools "Read,Write,Edit,Bash" \
             --max-turns 50 \
             --output-format text \
-            --prompt "
-你是一个应用构建 Agent。你的任务是构建一个 Vue 3 + TypeScript + Vite 应用。
-
-## 上下文
-- 应用名称: $APP_NAME
-- 版本: $NEXT_VERSION
-- 需求来源: Issue #$ISSUE_NUMBER
-- 目标目录: apps/$APP_NAME/$NEXT_VERSION/
-
-## 约束
-1. 输出必须是纯静态 HTML/CSS/JS（通过 Vite 构建）
-2. TypeScript strict 模式
-3. 不使用外部 CDN（全部打包进 dist）
-4. Vue 3 组合式 API + TypeScript
-5. 代码必须完整可运行
-
-## 步骤
-1. 读取 Issue #$ISSUE_NUMBER 了解需求
-2. 在 apps/$APP_NAME/$NEXT_VERSION/ 下创建完整项目:
-   - index.html
-   - vite.config.ts
-   - tsconfig.json
-   - package.json
-   - src/main.ts
-   - src/App.vue
-   - src/assets/main.css
-3. 运行 npm install 和 npm run build 验证
-4. 提交代码到仓库
-"
+            --prompt "$(cat worker/prompt.txt)"
 
       - name: Commit and push
         run: |
