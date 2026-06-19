@@ -1,8 +1,6 @@
 name: Mitosis Build
 
 on:
-  push:
-    branches: [master]
   issues:
     types: [opened, labeled]
   issue_comment:
@@ -15,11 +13,8 @@ permissions:
 jobs:
   build:
     if: |
-      github.event_name == 'push' ||
-      (github.event.issue != null && (
-        contains(github.event.issue.labels.*.name, 'app/') ||
-        contains(github.event.issue.labels.*.name, 'build')
-      ))
+      contains(github.event.issue.labels.*.name, 'app/') ||
+      contains(github.event.issue.labels.*.name, 'build')
     runs-on: ubuntu-latest
 
     steps:
@@ -82,13 +77,16 @@ jobs:
         env:
           APP_NAME: ${{ steps.parse.outputs.app_name }}
           NEXT_VERSION: ${{ steps.parse.outputs.version }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           git config user.name "mitosis-bot"
           git config user.email "mitosis@users.noreply.github.com"
-          git add apps/${{ steps.parse.outputs.app_name }}/
-          git commit -m "feat: build ${{ steps.parse.outputs.app_name }} ${{ steps.parse.outputs.version }} (issue #${{ github.event.issue.number }})"
-          git push origin master
+          if [ -d "apps/$APP_NAME/$NEXT_VERSION" ]; then
+            git add apps/$APP_NAME/$NEXT_VERSION/
+            git commit -m "feat: build $APP_NAME $NEXT_VERSION (issue #${{ github.event.issue.number }})"
+            git push origin master
+          else
+            echo "No app directory created, skipping commit"
+          fi
 
       - name: Close issue
         if: ${{ github.event.issue.number != '' }}
