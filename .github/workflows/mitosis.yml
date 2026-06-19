@@ -39,10 +39,18 @@ jobs:
 
       - name: Parse app name and version
         id: parse
+        env:
+          ISSUE_LABELS: ${{ github.event.issue.labels }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
-          APP_NAME=$(echo "${{ github.event.issue.labels }}" | grep -oP 'app/\K[^"]+' | head -1)
-          if [ -z "$APP_NAME" ]; then
-            APP_NAME=$(echo "${{ github.event.issue.title }}" | sed 's/build: //; s/ v.*//')
+          if [ "$ISSUE_NUMBER" != "" ] && [ "$ISSUE_LABELS" != "" ]; then
+            APP_NAME=$(echo "$ISSUE_LABELS" | grep -oP 'app/\K[^"]+' | head -1)
+            if [ -z "$APP_NAME" ]; then
+              APP_NAME=$(echo "$ISSUE_TITLE" | sed 's/build: //; s/ v.*//')
+            fi
+          else
+            APP_NAME="unknown"
           fi
           echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
 
@@ -71,6 +79,10 @@ jobs:
             "$(cat worker/prompt.txt)"
 
       - name: Commit and push
+        env:
+          APP_NAME: ${{ steps.parse.outputs.app_name }}
+          NEXT_VERSION: ${{ steps.parse.outputs.version }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           git config user.name "mitosis-bot"
           git config user.email "mitosis@users.noreply.github.com"
@@ -79,6 +91,7 @@ jobs:
           git push origin master
 
       - name: Close issue
+        if: ${{ github.event.issue.number != '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
