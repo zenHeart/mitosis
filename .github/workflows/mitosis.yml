@@ -118,6 +118,30 @@ jobs:
           git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git 2>/dev/null || true
           git push -u origin master
 
+      - name: Deploy to GitHub Pages
+        if: ${{ steps.parse.outputs.app_name != 'unknown' }}
+        env:
+          APP_NAME: ${{ steps.parse.outputs.app_name }}
+          NEXT_VERSION: ${{ steps.parse.outputs.version }}
+        run: |
+          git config user.name "mitosis-bot"
+          git config user.email "mitosis@users.noreply.github.com"
+
+          # Clone gh-pages branch
+          git clone --branch gh-pages --single-branch \
+            https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
+            /tmp/gh-pages
+
+          # Create app version directory and copy built artifacts
+          mkdir -p /tmp/gh-pages/apps/$APP_NAME/$NEXT_VERSION
+          cp -r apps/$APP_NAME/$NEXT_VERSION/dist/* /tmp/gh-pages/apps/$APP_NAME/$NEXT_VERSION/
+
+          cd /tmp/gh-pages
+          git add -A
+          git diff --cached --quiet && echo "No changes to deploy" && exit 0
+          git commit -m "deploy: $APP_NAME $NEXT_VERSION (issue #${{ github.event.issue.number }})"
+          git push origin gh-pages
+
       - name: Close issue
         if: ${{ github.event_name == 'issues' }}
         env:
