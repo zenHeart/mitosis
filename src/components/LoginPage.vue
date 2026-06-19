@@ -1,62 +1,75 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
-import { getLoginUrl, getImplicitLoginUrl, extractTokenFromHash, fetchGitHubUser, saveSession } from '../composables/useAuth'
+import {
+  generateCodeVerifier,
+  generateCodeChallenge,
+  generateState,
+  getLoginUrl,
+  exchangeCodeForToken,
+  fetchGitHubUser,
+  saveSession,
+} from '../composables/useAuth'
 
 const authStore = useAuthStore()
 const loading = ref(false)
 const error = ref('')
 
-onMounted(() => {
-  // If redirected from 404.html (GitHub Pages SPA fallback),
-  // the OAuth code was saved to sessionStorage by 404.html
+onMounted(async () => {
+  // PKCE Authorization Code Flow callback.
+  // GitHub Pages 404.html may have saved the code to sessionStorage,
+  // so check there first, then fall back to URL query params.
   const savedCode = sessionStorage.getItem('mitosis_oauth_code')
-  if (savedCode) {
+  const code = savedCode || new URLSearchParams(window.location.search).get('code')
+  const errorParam = savedCode
+    ? null
+    : new URLSearchParams(window.location.search).get('error')
+  const errorDescription = savedCode
+    ? null
+    : new URLSearchParams(window.location.search).get('error_description')
+
+  if (errorParam) {
+    error.value = errorDescription || errorParam
+    sessionStorage.removeItem('mitosis_code_verifier')
+    sessionStorage.removeItem('mitosis_oauth_state')
     sessionStorage.removeItem('mitosis_oauth_code')
     sessionStorage.removeItem('mitosis_oauth_redirect')
-    window.location.replace(getImplicitLoginUrl())
     return
   }
 
-  // If GitHub returned an authorization code (Authorization Code Flow),
-  // redirect to Implicit Flow which returns the token directly
-  const params = new URLSearchParams(window.location.search)
-  const code = params.get('code')
   if (code) {
-    window.location.replace(getImplicitLoginUrl())
-    return
-  }
-
-  const hash = window.location.hash
-  if (hash && hash.includes('access_token')) {
-    handleCallback(hash)
+    // Clean up the saved code from 404.html
+    sessionStorage.removeItem('mitosis_oauth_code')
+    sessionStorage.removeItem('mitosis_oauth_redirect')
+    try {
+      const codeVerifier = sessionStorage.getItem('mitosis_code_verifier')
+      if (!codeVerifier) {
+        error.value = '登录会话已过期，请重试'
+        return
+      }
+      const token = await exchangeCodeForToken(code, codeVerifier)
+      const user = await fetchGitHubUser(token)
+      saveSession(token, user)
+      authStore.setToken(token)
+      authStore.setUser(user)
+      sessionStorage.removeItem('mitosis_code_verifier')
+      sessionStorage.removeItem('mitosis_oauth_state')
+      emit('login-success')
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : '登录失败'
+    } finally {
+      loading.value = false
+    }
   }
 })
 
-async function handleCallback(hash: string) {
-  loading.value = true
-  error.value = ''
-  try {
-    const token = extractTokenFromHash(hash)
-    if (!token) {
-      error.value = '无法获取访问令牌'
-      return
-    }
-    const user = await fetchGitHubUser(token)
-    saveSession(token, user)
-    authStore.setToken(token)
-    authStore.setUser(user)
-    window.location.hash = ''
-    emit('login-success')
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : '登录失败'
-  } finally {
-    loading.value = false
-  }
-}
-
-function handleLogin() {
-  window.location.href = getLoginUrl()
+async function handleLogin() {
+  const codeVerifier = generateCodeVerifier()
+  const codeChallenge = await generateCodeChallenge(codeVerifier)
+  const state = generateState()
+  sessionStorage.setItem('mitosis_code_verifier', codeVerifier)
+  sessionStorage.setItem('mitosis_oauth_state', state)
+  window.location.href = getLoginUrl(codeChallenge, state)
 }
 
 const emit = defineEmits<{
