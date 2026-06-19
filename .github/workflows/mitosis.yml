@@ -34,7 +34,7 @@ jobs:
       - name: Parse app name and version
         id: parse
         env:
-          ISSUE_LABELS: ${{ github.event.issue.labels }}
+          ISSUE_LABELS: ${{ toJson(github.event.issue.labels) }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_BODY: ${{ github.event.issue.body }}
