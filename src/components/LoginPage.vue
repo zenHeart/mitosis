@@ -3,7 +3,6 @@ import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import {
   getLoginUrl,
-  extractTokenFromHash,
   fetchGitHubUser,
   saveSession,
 } from '../composables/useAuth'
@@ -13,9 +12,20 @@ const loading = ref(false)
 const error = ref('')
 
 onMounted(async () => {
-  // Implicit Flow: GitHub returns token in URL hash fragment.
+  // Implicit Flow: GitHub returns token or error in URL hash fragment.
   // 404.html redirects /auth/callback#token → /#token, preserving the hash.
-  const token = extractTokenFromHash(window.location.hash)
+  const hash = window.location.hash
+  if (!hash) return
+
+  const params = new URLSearchParams(hash.replace('#', '?'))
+  const errorParam = params.get('error')
+  if (errorParam) {
+    error.value = params.get('error_description') || errorParam
+    window.history.replaceState(null, '', '/')
+    return
+  }
+
+  const token = params.get('access_token')
   if (token) {
     try {
       const user = await fetchGitHubUser(token)

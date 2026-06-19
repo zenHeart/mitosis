@@ -17,11 +17,6 @@ export function getLoginUrl(): string {
   }).toString()}`
 }
 
-export function extractTokenFromHash(hash: string): string | null {
-  const params = new URLSearchParams(hash.replace('#', '?'))
-  return params.get('access_token')
-}
-
 // ---- User API ----
 
 export async function fetchGitHubUser(token: string): Promise<GitHubUser> {
