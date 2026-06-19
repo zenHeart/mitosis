@@ -108,19 +108,15 @@ jobs:
         run: |
           git config user.name "mitosis-bot"
           git config user.email "mitosis@users.noreply.github.com"
-          cd apps/$APP_NAME/$NEXT_VERSION
-          git init
-          git config user.name "mitosis-bot"
-          git config user.email "mitosis@users.noreply.github.com"
-          git add -A
-          # Commit only if there are staged changes (agent may or may not have committed)
+          # Discard any unintended root-level changes from agent
+          git checkout -- .
+          # Only stage the new app version directory
+          git add apps/$APP_NAME/$NEXT_VERSION/
+          # Commit only if there are staged changes
           if ! git diff --cached --quiet; then
             git commit -m "feat: build $APP_NAME $NEXT_VERSION (issue #${{ github.event.issue.number }})"
           fi
-          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git 2>/dev/null || true
-          git fetch origin
-          git rebase origin/master
-          git push -u origin master
+          git push origin master
 
       - name: Deploy to GitHub Pages
         if: ${{ steps.parse.outputs.app_name != 'unknown' }}
