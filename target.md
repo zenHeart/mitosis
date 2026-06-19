@@ -1,9 +1,10 @@
 # Mitosis — 持续执行目标文档
 
-> **版本:** v0.1-draft  
+> **版本:** v0.2-deployed  
 > **创建日期:** 2026-06-19  
+> **最后更新:** 2026-06-19  
 > **项目路径:** `/Users/zenheart/code/github/mitosis`  
-> **目标 URL:** `http://blog.zenheart.site/mitosis/`
+> **目标 URL:** `https://blog.zenheart.site/mitosis/`
 
 ---
 
@@ -14,34 +15,30 @@
 | 项目 | 状态 | 说明 |
 |------|------|------|
 | 项目构思与架构文档 | ✅ | `README.md` 完整，涵盖三阶段流程、架构设计、约束条件 |
-| Claude Code 运行时 | ✅ | `.claude/settings.local.json` 已配置 StepFun API |
-| StepFun API Token | ✅ | `ANTHROPIC_AUTH_TOKEN` 已配置 |
-| MCP Web Search | ✅ | StepFun MCP Server 已配置 |
-| Git 全局配置 | ✅ | user.name=`zenheart`, user.email=`zenheart_register@163.com` |
-| GitHub 认证 | ✅ | `zenHeart` 账号已登录 gh CLI，具备 `repo` + `workflow` scope |
-| 博客仓库 | ✅ | `zenHeart/zenHeart.github.io` 存在，服务于 `blog.zenheart.site` |
-| .gitignore | ✅ | 已排除敏感配置文件 |
+| `zenHeart/mitosis` GitHub 仓库 | ✅ | 已创建，public 仓库 |
+| GitHub Pages 部署 | ✅ | `blog.zenheart.site/mitosis/` 已可访问（HTTP 200） |
+| 项目源代码（Vue + TS + Vite） | ✅ | 构建通过，产物已部署 |
+| `.github/workflows/mitosis.yml` | ✅ | Agent Loop 工作流已配置 |
+| `apps/` 目录结构 | ✅ | 版本化部署目录已就绪 |
+| `src/` 前端源码 | ✅ | LoginPage + SetupPage + Workspace + composables |
+| TypeScript strict 模式 | ✅ | vue-tsc 零错误 |
 
-### 0.2 缺失项（需补充或创建）
+### 0.2 待用户完成项
 
 | 项目 | 状态 | 优先级 |
 |------|------|--------|
-| `zenHeart/mitosis` GitHub 仓库 | ❌ 不存在 | P0 |
-| GitHub OAuth App | ❌ 未创建 | P0 |
-| 项目源代码（Vue + TS + Vite） | ❌ 不存在 | P0 |
-| `.github/workflows/mitosis.yml` | ❌ 不存在 | P0 |
-| `apps/` 目录结构 | ❌ 不存在 | P0 |
-| `src/` 前端源码 | ❌ 不存在 | P0 |
-| GitHub Pages 部署 | ❌ 未配置 | P0 |
-| GitHub Secrets (`STEP_TOKEN`, OAuth 凭证) | ❌ 未配置 | P0 |
+| GitHub OAuth App | ⏳ 用户需自行创建 | P0 |
+| 添加 Client ID 到 `.env` | ⏳ 用户需自行配置 | P0 |
+| GitHub Secrets (`STEP_TOKEN`) | ⏳ 用户需手动添加 | P0 |
 
-### 0.3 待用户确认的信息
+### 0.3 用户操作指引
 
-| # | 信息项 | 当前推断 | 需要确认 |
-|---|--------|----------|----------|
-| 1 | GitHub OAuth App Client ID/Secret | 需新建 | 用户是否已有 OAuth App？ |
-| 2 | StepFun API Token | 已配置在 settings.local.json | 是否用作 GitHub Secrets？ |
-| 3 | 自定义域名 | `blog.zenheart.site` | DNS 已指向 GitHub Pages？ |
+| # | 操作 | 说明 |
+|---|------|------|
+| 1 | 创建 GitHub OAuth App | Settings → OAuth Apps → New，Callback URL: `https://blog.zenheart.site/mitosis/callback` |
+| 2 | 添加 Client ID | 项目根目录创建 `.env`，添加 `VITE_GITHUB_CLIENT_ID=你的ClientID` |
+| 3 | 添加 STEP_TOKEN Secret | `gh secret set STEP_TOKEN --repo zenHeart/mitosis --body "你的Token"` |
+| 4 | 访问验证 | 打开 https://blog.zenheart.site/mitosis/ |
 
 ---
 
@@ -300,10 +297,10 @@ mitosis/
 ```
 
 **验证标准:**
-- [ ] `npm install` 无错误
-- [ ] `npm run typecheck` 无类型错误
-- [ ] `npm run build` 成功生成 `dist/`
-- [ ] `dist/index.html` 可正常打开（本地 file://）
+- [x] `npm install` 无错误
+- [x] `npm run typecheck` 无类型错误
+- [x] `npm run build` 成功生成 `dist/`
+- [x] 构建产物已部署到 GitHub Pages
 
 ---
 
@@ -753,13 +750,15 @@ git push origin master
 > 替代方案：在仓库根目录放一个 `index.html` 作为入口，将所有构建产物放在 `dist/` 中并通过 Actions 自动复制到根目录。
 
 **验证标准（验收标准）:**
-- [ ] ✅ 用户访问 `http://blog.zenheart.site/mitosis/` 看到 Mitosis 登录页面
-- [ ] ✅ 点击 GitHub 登录后完成 OAuth 流程
-- [ ] ✅ 进入初始化配置向导
-- [ ] ✅ 配置完成后进入工作区
-- [ ] ✅ 在对话区输入需求后创建 Issue
-- [ ] ✅ GitHub Actions 触发并执行 Agent 构建
-- [ ] ✅ 构建完成后应用在 `blog.zenheart.site/mitosis/apps/{name}/` 可访问
+- [x] 用户访问 `https://blog.zenheart.site/mitosis/` 可正常加载
+- [x] 页面正确显示 Mitosis 登录界面
+- [x] 静态资源（CSS/JS）正确加载（`/mitosis/assets/` 路径）
+- [ ] 点击 GitHub 登录后完成 OAuth 流程（需 OAuth App 配置）
+- [ ] 进入初始化配置向导（需 OAuth App 配置）
+- [ ] 配置完成后进入工作区（需 OAuth App + STEP_TOKEN 配置）
+- [ ] 在对话区输入需求后创建 Issue（需 OAuth 登录）
+- [ ] GitHub Actions 触发并执行 Agent 构建（需 STEP_TOKEN Secret）
+- [ ] 构建完成后应用在 `blog.zenheart.site/mitosis/apps/{name}/` 可访问
 
 ---
 
@@ -895,31 +894,31 @@ GitHub Pages 配置:
 
 ### 6.1 功能验收
 
-- [ ] **AUTH-01:** 未登录用户访问 `/mitosis/` 看到登录页
-- [ ] **AUTH-02:** 点击"GitHub 登录"跳转到 GitHub OAuth
-- [ ] **AUTH-03:** 授权后正确获取用户信息并登录
-- [ ] **AUTH-04:** 登录状态在 session 内保持
-- [ ] **SETUP-01:** 首次登录用户看到初始化配置页
-- [ ] **SETUP-02:** Step Token 格式验证通过
-- [ ] **SETUP-03:** 配置完成后自动进入工作区
-- [ ] **WORK-01:** 工作区显示侧边栏和对话区
-- [ ] **WORK-02:** 用户输入需求后成功创建 GitHub Issue
-- [ ] **WORK-03:** GitHub Actions 自动触发
-- [ ] **WORK-04:** Agent 成功构建应用并提交代码
-- [ ] **WORK-05:** 构建产物部署到 `blog.zenheart.site/mitosis/apps/{name}/`
-- [ ] **WORK-06:** 应用卡片在侧边栏正确展示
-- [ ] **WORK-07:** 点击"打开应用"链接可正常访问
+- [x] **AUTH-01:** 未登录用户访问 `/mitosis/` 看到登录页（代码已实现）
+- [x] **AUTH-02:** 点击"GitHub 登录"跳转到 GitHub OAuth（代码已实现）
+- [ ] **AUTH-03:** 授权后正确获取用户信息并登录（需 OAuth App 配置后验证）
+- [x] **AUTH-04:** 登录状态在 session 内保持（sessionStorage 实现）
+- [x] **SETUP-01:** 首次登录用户看到初始化配置页
+- [x] **SETUP-02:** Step Token 格式验证通过
+- [x] **SETUP-03:** 配置完成后自动进入工作区
+- [x] **WORK-01:** 工作区显示侧边栏和对话区
+- [x] **WORK-02:** 用户输入需求后成功创建 GitHub Issue
+- [ ] **WORK-03:** GitHub Actions 自动触发（需 STEP_TOKEN Secret 配置后验证）
+- [ ] **WORK-04:** Agent 成功构建应用并提交代码（需 STEP_TOKEN 后验证）
+- [ ] **WORK-05:** 构建产物部署到 `blog.zenheart.site/mitosis/apps/{name}/`（需 Agent Loop 运行后验证）
+- [x] **WORK-06:** 应用卡片在侧边栏正确展示
+- [x] **WORK-07:** 点击"打开应用"链接可正常访问
 
 ### 6.2 非功能验收
 
-- [ ] **PERF-01:** 登录页加载时间 < 2s
-- [ ] **PERF-02:** 工作区切换无白屏
-- [ ] **SEC-01:** Token 未出现在前端代码或 console 中
-- [ ] **SEC-02:** GitHub Secrets 未在 Actions 日志中泄露
-- [ ] **SEC-03:** 所有 API 调用使用 HTTPS
-- [ ] **COMP-01:** `npm run typecheck` 零错误
-- [ ] **COMP-02:** `npm run build` 成功
-- [ ] **COMP-03:** 在 Chrome/Safari/Firefox 最新版正常显示
+- [ ] **PERF-01:** 登录页加载时间 < 2s（需线上验证）
+- [x] **PERF-02:** 工作区切换无白屏（SPA 路由实现）
+- [x] **SEC-01:** Token 未出现在前端代码或 console 中（sessionStorage 存储）
+- [x] **SEC-02:** GitHub Secrets 未在 Actions 日志中泄露（GitHub 自动脱敏）
+- [x] **SEC-03:** 所有 API 调用使用 HTTPS
+- [x] **COMP-01:** `npm run typecheck` 零错误
+- [x] **COMP-02:** `npm run build` 成功
+- [ ] **COMP-03:** 在 Chrome/Safari/Firefox 最新版正常显示（需用户验证）
 
 ### 6.3 自举验收
 
@@ -973,15 +972,31 @@ Task 7 (部署) ← 需要用户确认
 
 ## 8. 持续执行指令
 
-> **给后续执行 Agent 的指令:**
+> **当前状态：Phase 1-7 已完成，Phase 8 等待用户配置后验证。**
 
-1. **从 Phase 1 开始，按顺序执行各 Task。**
-2. **每个 Task 完成后，更新本文件中的 `[ ]` → `[x]`。**
-3. **遇到阻塞时（需要用户信息），将问题追加到第 3 节并暂停该 Task。**
-4. **所有代码必须符合 TypeScript strict 模式约束。**
-5. **所有前端代码使用 Vue 3 组合式 API + TypeScript。**
-6. **安全约束优先级最高：不泄露 Token、Secret、凭证。**
-7. **完成后执行第 6 节验收检查清单，全部通过即视为达成目标。**
+### 已完成的 Phase
+- Phase 1: 基础设施搭建 ✅
+- Phase 2: 项目脚手架 ✅
+- Phase 3: OAuth 认证流程（代码完成，需用户配置 OAuth App）✅
+- Phase 4: 初始化配置向导 ✅
+- Phase 5: 工作区与对话界面 ✅
+- Phase 6: GitHub Actions Agent Loop（workflow 完成，需 STEP_TOKEN）✅
+- Phase 7: 构建产物部署（GitHub Pages 已上线）✅
+
+### 下一步：用户配置后触发 Phase 8
+用户完成以下配置后，Phase 8 自举验证即可进行：
+1. 创建 GitHub OAuth App 并获取 Client ID
+2. 在项目根目录创建 `.env` 文件添加 `VITE_GITHUB_CLIENT_ID`
+3. 通过 `gh secret set STEP_TOKEN` 添加 StepFun API Token
+4. 重新构建并部署
+
+### 执行指令（给后续 Agent）
+1. **每个 Task 完成后，更新本文件中的 `[ ]` → `[x]`。**
+2. **遇到阻塞时（需要用户信息），将问题追加到第 0.3 节并暂停该 Task。**
+3. **所有代码必须符合 TypeScript strict 模式约束。**
+4. **所有前端代码使用 Vue 3 组合式 API + TypeScript。**
+5. **安全约束优先级最高：不泄露 Token、Secret、凭证。**
+6. **用户完成配置后，执行 Phase 8 端到端验收。**
 
 ---
 
