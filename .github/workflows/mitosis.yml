@@ -88,12 +88,17 @@ jobs:
           NEXT_VERSION: ${{ steps.parse.outputs.version }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
+          PROMPT=$(sed \
+            -e "s/__APP_NAME__/${{ steps.parse.outputs.app_name }}/g" \
+            -e "s/__NEXT_VERSION__/${{ steps.parse.outputs.version }}/g" \
+            -e "s/__ISSUE_NUMBER__/${{ github.event.issue.number }}/g" \
+            worker/prompt.txt)
           claude -p \
             --model step-3.7-flash \
             --allowed-tools "Read,Write,Edit,Bash" \
             --max-turns 50 \
             --output-format text \
-            "$(cat worker/prompt.txt)"
+            "$PROMPT"
 
       - name: Commit and push
         if: ${{ steps.parse.outputs.app_name != 'unknown' }}

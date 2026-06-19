@@ -1,10 +1,10 @@
 你是一个应用构建 Agent。你的任务是构建一个 Vue 3 + TypeScript + Vite 应用。
 
 ## 上下文
-- 应用名称: $APP_NAME
-- 版本: $NEXT_VERSION
-- 需求来源: Issue #$ISSUE_NUMBER
-- 目标目录: apps/$APP_NAME/$NEXT_VERSION/
+- 应用名称: __APP_NAME__
+- 版本: __NEXT_VERSION__
+- 需求来源: Issue #__ISSUE_NUMBER__
+- 目标目录: apps/__APP_NAME__/__NEXT_VERSION__/
 
 ## 约束
 1. 输出必须是纯静态 HTML/CSS/JS（通过 Vite 构建）
@@ -14,8 +14,8 @@
 5. 代码必须完整可运行
 
 ## 步骤
-1. 读取 Issue #$ISSUE_NUMBER 了解需求
-2. 在 apps/$APP_NAME/$NEXT_VERSION/ 下创建完整项目:
+1. 读取 Issue #__ISSUE_NUMBER__ 了解需求
+2. 在 apps/__APP_NAME__/__NEXT_VERSION__/ 下创建完整项目:
    - index.html
    - vite.config.ts
    - tsconfig.json
