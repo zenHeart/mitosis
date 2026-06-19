@@ -6,10 +6,13 @@ node_modules/
 .pnp
 .pnp.js
 
-# Build outputs
+# Build outputs (root project only)
 dist/
 dist-ssr/
 *.local
+# Allow app-specific entry points
+!apps/*/v*/index.html
+!apps/*/v*/dist/
 index.html
 assets/
 
@@ -42,6 +45,8 @@ npm-debug.log*
 # Generated TypeScript/Vite artifacts
 *.d.ts
 *.tsbuildinfo
+# Allow app vite-env.d.ts
+!apps/*/v*/src/vite-env.d.ts
 src/**/*.d.ts
 src/**/*.js
 !src/**/*.vue.js*.d.ts
