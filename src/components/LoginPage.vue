@@ -2,11 +2,8 @@
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import {
-  generateCodeVerifier,
-  generateCodeChallenge,
-  generateState,
   getLoginUrl,
-  exchangeCodeForToken,
+  extractTokenFromHash,
   fetchGitHubUser,
   saveSession,
 } from '../composables/useAuth'
@@ -16,44 +13,17 @@ const loading = ref(false)
 const error = ref('')
 
 onMounted(async () => {
-  // PKCE Authorization Code Flow callback.
-  // GitHub Pages 404.html may have saved the code to sessionStorage,
-  // so check there first, then fall back to URL query params.
-  const savedCode = sessionStorage.getItem('mitosis_oauth_code')
-  const code = savedCode || new URLSearchParams(window.location.search).get('code')
-  const errorParam = savedCode
-    ? null
-    : new URLSearchParams(window.location.search).get('error')
-  const errorDescription = savedCode
-    ? null
-    : new URLSearchParams(window.location.search).get('error_description')
-
-  if (errorParam) {
-    error.value = errorDescription || errorParam
-    sessionStorage.removeItem('mitosis_code_verifier')
-    sessionStorage.removeItem('mitosis_oauth_state')
-    sessionStorage.removeItem('mitosis_oauth_code')
-    sessionStorage.removeItem('mitosis_oauth_redirect')
-    return
-  }
-
-  if (code) {
-    // Clean up the saved code from 404.html
-    sessionStorage.removeItem('mitosis_oauth_code')
-    sessionStorage.removeItem('mitosis_oauth_redirect')
+  // Implicit Flow: GitHub returns token in URL hash fragment.
+  // 404.html redirects /auth/callback#token → /#token, preserving the hash.
+  const token = extractTokenFromHash(window.location.hash)
+  if (token) {
     try {
-      const codeVerifier = sessionStorage.getItem('mitosis_code_verifier')
-      if (!codeVerifier) {
-        error.value = '登录会话已过期，请重试'
-        return
-      }
-      const token = await exchangeCodeForToken(code, codeVerifier)
       const user = await fetchGitHubUser(token)
       saveSession(token, user)
       authStore.setToken(token)
       authStore.setUser(user)
-      sessionStorage.removeItem('mitosis_code_verifier')
-      sessionStorage.removeItem('mitosis_oauth_state')
+      // Clean URL
+      window.history.replaceState(null, '', '/')
       emit('login-success')
     } catch (e) {
       error.value = e instanceof Error ? e.message : '登录失败'
@@ -64,12 +34,8 @@ onMounted(async () => {
 })
 
 async function handleLogin() {
-  const codeVerifier = generateCodeVerifier()
-  const codeChallenge = await generateCodeChallenge(codeVerifier)
-  const state = generateState()
-  sessionStorage.setItem('mitosis_code_verifier', codeVerifier)
-  sessionStorage.setItem('mitosis_oauth_state', state)
-  window.location.href = getLoginUrl(codeChallenge, state)
+  loading.value = true
+  window.location.href = getLoginUrl()
 }
 
 const emit = defineEmits<{

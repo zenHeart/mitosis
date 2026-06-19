@@ -6,25 +6,29 @@
   <script>
     // SPA fallback for GitHub Pages.
     // GitHub Pages doesn't support client-side routing, so any path like /auth/callback
-    // returns this 404 page. We detect OAuth callbacks here and preserve the code
-    // before redirecting to the SPA root.
+    // returns this 404 page. We preserve OAuth data before redirecting to the SPA root.
 
     var path = window.location.pathname;
     var search = window.location.search;
+    var hash = window.location.hash;
 
     if (path === '/auth/callback' || path === '/auth/callback/') {
+      // PKCE flow: code is in query params
       var params = new URLSearchParams(search);
       var code = params.get('code');
       if (code) {
         sessionStorage.setItem('mitosis_oauth_code', code);
         sessionStorage.setItem('mitosis_oauth_redirect', '1');
       }
-      // Preserve any PKCE verifier that was stored before the redirect to GitHub
-      // (it's already in sessionStorage, but we ensure it survives the 404.html page reload)
     }
 
-    // Redirect to the SPA root
-    window.location.replace('/');
+    // Redirect to the SPA root, preserving the hash fragment
+    // (needed for Implicit Flow: token is in #access_token=...)
+    var target = '/';
+    if (hash) {
+      target += hash;
+    }
+    window.location.replace(target);
   </script>
 </head>
 <body>
