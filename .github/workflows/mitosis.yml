@@ -15,8 +15,11 @@ permissions:
 jobs:
   build:
     if: |
-      contains(github.event.issue.labels.*.name, 'app/') ||
-      contains(github.event.issue.labels.*.name, 'build')
+      github.event_name == 'push' ||
+      (github.event.issue != null && (
+        contains(github.event.issue.labels.*.name, 'app/') ||
+        contains(github.event.issue.labels.*.name, 'build')
+      ))
     runs-on: ubuntu-latest
 
     steps:
