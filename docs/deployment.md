@@ -1,8 +1,8 @@
-# 部署指南 — blog.zenheart.site/mitosis/
+# 部署指南 — mitosis.zenheart.site
 
 ## 概述
 
-本文档描述如何将 Mitosis 平台部署到 `http://blog.zenheart.site/mitosis/`。
+本文档描述如何将 Mitosis 平台部署到 `https://mitosis.zenheart.site`。
 
 ## 部署架构
 
@@ -20,17 +20,17 @@ zenHeart/mitosis (单一仓库)
 
 GitHub Pages 配置:
 - Source: master/main 分支根目录
-- 域名: blog.zenheart.site (CNAME → zenHeart.github.io)
+- 域名: mitosis.zenheart.site (CNAME → zenHeart.github.io)
 - 子路径: /mitosis/ (通过 Vite base 配置)
 ```
 
 ## DNS 配置
 
-`blog.zenheart.site` 已通过 CNAME 指向 `zenHeart.github.io`：
+`mitosis.zenheart.site` 已通过 CNAME 指向 `zenHeart.github.io`：
 
 ```bash
 # 验证 DNS 解析
-dig blog.zenheart.site
+dig mitosis.zenheart.site
 
 # 预期: CNAME → zenHeart.github.io
 # 或 A record → GitHub Pages IP
@@ -101,13 +101,13 @@ GitHub Pages 会自动从 `master` 分支根目录部署。
 1. 进入 `zenHeart/mitosis` 仓库 **Settings → Pages**
 2. **Source** 选择 **Deploy from a branch**
 3. **Branch** 选择 `master`（或 `main`），目录选择 **/ (root)**
-4. 保存后 GitHub 会自动部署，访问 `https://blog.zenheart.site/mitosis/`
+4. 保存后 GitHub 会自动部署，访问 `https://mitosis.zenheart.site`
 
 ## 验证清单
 
 部署后执行以下验证：
 
-- [ ] `http://blog.zenheart.site/mitosis/` 返回 200
+- [ ] `https://mitosis.zenheart.site` 返回 200
 - [ ] 打开浏览器 DevTools → Network → 所有资源状态 200
 - [ ] 没有 404 错误
 - [ ] 页面标题显示 "Mitosis"
@@ -119,7 +119,7 @@ GitHub Pages 会自动从 `master` 分支根目录部署。
 ### Q: 页面显示 404
 
 **A:** 检查以下几点:
-1. `blog.zenheart.site` DNS 是否正确指向 GitHub Pages（`zenHeart.github.io`）
+1. `mitosis.zenheart.site` DNS 是否正确指向 GitHub Pages（`zenHeart.github.io`）
 2. `zenHeart/mitosis` 仓库的 GitHub Pages 设置中 Source 是否为 `master` 分支
 3. 仓库根目录是否包含 `index.html`
 4. Vite `base` 配置是否为 `/mitosis/`
@@ -137,8 +137,8 @@ base: '/mitosis/'  // 必须匹配部署子路径
 
 ### Q: 不需要跨仓库部署了？
 
-**A:** 正确。Mitosis 使用自己的 GitHub Pages（`zenHeart/mitosis` 仓库），不再需要 PAT 或跨仓库推送。`blog.zenheart.site` 的 CNAME 已指向 `zenHeart.github.io`，GitHub Pages 自动路由到 `zenHeart/mitosis` 仓库的部署。
+**A:** 正确。Mitosis 使用自己的 GitHub Pages（`zenHeart/mitosis` 仓库），不再需要 PAT 或跨仓库推送。`mitosis.zenheart.site` 的 CNAME 已指向 `zenHeart.github.io`，GitHub Pages 自动路由到 `zenHeart/mitosis` 仓库的部署。
 
 ---
 
-*部署完成后，确保 `http://blog.zenheart.site/mitosis/` 可正常访问。*
+*部署完成后，确保 `https://mitosis.zenheart.site` 可正常访问。*

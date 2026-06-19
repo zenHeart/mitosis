@@ -15,8 +15,8 @@ Mitosis 使用 GitHub OAuth 2.0 进行用户认证。本文档指导如何创建
 | 字段 | 值 |
 |------|-----|
 | Application name | `Mitosis` |
-| Homepage URL | `http://blog.zenheart.site/mitosis/` |
-| Authorization callback URL | `http://blog.zenheart.site/mitosis/auth/callback` |
+| Homepage URL | `https://mitosis.zenheart.site` |
+| Authorization callback URL | `https://mitosis.zenheart.siteauth/callback` |
 | Device flow | 不勾选（MVP 不需要） |
 
 4. 点击 **Register application**
@@ -35,8 +35,8 @@ curl -X POST \
   https://api.github.com/applications \
   -d '{
     "name": "Mitosis",
-    "url": "http://blog.zenheart.site/mitosis/",
-    "callback_url": "http://blog.zenheart.site/mitosis/auth/callback"
+    "url": "https://mitosis.zenheart.site",
+    "callback_url": "https://mitosis.zenheart.siteauth/callback"
   }'
 ```
 

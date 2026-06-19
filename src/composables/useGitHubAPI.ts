@@ -71,7 +71,7 @@ export async function listApps(token: string, repo: string): Promise<AppInfo[]> 
           id: item.name,
           name: item.name,
           latestVersion,
-          url: `/mitosis/apps/${item.name}/`,
+          url: `/apps/${item.name}/`,
           createdAt: item.created_at || '',
         })
       }

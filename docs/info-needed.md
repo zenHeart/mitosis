@@ -24,13 +24,13 @@ gh api \
   -X POST \
   /applications \
   -f name="Mitosis" \
-  -f url="http://blog.zenheart.site/mitosis/" \
-  -f callback_url="http://blog.zenheart.site/mitosis/auth/callback"
+  -f url="https://mitosis.zenheart.site" \
+  -f callback_url="https://mitosis.zenheart.siteauth/callback"
 
 # 方式 B: GitHub Web 界面
 # https://github.com/settings/developers → New OAuth App
-# Homepage URL: http://blog.zenheart.site/mitosis/
-# Authorization callback URL: http://blog.zenheart.site/mitosis/auth/callback
+# Homepage URL: https://mitosis.zenheart.site
+# Authorization callback URL: https://mitosis.zenheart.siteauth/callback
 ```
 
 **存储方式 (创建后):**

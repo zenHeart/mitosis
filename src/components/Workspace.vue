@@ -83,7 +83,7 @@ function onIssueUpdate(issue: BuildIssue) {
     const appName = extractAppName(issue.title)
     messages.value.push({
       role: 'system',
-      text: `✅ ${appName} 构建完成！\n查看: https://blog.zenheart.site/mitosis/apps/${appName}/`,
+      text: `✅ ${appName} 构建完成！\n查看: https://mitosis.zenheart.site/apps/${appName}/`,
       time: new Date().toLocaleTimeString(),
     })
     building.value = false
