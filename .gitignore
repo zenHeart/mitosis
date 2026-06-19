@@ -1,2 +1,46 @@
 settings.local.json
 .env.local
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+dist-ssr/
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Misc
+.cache/
+
+# Generated TypeScript/Vite artifacts
+*.d.ts
+*.tsbuildinfo
+src/**/*.d.ts
+src/**/*.js
+!src/**/*.vue.js*.d.ts
+*.tsbuildinfo

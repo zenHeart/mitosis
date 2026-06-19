@@ -1,0 +1,112 @@
+name: Mitosis Build
+
+on:
+  issues:
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  secrets: read
+
+jobs:
+  build:
+    if: |
+      contains(github.event.issue.labels.*.name, 'app/') ||
+      contains(github.event.issue.labels.*.name, 'build')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Parse app name and version
+        id: parse
+        run: |
+          APP_NAME=$(echo "${{ github.event.issue.labels }}" | grep -oP 'app/\K[^"]+' | head -1)
+          if [ -z "$APP_NAME" ]; then
+            APP_NAME=$(echo "${{ github.event.issue.title }}" | sed 's/build: //; s/ v.*//')
+          fi
+          echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
+
+          EXISTING=$(ls apps/$APP_NAME/ 2>/dev/null | grep -c '^v' || echo "0")
+          if [ "$EXISTING" -eq 0 ]; then
+            NEXT_VERSION="v0"
+          else
+            NEXT=$(($(ls apps/$APP_NAME/ | grep '^v' | sed 's/v//' | sort -n | tail -1) + 1))
+            NEXT_VERSION="v$NEXT"
+          fi
+          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Run Agent Loop
+        env:
+          STEP_TOKEN: ${{ secrets.STEP_TOKEN }}
+          APP_NAME: ${{ steps.parse.outputs.app_name }}
+          NEXT_VERSION: ${{ steps.parse.outputs.version }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          claude --api-key $STEP_TOKEN \
+            --api-base-url https://api.stepfun.com/step_plan \
+            --model step-3.7-flash \
+            --working-dir . \
+            --allowed-tools "Read,Write,Edit,Bash" \
+            --max-turns 50 \
+            --output-format text \
+            --prompt "
+你是一个应用构建 Agent。你的任务是构建一个 Vue 3 + TypeScript + Vite 应用。
+
+## 上下文
+- 应用名称: $APP_NAME
+- 版本: $NEXT_VERSION
+- 需求来源: Issue #$ISSUE_NUMBER
+- 目标目录: apps/$APP_NAME/$NEXT_VERSION/
+
+## 约束
+1. 输出必须是纯静态 HTML/CSS/JS（通过 Vite 构建）
+2. TypeScript strict 模式
+3. 不使用外部 CDN（全部打包进 dist）
+4. Vue 3 组合式 API + TypeScript
+5. 代码必须完整可运行
+
+## 步骤
+1. 读取 Issue #$ISSUE_NUMBER 了解需求
+2. 在 apps/$APP_NAME/$NEXT_VERSION/ 下创建完整项目:
+   - index.html
+   - vite.config.ts
+   - tsconfig.json
+   - package.json
+   - src/main.ts
+   - src/App.vue
+   - src/assets/main.css
+3. 运行 npm install 和 npm run build 验证
+4. 提交代码到仓库
+"
+
+      - name: Commit and push
+        run: |
+          git config user.name "mitosis-bot"
+          git config user.email "mitosis@users.noreply.github.com"
+          git add apps/${{ steps.parse.outputs.app_name }}/
+          git commit -m "feat: build ${{ steps.parse.outputs.app_name }} ${{ steps.parse.outputs.version }} (issue #${{ github.event.issue.number }})"
+          git push origin main
+
+      - name: Close issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue close ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --comment "✅ ${{ steps.parse.outputs.app_name }} ${{ steps.parse.outputs.version }} 构建完成！\n\n访问: https://blog.zenheart.site/mitosis/apps/${{ steps.parse.outputs.app_name }}/"
