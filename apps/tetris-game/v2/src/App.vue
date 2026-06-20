@@ -113,25 +113,24 @@ const bag: number[] = []
 
 const particles = ref<Particle[]>([])
 let particleId = 0
-const MAX_PARTICLES = 60 // 粒子上限，防止卡顿
+const MAX_PARTICLES = 30 // 粒子上限，防止卡顿
 
 function spawnParticles(row: number, color: string): void {
-  // 每 2 个格子生成 1 个粒子（5 个/行），减少 DOM 数量
+  // 每 3 个格子生成 1 个粒子（4 个/行），减少 DOM 数量
   const newParticles: Particle[] = []
-  for (let c = 0; c < COLS; c += 2) {
+  for (let c = 0; c < COLS; c += 3) {
     newParticles.push({
       id: particleId++,
       x: c * 30 + 15 + (Math.random() - 0.5) * 20,
       y: row * 30 + 15,
-      vx: (Math.random() - 0.5) * 4,
-      vy: (Math.random() - 0.5) * 4 - 2,
+      vx: (Math.random() - 0.5) * 3,
+      vy: (Math.random() - 0.5) * 3 - 1.5,
       color,
       life: 1,
       maxLife: 1,
-      size: Math.random() * 3 + 2,
+      size: Math.random() * 2.5 + 1.5,
     })
   }
-  // 合并 + 截断到上限
   const combined = [...particles.value, ...newParticles]
   particles.value = combined.length > MAX_PARTICLES
     ? combined.slice(combined.length - MAX_PARTICLES)
@@ -144,8 +143,8 @@ function updateParticles(): void {
       ...p,
       x: p.x + p.vx,
       y: p.y + p.vy,
-      vy: p.vy + 0.3,
-      life: p.life - 0.025,
+      vy: p.vy + 0.25,
+      life: p.life - 0.03,
     }))
     .filter((p) => p.life > 0)
 }
@@ -729,20 +728,7 @@ onUnmounted(() => {
       <!-- Game Board -->
       <main class="board-wrapper">
         <div class="board-container">
-          <!-- Grid overlay -->
-          <div class="board-grid">
-            <div
-              v-for="(_row, r) in ROWS"
-              :key="'r' + r"
-              class="board-row"
-            >
-              <div
-                v-for="(_, c) in COLS"
-                :key="'c' + c"
-                class="board-cell"
-              />
-            </div>
-          </div>
+          <!-- Grid lines via CSS background (no DOM nodes) -->
 
           <!-- Rendered cells -->
           <div class="board-cells">
@@ -768,7 +754,6 @@ onUnmounted(() => {
                   cell !== 0
                     ? {
                         backgroundColor: COLORS[cell],
-                        boxShadow: `0 0 10px ${GLOW_COLORS[cell]}`,
                       }
                     : {}
                 "
@@ -1222,9 +1207,13 @@ kbd {
   box-shadow: 0 0 40px rgba(0, 229, 255, 0.08),
     inset 0 0 30px rgba(0, 0, 0, 0.5);
   overflow: hidden;
+  /* Grid lines via background-image (no DOM nodes) */
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: calc(var(--cell-size) + var(--gap)) calc(var(--cell-size) + var(--gap));
 }
 
-.board-grid,
 .board-cells {
   position: absolute;
   top: 0;
@@ -1237,23 +1226,19 @@ kbd {
 
 .board-row {
   display: flex;
-  gap: 2px;
+  gap: var(--gap);
   flex: 1;
 }
 
 .board-cell {
   flex: 1;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.015);
-  border: 1px solid rgba(255, 255, 255, 0.03);
-  transition: background-color 0.08s, box-shadow 0.15s;
+  background: rgba(255, 255, 255, 0.02);
+  transition: background-color 0.06s;
 }
 
 .board-cell.filled {
-  border-color: rgba(255, 255, 255, 0.3);
-  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.3),
-    0 0 12px var(--block-glow, rgba(0, 229, 255, 0.5));
-  animation: cellAppear 0.15s ease-out;
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .board-cell.ghost {
@@ -1424,17 +1409,6 @@ kbd {
     opacity: 0.5;
   }
   50% {
-    opacity: 1;
-  }
-}
-
-@keyframes cellAppear {
-  from {
-    transform: scale(0.8);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
     opacity: 1;
   }
 }
