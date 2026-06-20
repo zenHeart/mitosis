@@ -11,6 +11,13 @@
 
 set -euo pipefail
 
+# ── 系统覆盖检测 ──────────────────────────────────────────────
+# 当 stop hook 连续多次 block 时，系统会设置此变量要求 hook 放行
+if [ "${CLAUDE_CODE_STOP_HOOK_ACTIVE:-}" = "true" ]; then
+  echo '{"hookSpecificOutput": {"hookEventName": "Stop", "decision": "allow", "additionalContext": "系统覆盖：连续多次 block 后强制放行。"}}'
+  exit 0
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 STATE_FILE="$PROJECT_DIR/.claude/.goal-state.json"
