@@ -14,12 +14,14 @@ node_modules/
 dist/
 dist-ssr/
 *.local
-# Build output assets (root only)
+# Build output assets (root dist only)
 dist/assets/
-# Allow app-specific entry points and assets
+# Build outputs for generated apps (not committed — CI rebuilds)
+apps/*/v*/dist/
+# Allow app-specific source and entry points
 !apps/*/v*/index.html
-!apps/*/v*/dist/
-!apps/*/v*/src/assets/
+!apps/*/v*/src/
+!apps/*/v*/package.json
 
 # Editor directories and files
 .vscode/*
