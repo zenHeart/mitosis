@@ -11,6 +11,20 @@ function ghUrl(repo: string, path: string): string {
   return `${GITHUB_API_BASE}/repos/${repo}${path}`
 }
 
+async function fetchWithTimeout(
+  input: RequestInfo,
+  init: RequestInit = {},
+  timeout = 10000
+): Promise<Response> {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), timeout)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(id)
+  }
+}
+
 export async function createIssue(
   token: string,
   repo: string,
@@ -58,35 +72,42 @@ export async function listApps(token: string, repo: string): Promise<AppInfo[]> 
   }
   if (token) headers.Authorization = `Bearer ${token}`
 
-  const res = await fetch(ghUrl(repo, '/contents/apps'), { headers })
-  if (!res.ok) return []
-  const items = await res.json()
-  if (!Array.isArray(items)) return []
+  try {
+    const res = await fetchWithTimeout(ghUrl(repo, '/contents/apps'), { headers })
+    if (!res.ok) return []
+    const items = await res.json()
+    if (!Array.isArray(items)) return []
 
-  const apps: AppInfo[] = []
-  for (const item of items) {
-    if (item.type === 'dir') {
-      const versionsRes = await fetch(ghUrl(repo, `/contents/apps/${item.name}`), {
-        headers,
-      })
-      if (versionsRes.ok) {
-        const versions = await versionsRes.json()
-        const versionDirs = Array.isArray(versions)
-          ? versions.filter((v: { type: string }) => v.type === 'dir')
-          : []
-        const latestVersion = versionDirs
-          .map((v: { name?: string }) => Number((v.name || '').replace(/^v/, '')))
-          .filter((v: number) => Number.isInteger(v) && v >= 0)
-          .sort((a: number, b: number) => b - a)[0] ?? 0
-        apps.push({
-          id: item.name,
-          name: item.name,
-          latestVersion,
-          url: `/apps/${item.name}/v${latestVersion}/`,
-          createdAt: item.created_at || '',
-        })
+    const apps: AppInfo[] = []
+    for (const item of items) {
+      if (item.type === 'dir') {
+        try {
+          const versionsRes = await fetchWithTimeout(ghUrl(repo, `/contents/apps/${item.name}`), {
+            headers,
+          })
+          if (!versionsRes.ok) continue
+          const versions = await versionsRes.json()
+          const versionDirs = Array.isArray(versions)
+            ? versions.filter((v: { type: string }) => v.type === 'dir')
+            : []
+          const latestVersion = versionDirs
+            .map((v: { name?: string }) => Number((v.name || '').replace(/^v/, '')))
+            .filter((v: number) => Number.isInteger(v) && v >= 0)
+            .sort((a: number, b: number) => b - a)[0] ?? 0
+          apps.push({
+            id: item.name,
+            name: item.name,
+            latestVersion,
+            url: `/apps/${item.name}/v${latestVersion}/`,
+            createdAt: item.created_at || '',
+          })
+        } catch {
+          continue
+        }
       }
     }
+    return apps
+  } catch {
+    return []
   }
-  return apps
 }

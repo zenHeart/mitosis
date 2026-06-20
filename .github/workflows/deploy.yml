@@ -33,6 +33,7 @@ jobs:
 
       - name: Build apps
         run: |
+          cd "$GITHUB_WORKSPACE"
           for app_dir in apps/*/; do
             [ -d "$app_dir" ] || continue
             for ver_dir in "$app_dir"v*/; do
@@ -42,7 +43,7 @@ jobs:
               cd "$ver_dir"
               npm ci --silent 2>/dev/null || npm install --silent 2>/dev/null || true
               npm run build 2>&1 | tail -1
-              cd ../..
+              cd "$GITHUB_WORKSPACE"
             done
           done
 

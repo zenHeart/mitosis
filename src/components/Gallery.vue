@@ -19,7 +19,7 @@ const LOCAL_APPS: AppInfo[] = [
 const authStore = useAuthStore()
 const isLoggedIn = computed(() => !!authStore.token)
 
-const apps = ref<AppInfo[]>([])
+const apps = ref<AppInfo[]>(LOCAL_APPS)
 const loading = ref(true)
 const error = ref('')
 const selectedApp = ref<string | undefined>(props.initialApp)
