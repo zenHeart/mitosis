@@ -12,8 +12,7 @@ const props = defineProps<{
 
 // ── 本地 fallback 数据（当 GitHub API 不可用时使用）─────────────────
 const LOCAL_APPS: AppInfo[] = [
-  { id: 'tetris-game', name: '俄罗斯方块', latestVersion: 1, url: '/apps/tetris-game/v1/', createdAt: '' },
-  { id: 'snake-game',   name: '贪吃蛇',   latestVersion: 1, url: '/apps/snake-game/v1/',   createdAt: '' },
+  { id: 'tetris-game', name: '俄罗斯方块 v2', latestVersion: 2, url: '/apps/tetris-game/v2/', createdAt: '' },
 ]
 
 // ── State ──────────────────────────────────────────────────────────
