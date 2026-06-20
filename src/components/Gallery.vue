@@ -2,7 +2,7 @@
 import { ref, watch, nextTick, computed, onMounted } from 'vue'
 import type { AppInfo } from '../types/app'
 import { useAuthStore } from '../stores/auth'
-import { getLoginUrl, isOAuthConfigured } from '../composables/useAuth'
+import { getLoginUrl } from '../composables/useAuth'
 import { REPO_FULL_NAME } from '../config/repo'
 import { listApps } from '../composables/useGitHubAPI'
 
@@ -25,7 +25,6 @@ const error = ref('')
 const selectedApp = ref<string | undefined>(props.initialApp)
 const selectedCardRef = ref<HTMLElement | null>(null)
 const appsGridRef = ref<HTMLElement | null>(null)
-const oauthReady = computed(() => isOAuthConfigured)
 
 function setSelectedCard(el: HTMLElement | null) {
   selectedCardRef.value = el
@@ -36,7 +35,6 @@ function scrollToApps() {
 }
 
 function handleLogin() {
-  if (!oauthReady.value) return
   window.location.href = getLoginUrl()
 }
 
@@ -114,7 +112,6 @@ onMounted(async () => {
 
       <section class="cta-section">
         <p v-if="isLoggedIn">想构建自己的应用？进入 Workspace 开始。</p>
-        <p v-else-if="!oauthReady">GitHub OAuth 未配置（缺少 Client ID），登录功能暂不可用。</p>
         <p v-else>想构建自己的应用？仅仓库所有者登录后可使用 AI 构建。</p>
         <div class="cta-buttons">
           <button @click="scrollToApps" class="cta-btn cta-browse">
@@ -123,7 +120,6 @@ onMounted(async () => {
           <button
             v-if="!isLoggedIn"
             @click="handleLogin"
-            :disabled="!oauthReady"
             class="cta-btn cta-login"
           >
             🔨 使用 GitHub 登录后创建自己的应用
@@ -327,12 +323,6 @@ onMounted(async () => {
 
 .cta-login:hover {
   opacity: 0.9;
-}
-
-.cta-login:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  filter: grayscale(0.5);
 }
 
 .cta-btn {
