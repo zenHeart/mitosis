@@ -1,4 +1,4 @@
-const DEFAULT_MODEL = 'step-2-16k'
+const DEFAULT_MODEL = 'step-3.7-flash'
 
 export interface StepFunMessage {
   role: 'system' | 'user' | 'assistant'

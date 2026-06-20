@@ -1,23 +1,46 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch, nextTick, computed, onMounted } from 'vue'
 import type { AppInfo } from '../types/app'
+import { useAuthStore } from '../stores/auth'
+import { getLoginUrl } from '../composables/useAuth'
+import { REPO_FULL_NAME } from '../config/repo'
 
 const props = defineProps<{
   initialApp?: string
 }>()
 
+const authStore = useAuthStore()
+const isLoggedIn = computed(() => !!authStore.token)
+
 const apps = ref<AppInfo[]>([])
 const loading = ref(true)
 const error = ref('')
 const selectedApp = ref<string | undefined>(props.initialApp)
+const selectedCardRef = ref<HTMLElement | null>(null)
+const appsGridRef = ref<HTMLElement | null>(null)
 
-const REPO_OWNER = 'zenHeart'
-const REPO_NAME = 'mitosis'
+function setSelectedCard(el: HTMLElement | null) {
+  selectedCardRef.value = el
+}
+
+function scrollToApps() {
+  appsGridRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function handleLogin() {
+  window.location.href = getLoginUrl()
+}
+
+watch(selectedApp, async (newApp) => {
+  if (!newApp) return
+  await nextTick()
+  selectedCardRef.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+})
 
 // Public GitHub API — no auth required for public repos
 async function listAppsPublic(): Promise<AppInfo[]> {
   const res = await fetch(
-    `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/apps`
+    `https://api.github.com/repos/${REPO_FULL_NAME}/contents/apps`
   )
   if (!res.ok) return []
   const items = await res.json()
@@ -27,18 +50,22 @@ async function listAppsPublic(): Promise<AppInfo[]> {
   for (const item of items) {
     if (item.type === 'dir') {
       const versionsRes = await fetch(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/apps/${item.name}`
+        `https://api.github.com/repos/${REPO_FULL_NAME}/contents/apps/${item.name}`
       )
       if (versionsRes.ok) {
         const versions = await versionsRes.json()
         const versionDirs = Array.isArray(versions)
           ? versions.filter((v: { type: string }) => v.type === 'dir')
           : []
+        const latestVersion = versionDirs
+          .map((v: { name?: string }) => Number((v.name || '').replace(/^v/, '')))
+          .filter((v: number) => Number.isInteger(v) && v >= 0)
+          .sort((a: number, b: number) => b - a)[0] ?? 0
         apps.push({
           id: item.name,
           name: item.name,
-          latestVersion: versionDirs.length,
-          url: `/apps/${item.name}/`,
+          latestVersion,
+          url: `/apps/${item.name}/v${latestVersion}/`,
           createdAt: '',
         })
       }
@@ -85,10 +112,11 @@ onMounted(async () => {
         <div v-else-if="apps.length === 0" class="status empty">
           暂无应用，登录后可以开始构建。
         </div>
-        <div v-else class="apps-grid">
+        <div v-else class="apps-grid" ref="appsGridRef">
           <div
             v-for="app in apps"
             :key="app.id"
+            :ref="(el) => setSelectedCard(selectedApp === app.id ? el as HTMLElement : null)"
             :class="['app-item', { selected: selectedApp === app.id }]"
             @click="openApp(app)"
           >
@@ -103,15 +131,25 @@ onMounted(async () => {
       </section>
 
       <section class="cta-section">
-        <p>想构建自己的应用？</p>
-        <a href="https://github.com/zenHeart/mitosis" target="_blank" rel="noopener" class="cta-btn">
-          ⭐ Star 后使用
-        </a>
+        <p v-if="isLoggedIn">想构建自己的应用？</p>
+        <p v-else>想构建自己的应用？登录后即可使用 AI 构建。</p>
+        <div class="cta-buttons">
+          <button @click="scrollToApps" class="cta-btn cta-browse">
+            🎮 浏览应用
+          </button>
+          <button
+            v-if="!isLoggedIn"
+            @click="handleLogin"
+            class="cta-btn cta-login"
+          >
+            🔨 使用 GitHub 登录后创建自己的应用
+          </button>
+        </div>
       </section>
     </main>
 
     <footer class="gallery-footer">
-      <p>Powered by <a href="https://github.com/zenHeart/mitosis" target="_blank" rel="noopener">Mitosis</a> · MIT License</p>
+      <p>Powered by <a :href="`https://github.com/${REPO_FULL_NAME}`" target="_blank" rel="noopener">Mitosis</a> · MIT License</p>
     </footer>
   </div>
 </template>
@@ -280,20 +318,47 @@ onMounted(async () => {
   font-size: 0.95rem;
 }
 
+.cta-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.cta-browse {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.cta-browse:hover {
+  border-color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
+.cta-login {
+  background: var(--accent);
+  color: #fff;
+}
+
+.cta-login:hover {
+  opacity: 0.9;
+}
+
 .cta-btn {
   display: inline-block;
   padding: 0.75rem 2rem;
-  background: var(--accent);
-  color: #fff;
   border-radius: 8px;
   text-decoration: none;
   font-weight: 500;
   font-size: 0.95rem;
-  transition: opacity 0.2s;
+  transition: all 0.2s;
+  cursor: pointer;
+  border: none;
 }
 
 .cta-btn:hover {
-  opacity: 0.9;
+  transform: translateY(-1px);
 }
 
 .gallery-footer {

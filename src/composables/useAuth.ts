@@ -1,4 +1,5 @@
 import type { GitHubUser } from '../types/auth'
+import { REPO_NAME } from '../config/repo'
 
 // @ts-ignore - injected at build time via vite define
 // eslint-disable-next-line no-undef
@@ -55,7 +56,7 @@ export async function verifyRepoOwnership(
   token: string,
   userLogin: string
 ): Promise<boolean> {
-  const res = await fetch(`https://api.github.com/repos/${userLogin}/mitosis`, {
+  const res = await fetch(`https://api.github.com/repos/${userLogin}/${REPO_NAME}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',

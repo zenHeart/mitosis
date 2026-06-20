@@ -1,18 +1,45 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, computed } from 'vue'
+import { useAuthStore } from '../stores/auth'
+import { verifyRepoOwnership } from '../composables/useAuth'
+import { REPO_NAME, REPO_FULL_NAME } from '../config/repo'
 
-defineProps<{
+const props = defineProps<{
   userName?: string
 }>()
 
 const emit = defineEmits<{
   (e: 'complete'): void
+  (e: 'browse'): void
 }>()
 
+const authStore = useAuthStore()
 const stepToken = ref('')
 const submitting = ref(false)
 const error = ref('')
 const verified = ref(false)
+const isRepoOwner = ref<boolean | null>(null)
+const checkingRepo = ref(true)
+const repoOwner = computed(() => authStore.user?.login || props.userName || 'zenHeart')
+const userRepo = computed(() => `${repoOwner.value}/${REPO_NAME}`)
+
+onMounted(async () => {
+  const token = authStore.token || sessionStorage.getItem('mitosis_token') || ''
+  const storedUser = sessionStorage.getItem('mitosis_user')
+  const userLogin = authStore.user?.login || (storedUser ? JSON.parse(storedUser).login : '')
+
+  if (token && userLogin) {
+    try {
+      const owned = await verifyRepoOwnership(token, userLogin)
+      isRepoOwner.value = owned
+    } catch {
+      isRepoOwner.value = false
+    }
+  } else {
+    isRepoOwner.value = false
+  }
+  checkingRepo.value = false
+})
 
 async function handleSubmit() {
   if (!stepToken.value.trim()) {
@@ -57,7 +84,67 @@ function handleConfirm() {
       <p class="greeting">你好，{{ userName || '用户' }}！</p>
       <p class="desc">欢迎来到 Mitosis。在开始创造之前，需要进行一些简单配置。</p>
 
-      <div v-if="!verified" class="form">
+      <div v-if="checkingRepo" class="status">检查仓库权限...</div>
+
+      <div v-else-if="!isRepoOwner" class="non-owner-guide">
+        <div class="info-banner">
+          <span class="icon">ℹ️</span>
+          <div>
+            <h3>欢迎体验 Mitosis！</h3>
+            <p>当前登录的 GitHub 账号 <strong>{{ userName || '用户' }}</strong> 还没有可用的 <code>{{ userRepo }}</code> 仓库。</p>
+          </div>
+        </div>
+
+        <div class="guide-box">
+          <h3>创建你自己的 Mitosis 仓库</h3>
+          <p> Mitosis 是一个 AI 驱动的应用构建平台。要使用完整功能，你需要：</p>
+
+          <div class="step">
+            <span class="step-num">1</span>
+            <div>
+              <p>Fork 此仓库到你的 GitHub 账号：</p>
+              <a
+                :href="`https://github.com/${REPO_FULL_NAME}/fork`"
+                target="_blank"
+                rel="noopener"
+                class="link"
+              >
+                github.com/{{ REPO_FULL_NAME }}/fork ↗
+              </a>
+            </div>
+          </div>
+
+          <div class="step">
+            <span class="step-num">2</span>
+            <div>
+              <p>在你的 fork 中启用 GitHub Pages（Settings → Pages → Source: gh-pages branch）</p>
+            </div>
+          </div>
+
+          <div class="step">
+            <span class="step-num">3</span>
+            <div>
+              <p>配置 Cloudflare Worker（参考 <code>worker/</code> 目录）处理 OAuth 代理</p>
+            </div>
+          </div>
+
+          <div class="step">
+            <span class="step-num">4</span>
+            <div>
+              <p>在仓库 Secrets 中添加 StepFun API Token（名称: <code>STEP_TOKEN</code>）</p>
+            </div>
+          </div>
+        </div>
+
+        <p class="hint-text">
+          或者，你可以继续浏览已部署的公开应用，无需配置。
+        </p>
+        <button @click="emit('browse')" class="btn-secondary">
+          浏览公开应用 →
+        </button>
+      </div>
+
+      <div v-else-if="!verified" class="form">
         <label class="label">StepFun API Token</label>
         <p class="hint">你的 Token 将用于驱动 AI Agent 构建应用。</p>
         <input
@@ -92,12 +179,12 @@ function handleConfirm() {
             <div>
               <p>进入你的仓库 Secrets 页面：</p>
               <a
-                :href="`https://github.com/zenHeart/mitosis/settings/secrets`"
+                :href="`https://github.com/${userRepo}/settings/secrets`"
                 target="_blank"
                 rel="noopener"
                 class="link"
               >
-                github.com/zenHeart/mitosis/settings/secrets ↗
+                github.com/{{ userRepo }}/settings/secrets ↗
               </a>
             </div>
           </div>
@@ -146,6 +233,73 @@ function handleConfirm() {
   padding: 2.5rem;
   max-width: 520px;
   width: 100%;
+}
+
+.status {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-secondary);
+}
+
+.non-owner-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.info-banner {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 1rem;
+  background: rgba(0, 229, 255, 0.05);
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  border-radius: 8px;
+}
+
+.info-banner .icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.info-banner h3 {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.info-banner p {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.info-banner strong {
+  color: var(--accent);
+}
+
+.hint-text {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  text-align: center;
+  margin: 0;
+}
+
+.btn-secondary {
+  margin-top: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: rgba(0, 229, 255, 0.1);
 }
 
 h1 {

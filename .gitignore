@@ -1,3 +1,6 @@
+.claude/.goal-verdict
+.claude/verification-report.txt
+.claude/settings.local.json
 settings.local.json
 .env.local
 
@@ -38,6 +41,8 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+apps/*/v*/test-results/
+apps/*/v*/playwright-report/
 
 # Misc
 .cache/

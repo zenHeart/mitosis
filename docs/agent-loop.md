@@ -1,135 +1,95 @@
-# Agent Loop 技术规格
+# CI Agent Loop
 
-## 概述
+本文档描述 GitHub Actions 中的 Agent Loop。它不同于本地 Claude Code `/goal` loop。
 
-Agent Loop 是 Mitosis 的核心引擎，负责在 GitHub Actions 中执行应用构建任务。
+## 两条 Loop 路径
 
-## 运行环境
+| 场景 | 入口 | 可用能力 | 验证方式 |
+|------|------|----------|----------|
+| 本地 Claude Code | `CLAUDE.md` + `.claude/rules/goal-loop.md` + `/goal` | hooks、MCP、subagent、project memory | verifier + Stop Hook |
+| GitHub Actions CI | `.github/workflows/mitosis.yml` | `claude -p --bare` | 显式 shell loop + `worker/verify-build.sh` |
 
-- **运行时:** GitHub Actions (ubuntu-latest)
-- **Agent:** Claude Code CLI (`@anthropic-ai/claude-code`)
-- **LLM 后端:** StepFun API (`https://api.stepfun.com/step_plan`)
-- **模型:** `step-3.7-flash`
-- **工作目录:** 用户仓库根目录
-- **最大轮数:** 80
-- **超时:** GitHub Actions 默认 6 小时（ubuntu-latest）
+`--bare` 会跳过 hooks、skills、plugins、MCP、auto memory 和 `CLAUDE.md`/`.claude/rules/*.md` 自动发现。因此 CI 不能依赖本地规则或本地 verifier 自动运行。
 
-## 执行流程
+本地 `.claude/settings.json` 禁用 bypass permissions 以保护开发环境；CI 在隔离的 GitHub runner 中使用 `--bare` 并显式传入 `--permission-mode bypassPermissions`、`--allowed-tools` 和 verifier 命令。两条路径共享验收合同，但不共享本地自动发现配置。
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                    GitHub Actions Trigger                  │
-│              (Issue opened / labeled / commented)          │
-└────────────────────────┬───────────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────────┐
-│  Step 1: 环境准备                                         │
-│  ├── checkout (fetch-depth: 0)                           │
-│  ├── setup-node@v4 (node-version: 20)                    │
-│  └── npm install -g @anthropic-ai/claude-code            │
-└────────────────────────┬───────────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────────┐
-│  Step 2: 解析任务                                         │
-│  ├── 从 Issue label 提取 app 名称                         │
-│  ├── 从 Issue title 提取版本号                            │
-│  └── 计算下一个版本号 (v0, v1, v2...)                     │
-└────────────────────────┬───────────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────────┐
-│  Step 3: Agent Loop (Claude Code CLI)                    │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │  Agent 循环（最多 50 轮）                           │  │
-│  │                                                    │  │
-│  │  每轮:                                             │  │
-│  │  1. 读取当前状态（需求、已写文件）                   │  │
-│  │  2. 决定下一步操作                                 │  │
-│  │  3. 执行: Read / Write / Edit / Bash               │  │
-│  │  4. 验证构建: npm run build                        │  │
-│  │  5. 通过 → 提交; 失败 → 重试                       │  │
-│  └────────────────────────────────────────────────────┘  │
-└────────────────────────┬───────────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────────┐
-│  Step 4: 提交与部署                                       │
-│  ├── git commit (apps/{name}/v{n}/)                      │
-│  ├── git push                                            │
-│  ├── 克隆 gh-pages branch，复制 dist/ 到                 │
-│  │   apps/{name}/v{n}/ 目录                              │
-│  │   └── mitosis.zenheart.site/apps/{name}/v{n}/         │
-│  └── 关闭 Issue + 评论完成                               │
-└──────────────────────────────────────────────────────────┘
+## CI 输入
+
+- GitHub Issue 正文：生成应用的唯一权威规格。
+- Issue label：`app/{app-name}`。
+- 安全门控：Issue 作者必须是仓库 owner，或由仓库 owner 用 `/build`/`owner-approved` 批准。
+- `worker/prompt.txt`：构建指令模板。
+- GitHub Secrets：`STEP_TOKEN`。
+
+## CI 执行流程
+
+```mermaid
+flowchart TD
+    A["Issue opened / labeled / /build"] --> B["Owner approval gate"]
+    B -->|unauthorized| X["comment needs owner approval; stop"]
+    B -->|authorized| C["Parse app label + next version"]
+    C --> D["Prepare prompt from worker/prompt.txt"]
+    D --> E["claude -p --bare"]
+    E --> F["cd apps/{name}/{version}"]
+    F --> G["bash ../../../worker/verify-build.sh"]
+    G -->|FAIL and attempts left| H["append verifier summary to prompt"]
+    H --> E
+    G -->|FAIL after max attempts| I["label status:failed; fail job"]
+    G -->|PASS| J["label status:review; create draft PR"]
+    J --> K["human review"]
+    K -->|merge to master| L["deploy workflow publishes"]
 ```
 
-## Agent 指令模板
+## CI 命令形状
 
-实际模板见 `worker/prompt.txt`。核心要求:
+```bash
+claude -p \
+  --model step-3.7-flash \
+  --bare \
+  --permission-mode bypassPermissions \
+  --max-budget-usd 5 \
+  --allowed-tools "Read,Write,Edit,Bash" \
+  --max-turns 80 \
+  --output-format text \
+  "$PROMPT"
 
-```markdown
-你是一个应用构建 Agent。你的任务是构建一个 Vue 3 + TypeScript + Vite 应用。
-
-## 约束
-1. 输出必须是纯静态 HTML/CSS/JS（通过 Vite 构建）
-2. TypeScript strict 模式
-3. 不使用外部 CDN（全部打包进 dist）
-4. Vue 3 组合式 API + TypeScript
-5. 代码必须完整可运行
-
-## 执行步骤
-1. 读取 Issue #__ISSUE_NUMBER__ 了解需求
-2. 在 apps/{APP_NAME}/{VERSION}/ 下创建完整项目:
-   - index.html
-   - vite.config.ts
-   - tsconfig.json
-   - package.json
-   - src/main.ts
-   - src/App.vue
-   - src/assets/main.css
-3. cd apps/{APP_NAME}/{VERSION}/ 后再执行任何 npm 命令
-4. npm install
-5. npm run build — 如果失败则修正后重试，直到成功
-6. 确认 dist/ 目录已生成
+cd "apps/$APP_NAME/$NEXT_VERSION"
+bash ../../../worker/verify-build.sh
 ```
 
-## 工具权限
+## Retry Policy
 
-Agent 允许使用的工具:
+- 最多 3 次 Agent 尝试。
+- 每次 verifier 失败后，将失败摘要追加到下一轮 prompt。
+- 3 次仍失败则 CI 失败。
+- verifier 通过前不得 commit、push、deploy。
+- verifier 通过后只创建 draft PR；合入 `master` 后才部署。
 
-| 工具 | 用途 | 限制 |
-|------|------|------|
-| `Read` | 读取文件和目录 | 仅限仓库内 |
-| `Write` | 创建新文件 | 仅限 `apps/` 目录 |
-| `Edit` | 编辑已有文件 | 仅限 `apps/` 目录 |
-| `Bash` | 执行 shell 命令 | `npm install`, `npm run build`, `git add/commit` |
+## Issue 状态
 
-Agent **不允许** 使用的工具:
-- 访问网络（除 npm install 外）
-- 修改仓库根目录文件
-- 执行危险命令（rm -rf /, curl 等）
+| 状态 label | 含义 |
+|------------|------|
+| `status:building` | Agent 正在生成应用 |
+| `status:verifying` | verifier 正在运行 |
+| `status:review` | 自动验证通过，等待人工审查 |
+| `status:failed` | 自动生成或验证失败 |
+| `owner-approved` | owner 批准外部 IssueOps 请求 |
 
-## 超时与重试
+## Verifier
 
-| 参数 | 值 |
-|------|-----|
-| Actions 超时 | 30 分钟 |
-| 最大 Agent 轮数 | 80 |
-| 构建失败重试 | 3 次（自动修正代码后重试） |
-| 单次 API 调用超时 | 120s |
+`worker/verify-build.sh` 从生成应用目录运行：
 
-## 错误处理
-
-```
-构建失败 → Agent 分析错误信息 → 修正代码 → 重试
-    │
-    ├─ 3 次重试成功 → 继续部署
-    │
-    └─ 3 次失败 → Issue 评论错误信息 → 人工介入
+```bash
+cd apps/{name}/v{n}
+bash ../../../worker/verify-build.sh
 ```
 
----
+最低门控：
 
-*Agent Loop 是 Mitosis 的核心引擎，确保其稳定性和正确性是 L0 优先级。*
+- 必要文件存在。
+- `dist/index.html` 和 assets 存在。
+- 生成应用 Vite `base: './'`。
+- TypeScript strict。
+- 页面可加载。
+- 关键交互有响应。
+- 游戏/工具类应用满足对应 P1 标准。

@@ -66,12 +66,15 @@ export async function listApps(token: string, repo: string): Promise<AppInfo[]> 
         const versionDirs = Array.isArray(versions)
           ? versions.filter((v: { type: string }) => v.type === 'dir')
           : []
-        const latestVersion = versionDirs.length
+        const latestVersion = versionDirs
+          .map((v: { name?: string }) => Number((v.name || '').replace(/^v/, '')))
+          .filter((v: number) => Number.isInteger(v) && v >= 0)
+          .sort((a: number, b: number) => b - a)[0] ?? 0
         apps.push({
           id: item.name,
           name: item.name,
           latestVersion,
-          url: `/apps/${item.name}/`,
+          url: `/apps/${item.name}/v${latestVersion}/`,
           createdAt: item.created_at || '',
         })
       }

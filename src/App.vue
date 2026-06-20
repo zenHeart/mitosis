@@ -46,11 +46,20 @@ function onSetupComplete() {
   authStore.setSetupComplete()
   currentView.value = 'workspace'
 }
+
+function onBrowsePublic() {
+  currentView.value = 'gallery'
+}
 </script>
 
 <template>
   <Gallery v-if="view === 'gallery'" :initial-app="initialApp" />
   <LoginPage v-else-if="view === 'login'" @login-success="onLoginSuccess" />
-  <SetupPage v-else-if="view === 'setup'" @complete="onSetupComplete" />
+  <SetupPage
+    v-else-if="view === 'setup'"
+    :user-name="authStore.user?.login"
+    @complete="onSetupComplete"
+    @browse="onBrowsePublic"
+  />
   <Workspace v-else />
 </template>

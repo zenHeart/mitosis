@@ -5,7 +5,9 @@ import { usePolling } from '../composables/usePolling'
 import { createIssue, getIssue, listApps } from '../composables/useGitHubAPI'
 import { chatWithStepFun } from '../composables/useStepFun'
 import AppCard from './AppCard.vue'
+import ChatInput from './ChatInput.vue'
 import type { BuildIssue, AppInfo } from '../types/app'
+import { REPO_FULL_NAME, userRepoFullName } from '../config/repo'
 
 const authStore = useAuthStore()
 const { start, stopAll } = usePolling()
@@ -17,13 +19,141 @@ const building = ref(false)
 const activeIssue = ref<BuildIssue | null>(null)
 const thinking = ref(false)
 const stepToken = ref('')
+const clarifying = ref(false)
+const clarifyingMsg = ref('')
+const triageLog = ref<string[]>([])
+const pendingBuildContext = ref('')
 
-const repo = computed(() => `${authStore.user?.login || 'zenHeart'}/mitosis`)
-const isOwner = computed(() => authStore.user?.login === 'zenHeart')
+// ─── 分流协议 ───────────────────────────────────────────
+type TriageAction = 'chat' | 'build' | 'platform' | 'clarify'
+
+interface TriageResult {
+  action: TriageAction
+  intent: 'question' | 'create_app' | 'modify_platform' | 'unknown'
+  complexity: 'simple' | 'medium' | 'complex'
+  scope: 'none' | 'apps-only' | 'platform'
+  basedOn?: string
+}
+
+const TRIAGE_LABELS: Record<string, string> = {
+  chat: '直接回复', build: 'Agent Loop', platform: 'Issue+审核', clarify: '澄清',
+}
+const INTENT_LABELS: Record<string, string> = {
+  question: '询问', create_app: '创建应用', modify_platform: '修改平台', unknown: '未知',
+}
+
+function triageMessage(text: string): TriageResult {
+  const lower = text.toLowerCase()
+
+  // 平台关键词 — 触及 src/、CI、认证、部署、Mitosis 自身
+  const isPlatform =
+    /src\//i.test(text) ||
+    /mitosis 本身|mitosis 平台|优化 Mitosis|改进 Mitosis/.test(text) ||
+    /(?:GitHub Actions|workflow|CI|OAuth|认证|deploy|gh-pages|composable|组件库|架构|核心逻辑)/.test(text) ||
+    /(?:Workspace|SetupPage|Gallery|ChatInput)/.test(text)
+
+  // 询问关键词
+  const isQuestion =
+    /^(?:怎么|如何|为什么|是什么|能不能|可以|帮忙|help|how|what|why)/.test(lower) ||
+    /[?？]$/.test(text.trim()) ||
+    /(?:进度|状态|帮助|介绍|解释|说明|区别|是什么)/.test(text)
+
+  // 创建应用关键词
+  const isAppBuild =
+    /(?:做一个|创建.*应用|建.*应用|写.*应用|开发.*应用|实现.*应用|做个|搞个|弄个|做个游戏|做个工具)/.test(text) ||
+    /(?:build|create.*app|make.*app|new app)/i.test(lower)
+
+  // 简单微调关键词（R2：直接回复，不创建 Issue）
+  const isSimpleTweak =
+    /(?:改.*颜色|改.*字体|改.*大小|调.*大|调.*小|加.*文字|改.*样式|换个.*图标|加.*按钮|改.*背景|字体|颜色|间距|圆角|阴影)/.test(text)
+
+  // "继续迭代"关键词
+  const isContinue = /(?:继续|上次|迭代|在.*基础上|基于.*继续)/.test(text)
+
+  // 提取"基于哪个应用"
+  let basedOn: string | undefined
+  const m = text.match(/(?:在|基于)\s*([a-z0-9-]+)\s*(?:的?基础上|之上)/i)
+  if (m) basedOn = m[1].toLowerCase()
+
+  // ── 分流决策 ──
+  // R1: 纯询问（无构建意图，无平台范围）
+  if (isQuestion && !isAppBuild && !isPlatform && !isContinue) {
+    return { action: 'chat', intent: 'question', complexity: 'simple', scope: 'none' }
+  }
+  // R4/R5: 平台变更
+  if (isPlatform) {
+    return { action: 'platform', intent: 'modify_platform', complexity: 'medium', scope: 'platform' }
+  }
+  // R2: 已有应用的简单微调
+  if (isSimpleTweak && !isAppBuild && !isContinue) {
+    return { action: 'chat', intent: 'create_app', complexity: 'simple', scope: 'apps-only', basedOn }
+  }
+  // R3: 应用构建（新建 or 复杂修改 or 继续迭代）
+  if (isAppBuild || isContinue) {
+    return {
+      action: 'build',
+      intent: 'create_app',
+      complexity: isContinue || basedOn ? 'medium' : 'complex',
+      scope: 'apps-only',
+      basedOn,
+    }
+  }
+  // R6: 无法确定 → 澄清
+  return { action: 'clarify', intent: 'unknown', complexity: 'simple', scope: 'none' }
+}
+
+function logTriage(text: string, t: TriageResult) {
+  const summary = text.length > 30 ? text.slice(0, 30) + '…' : text
+  const log = `[TRIAGE] 消息: "${summary}" | 意图: ${INTENT_LABELS[t.intent]} | 决策: ${TRIAGE_LABELS[t.action]}${t.basedOn ? ' | based-on: ' + t.basedOn : ''}`
+  console.log(log)
+  triageLog.value.push(log)
+}
+
+// ── 系统 Prompt 模板 ──
+function chatSystemPrompt(): string {
+  return `你是 Mitosis 平台的助手。用户正在和你聊天或询问问题。
+简短、友好地回答。如果用户只是打招呼，正常回应即可。
+当前时间: ${new Date().toLocaleString('zh-CN')}`
+}
+
+function buildSystemPrompt(triage: TriageResult): string {
+  const basedOnHint = triage.basedOn
+    ? `\n用户想在 ${triage.basedOn} 的基础上继续开发。Issue 中请包含 based-on 信息。`
+    : ''
+  return `你是一个应用构建助手。用户想构建或迭代一个应用。
+请：
+1. 理解用户需求
+2. 给出简短的技术方案概述（2-3 句话）
+3. 如果需求足够明确，在回复末尾加一行：BUILD_APP: [应用英文名]
+   应用名用英文小写短横线连接，不要有空格${basedOnHint}
+
+如果需求还不明确需要更多信息，先问清楚，不要加 BUILD_APP。
+当前时间: ${new Date().toLocaleString('zh-CN')}`
+}
+
+function platformSystemPrompt(): string {
+  return `用户提到了 Mitosis 平台本身的修改（涉及 src/、CI、认证、部署等平台代码）。
+你的任务：
+1. 分析这个修改的影响范围和注意事项
+2. 给出技术建议
+3. 提醒用户：平台代码变更需要人工审核，不会自动构建
+
+请正常回复分析，不要包含 BUILD_APP 标记。
+当前时间: ${new Date().toLocaleString('zh-CN')}`
+}
+
+const repo = computed(() => authStore.user?.login ? userRepoFullName(authStore.user.login) : REPO_FULL_NAME)
+const isOwner = computed(() => !!authStore.user?.login && authStore.setupComplete)
 
 onMounted(async () => {
   if (typeof window !== 'undefined') {
     stepToken.value = localStorage.getItem('mitosis_step_token') || ''
+    const params = new URLSearchParams(window.location.search)
+    const refApp = params.get('ref')
+    if (refApp) {
+      inputText.value = `我想在 ${refApp} 的基础上继续开发，帮我...`
+      window.history.replaceState({}, '', window.location.pathname)
+    }
   }
   await loadApps()
 })
@@ -48,33 +178,57 @@ async function loadApps() {
 }
 
 async function handleSend() {
-  // Only the repo owner can send build prompts
   if (!isOwner.value) return
   const text = inputText.value.trim()
   if (!text || building.value || !authStore.token) return
+
+  // 如果正在澄清，把用户回复当作澄清回答重新分流
+  const previousBuildContext = pendingBuildContext.value
+  if (clarifying.value) {
+    clarifying.value = false
+    clarifyingMsg.value = ''
+  }
 
   messages.value.push({ role: 'user', text, time: new Date().toLocaleTimeString() })
   inputText.value = ''
   thinking.value = true
 
   try {
+    // ── 1. 分流 ──
+    const triage = triageMessage(text)
+    logTriage(text, triage)
+
+    // ── 2. 澄清（R6）──
+    if (triage.action === 'clarify') {
+      clarifying.value = true
+      clarifyingMsg.value = `我需要确认一下你的意图：
+
+1. **你是想创建一个新应用，还是修改已有的应用？**
+   - 新应用：请告诉我类型（游戏/工具/编辑器）和核心功能
+   - 修改已有应用：请告诉我应用名称和具体要改什么
+
+2. **这个改动是在 Mitosis 平台本身，还是在某个已部署的应用上？**`
+      messages.value.push({
+        role: 'assistant',
+        text: clarifyingMsg.value,
+        time: new Date().toLocaleTimeString(),
+      })
+      return
+    }
+
+    // ── 3. 调用 StepFun ──
     const history = getConversationHistory()
-    const systemPrompt = `你是一个应用构建助手。用户会描述他们想构建的应用。
-当用户描述了一个明确的应用需求时，你需要：
-1. 理解用户需求
-2. 给出简短的技术方案概述（2-3句话）
-3. 回复以 "BUILD_APP: [应用英文名]" 结尾，应用名用英文小写短横线连接
+    const systemPrompt =
+      triage.action === 'chat'
+        ? chatSystemPrompt()
+        : triage.action === 'build'
+          ? buildSystemPrompt(triage)
+          : platformSystemPrompt()
 
-如果用户只是在打招呼或聊天，正常回复即可，不要包含 BUILD_APP 标记。
-
-当前时间: ${new Date().toLocaleString('zh-CN')}`
-
-    const fullMessages = [
+    const response = await chatWithStepFun(stepToken.value, [
       { role: 'system' as const, content: systemPrompt },
       ...history,
-    ]
-
-    const response = await chatWithStepFun(stepToken.value, fullMessages)
+    ])
     const trimmed = response.trim()
 
     messages.value.push({
@@ -83,12 +237,28 @@ async function handleSend() {
       time: new Date().toLocaleTimeString(),
     })
 
-    // Check if AI wants to build an app
-    const buildMatch = trimmed.match(/BUILD_APP:\s*([a-z0-9-]+)/i)
-    if (buildMatch) {
-      const appName = buildMatch[1].toLowerCase()
-      await createBuild(appName, text)
+    // ── 4. 根据分流结果执行 ──
+    if (triage.action === 'build') {
+      // R3: 检查 BUILD_APP 标记 → 创建 Issue → 触发 CI
+      const buildMatch = trimmed.match(/BUILD_APP:\s*([a-z0-9-]+)/i)
+      if (buildMatch) {
+        const appName = buildMatch[1].toLowerCase()
+        const description = previousBuildContext
+          ? `${previousBuildContext}\n\n## 澄清回答\n\n${text}`
+          : text
+        pendingBuildContext.value = ''
+        await createBuild(appName, description, triage.basedOn)
+      } else {
+        clarifying.value = true
+        pendingBuildContext.value = previousBuildContext
+          ? `${previousBuildContext}\n\n## 用户补充\n\n${text}\n\n## AI 澄清\n\n${trimmed}`
+          : `## 初始需求\n\n${text}\n\n## AI 澄清\n\n${trimmed}`
+      }
+    } else if (triage.action === 'platform') {
+      // R4/R5: 创建 Issue + 人工审核标记（不触发 CI）
+      await createPlatformIssue(text, trimmed)
     }
+    // R1/R2 (chat): 直接回复，无需进一步操作
   } catch (e) {
     messages.value.push({
       role: 'system',
@@ -100,7 +270,7 @@ async function handleSend() {
   }
 }
 
-async function createBuild(appName: string, description: string) {
+async function createBuild(appName: string, description: string, basedOn?: string) {
   if (building.value || !authStore.token || !isOwner.value) return
 
   building.value = true
@@ -108,14 +278,16 @@ async function createBuild(appName: string, description: string) {
 
   try {
     const token = authStore.token!
-    const title = `build: ${appName} v0`
-    const body = `## 需求描述\n\n${description}\n\n## 构建信息\n\n- 应用名称: ${appName}\n- 版本: v0\n- 触发方式: Web 界面`
+    const version = basedOn ? 'v1' : 'v0'
+    const labels = basedOn ? [`app/${appName}`, 'update'] : [`app/${appName}`]
+    const basedOnLine = basedOn ? `\n- 基于: ${basedOn}` : ''
+    const body = `## 需求描述\n\n${description}${basedOn ? `\n\n## 基于现有应用\n\n基于应用: ${basedOn}` : ''}\n\n## 构建信息\n\n- 应用名称: ${appName}\n- 版本: ${version}\n- 触发方式: Web 界面${basedOnLine}`
 
-    const issue = await createIssue(token, repo.value, title, body, [`app/${appName}`])
+    const issue = await createIssue(token, repo.value, `build: ${appName} ${version}`, body, labels)
 
     messages.value.push({
       role: 'system',
-      text: `📝 已创建构建任务 #${issue.number} — ${appName} v0\n正在启动构建流程...`,
+      text: `📝 已创建构建任务 #${issue.number} — ${appName} ${version}\n正在启动构建流程...`,
       time: new Date().toLocaleTimeString(),
     })
 
@@ -130,29 +302,111 @@ async function createBuild(appName: string, description: string) {
   }
 }
 
-function onIssueUpdate(issue: BuildIssue) {
-  activeIssue.value = issue
+// R4/R5: 平台变更 → 创建 Issue + needs-review 标记，不触发 CI
+async function createPlatformIssue(originalText: string, analysis: string) {
+  if (building.value || !authStore.token || !isOwner.value) return
 
-  if (issue.state === 'open') {
-    if (!issue.created_at || new Date(issue.created_at).getTime() === new Date().getTime()) {
-      // First poll - don't add duplicate message
-      return
-    }
+  building.value = true
+  activeIssue.value = null
+
+  try {
+    const token = authStore.token!
+    const title = `platform: ${originalText.slice(0, 60)}${originalText.length > 60 ? '…' : ''}`
+    const body = `## 需求描述\n\n${originalText}\n\n## AI 分析\n\n${analysis}\n\n## 影响范围\n\n平台代码变更 — 需要人工审核\n\n## 注意\n\n此 Issue 不会自动触发 CI 构建。请人工 review 后决定如何处理。`
+
+    const issue = await createIssue(token, repo.value, title, body, ['platform', 'needs-review'])
+
     messages.value.push({
       role: 'system',
-      text: `🔨 构建中... (Issue #${issue.number})`,
+      text: `⚠️ 已创建平台变更请求 #${issue.number}，标记为「需要审核」\n\n平台代码变更不会自动构建，需要人工 review 后处理。\n查看: https://github.com/${repo.value}/issues/${issue.number}`,
       time: new Date().toLocaleTimeString(),
     })
-  } else if (issue.state === 'closed') {
-    const appName = extractAppName(issue.title)
+  } catch (e) {
     messages.value.push({
       role: 'system',
-      text: `✅ ${appName} 构建完成！\n查看: https://mitosis.zenheart.site/apps/${appName}/`,
+      text: `❌ 创建 Issue 失败: ${e instanceof Error ? e.message : '未知错误'}`,
+      time: new Date().toLocaleTimeString(),
+    })
+  } finally {
+    building.value = false
+  }
+}
+
+function onIssueUpdate(issue: BuildIssue) {
+  const previousLabels = new Set(activeIssue.value?.labels.map(label => label.name) || [])
+  activeIssue.value = issue
+  const labels = new Set(issue.labels.map(label => label.name))
+  const appName = extractAppNameFromIssue(issue)
+  const version = extractVersionFromIssue(issue)
+  const appUrl = `https://mitosis.zenheart.site/apps/${appName}/${version}/`
+
+  if (labels.has('status:review')) {
+    messages.value.push({
+      role: 'system',
+      text: `✅ ${appName} ${version} 已通过自动验证，等待人工审查。\n合入 master 后访问: ${appUrl}`,
       time: new Date().toLocaleTimeString(),
     })
     building.value = false
+    stopAll()
+    loadApps()
+    return
+  }
+
+  if (labels.has('status:failed')) {
+    messages.value.push({
+      role: 'system',
+      text: `❌ ${appName} ${version} 自动验证失败，请查看 Issue #${issue.number} 和 Actions 日志。`,
+      time: new Date().toLocaleTimeString(),
+    })
+    building.value = false
+    stopAll()
+    return
+  }
+
+  if (labels.has('status:verifying') && !previousLabels.has('status:verifying')) {
+    messages.value.push({
+      role: 'system',
+      text: `🔎 正在验证 ${appName} ${version}... (Issue #${issue.number})`,
+      time: new Date().toLocaleTimeString(),
+    })
+    return
+  }
+
+  if (labels.has('status:building') && !previousLabels.has('status:building')) {
+    messages.value.push({
+      role: 'system',
+      text: `🔨 正在构建 ${appName} ${version}... (Issue #${issue.number})`,
+      time: new Date().toLocaleTimeString(),
+    })
+    return
+  }
+
+  if (issue.state === 'closed') {
+    messages.value.push({
+      role: 'system',
+      text: `Issue #${issue.number} 已关闭。应用版本路径: ${appUrl}`,
+      time: new Date().toLocaleTimeString(),
+    })
+    building.value = false
+    stopAll()
     loadApps()
   }
+}
+
+function extractAppNameFromIssue(issue: BuildIssue): string {
+  const appLabel = issue.labels.find(label => label.name.startsWith('app/'))?.name
+  if (appLabel) return appLabel.replace(/^app\//, '')
+
+  const titleMatch = issue.title.match(/^build:\s*([a-z0-9-]+)/i)
+  return titleMatch?.[1]?.toLowerCase() || extractAppName(issue.title)
+}
+
+function extractVersionFromIssue(issue: BuildIssue): string {
+  const bodyMatch = issue.body.match(/版本:\s*(v\d+)/i)
+  if (bodyMatch) return bodyMatch[1].toLowerCase()
+
+  const titleMatch = issue.title.match(/\b(v\d+)\b/i)
+  return titleMatch?.[1]?.toLowerCase() || 'v0'
 }
 
 function extractAppName(input: string): string {
@@ -166,6 +420,10 @@ function handleNewChat() {
   messages.value = []
   activeIssue.value = null
   building.value = false
+  clarifying.value = false
+  clarifyingMsg.value = ''
+  pendingBuildContext.value = ''
+  triageLog.value = []
 }
 </script>
 
@@ -193,17 +451,20 @@ function handleNewChat() {
       <div class="messages">
         <div v-if="messages.length === 0 && isOwner" class="welcome">
           <h3>👋 你好，{{ authStore.user?.login }}</h3>
-          <p>描述你想构建的应用，AI 会帮你分析并实现。</p>
+          <p>描述你想做的事情，AI 会自动判断是构建应用还是平台变更。</p>
           <div class="examples">
+            <button @click="inputText = '帮我做一个俄罗斯方块游戏，支持消行和计分'">🎮 俄罗斯方块</button>
             <button @click="inputText = '帮我做一个 todo 应用，支持添加、删除和标记完成'">📝 Todo 应用</button>
             <button @click="inputText = '帮我做一个计算器，支持加减乘除'">🔢 计算器</button>
-            <button @click="inputText = '帮我做一个 Markdown 编辑器，支持实时预览'">📝 Markdown 编辑器</button>
+            <button @click="inputText = '在 tetris-game 的基础上加一个关卡系统'">🧬 继续迭代</button>
+            <button @click="inputText = '优化 Workspace 的聊天界面性能'">⚙️ 平台优化</button>
+            <button @click="inputText = 'Mitosis 目前的技术栈是什么？'">💬 咨询问题</button>
           </div>
         </div>
         <div v-else-if="messages.length === 0 && !isOwner" class="welcome">
           <h3>👋 你好，{{ authStore.user?.login }}</h3>
-          <p>你是协作者身份，可以浏览已有的应用，但无法创建新应用。</p>
-          <p class="hint-text">仅仓库所有者可以使用 AI 构建功能。</p>
+          <p>当前账号尚未完成自己仓库的环境设置，可以浏览已有应用，但无法创建新应用。</p>
+          <p class="hint-text">完成 `{{ repo }}` 的 Pages、Worker 和 Secrets 配置后，才能使用 AI 构建功能。</p>
         </div>
         <div
           v-for="(msg, i) in messages"
@@ -219,31 +480,13 @@ function handleNewChat() {
           </div>
         </div>
       </div>
-      <div class="input-area">
-        <div v-if="isOwner" class="input-wrapper">
-          <div class="cursor-glow"></div>
-          <textarea
-            v-model="inputText"
-            class="chat-input"
-            :placeholder="thinking ? 'AI 思考中...' : '描述你想构建的应用...'"
-            :disabled="thinking || building"
-            rows="1"
-            @keydown.enter.exact.prevent="handleSend"
-          />
-          <button
-            @click="handleSend"
-            class="send-btn"
-            :disabled="!inputText.trim() || thinking || building"
-            title="发送"
-          >
-            <span v-if="thinking" class="spinner"></span>
-            <span v-else>▲</span>
-          </button>
-        </div>
-        <div v-else class="read-only-banner">
-          🔒 仅仓库所有者可使用 AI 构建功能
-        </div>
-      </div>
+      <ChatInput
+        v-model="inputText"
+        :is-owner="isOwner"
+        :thinking="thinking"
+        :building="building"
+        @send="handleSend"
+      />
     </main>
   </div>
 </template>
@@ -452,100 +695,9 @@ function handleNewChat() {
 .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
 .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
 
-.spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255,255,255,0.3);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
 @keyframes bounce {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
   40% { transform: scale(1); opacity: 1; }
-}
-
-.input-area {
-  padding: 1rem 1.5rem 1.5rem;
-  background: var(--bg-primary);
-}
-
-.input-wrapper {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 0.5rem;
-  transition: border-color 0.2s;
-}
-
-.input-wrapper:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
-
-.cursor-glow {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 100%;
-  height: 2px;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent), 0 0 16px var(--accent-glow);
-  opacity: 0;
-  transition: opacity 0.3s;
-}
-
-.input-wrapper:focus-within .cursor-glow {
-  opacity: 1;
-}
-
-.chat-input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: var(--text-primary);
-  font-size: 0.95rem;
-  padding: 0.5rem;
-  resize: none;
-  outline: none;
-  max-height: 120px;
-  line-height: 1.5;
-}
-
-.chat-input::placeholder {
-  color: #555;
-}
-
-.send-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: var(--accent);
-  border: none;
-  color: #fff;
-  font-size: 0.75rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity 0.2s;
-  flex-shrink: 0;
-}
-
-.send-btn:hover:not(:disabled) {
-  opacity: 0.85;
-}
-
-.send-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .read-only-banner {

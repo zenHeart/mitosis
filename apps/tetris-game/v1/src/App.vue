@@ -388,6 +388,14 @@ onUnmounted(() => {
     <header class="game-header">
       <h1 class="game-title">TETRIS</h1>
       <span class="game-subtitle">俄罗斯方块</span>
+      <a
+        href="https://mitosis.zenheart.site?ref=tetris-game"
+        class="bootstrap-link"
+        target="_blank"
+        rel="noopener"
+      >
+        🧬 在 Mitosis 中继续迭代
+      </a>
     </header>
 
     <div class="game-layout">
@@ -637,6 +645,23 @@ onUnmounted(() => {
   color: #666;
   letter-spacing: 0.2em;
   margin-top: 4px;
+}
+
+.bootstrap-link {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 6px 16px;
+  font-size: 0.8rem;
+  color: #00e5ff;
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  border-radius: 20px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.bootstrap-link:hover {
+  background: rgba(0, 229, 255, 0.1);
+  border-color: #00e5ff;
 }
 
 .game-layout {
