@@ -19,15 +19,6 @@ const isAppPath = computed(() => {
   return false
 })
 
-// Detect if viewing Gallery (root path, unauthenticated)
-const isGalleryPath = computed(() => {
-  if (typeof window !== 'undefined') {
-    const p = (window as any).location.pathname
-    return p === '/' || p === ''
-  }
-  return false
-})
-
 // Detect if we're viewing a specific app (from 404.html redirect with ?app= param)
 const initialApp = computed(() => {
   if (typeof window !== 'undefined') {
@@ -77,8 +68,8 @@ const appIframeSrc = computed(() => {
 </script>
 
 <template>
-  <!-- App viewer: iframe for standalone app paths, Gallery for root -->
-  <Gallery v-if="view === 'gallery' || isGalleryPath" :initial-app="initialApp" />
+  <!-- App viewer: Gallery for anonymous/gallery view, Workspace for authenticated -->
+  <Gallery v-if="view === 'gallery'" :initial-app="initialApp" />
   <LoginPage v-else-if="view === 'login'" @login-success="onLoginSuccess" />
   <SetupPage
     v-else-if="view === 'setup'"
