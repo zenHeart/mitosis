@@ -26,18 +26,33 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build platform
         run: npm run build
         env:
           VITE_GITHUB_CLIENT_ID: ${{ secrets.VITE_GITHUB_CLIENT_ID }}
+
+      - name: Build apps
+        run: |
+          for app_dir in apps/*/; do
+            [ -d "$app_dir" ] || continue
+            for ver_dir in "$app_dir"v*/; do
+              [ -d "$ver_dir" ] || continue
+              [ -f "$ver_dir/package.json" ] || continue
+              echo "Building $(basename "$app_dir") $(basename "$ver_dir")..."
+              cd "$ver_dir"
+              npm ci --silent 2>/dev/null || npm install --silent 2>/dev/null || true
+              npm run build 2>&1 | tail -1
+              cd ../..
+            done
+          done
 
       - name: Prepare deployment
         run: |
           mkdir -p deploy
           cp -r dist/* deploy/
-          # Copy built apps
+          # Copy built apps (exclude node_modules, only copy actual app dist dirs)
           if [ -d apps ]; then
-            find apps -type d -name dist -exec sh -c '
+            find apps -type d -name dist -not -path "*/node_modules/*" -exec sh -c '
               dest="deploy/$(dirname "$1")"
               mkdir -p "$dest"
               cp -r "$1"/* "$dest/"
@@ -45,6 +60,8 @@ jobs:
           fi
           # CNAME is already in dist if tracked, or add it
           echo "mitosis.zenheart.site" > deploy/CNAME
+          echo "Deploy contents:"
+          find deploy -type f | sort | head -20
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
@@ -53,4 +70,4 @@ jobs:
           publish_dir: ./deploy
           publish_branch: gh-pages
           force_orphan: false
-          keep_files: false
+          keep_files: true
