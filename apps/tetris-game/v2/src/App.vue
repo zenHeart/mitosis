@@ -1206,9 +1206,13 @@ kbd {
 }
 
 .board-container {
+  --cell-size: 30px;
+  --gap: 2px;
+  --cols: 10;
+  --rows: 20;
   position: relative;
-  width: calc(COLS * 30px + (COLS - 1) * 2px);
-  height: calc(ROWS * 30px + (ROWS - 1) * 2px);
+  width: calc(var(--cols) * var(--cell-size) + (var(--cols) - 1) * var(--gap));
+  height: calc(var(--rows) * var(--cell-size) + (var(--rows) - 1) * var(--gap));
   background: #0a0a1a;
   border: 2px solid #1e1e3a;
   border-radius: 8px;
@@ -1501,8 +1505,7 @@ kbd {
   }
 
   .board-container {
-    width: calc(COLS * 28px + (COLS - 1) * 2px);
-    height: calc(ROWS * 28px + (ROWS - 1) * 2px);
+    --cell-size: 28px;
   }
 }
 
@@ -1520,8 +1523,7 @@ kbd {
   }
 
   .board-container {
-    width: calc(COLS * 26px + (COLS - 1) * 2px);
-    height: calc(ROWS * 26px + (ROWS - 1) * 2px);
+    --cell-size: 26px;
   }
 }
 </style>
