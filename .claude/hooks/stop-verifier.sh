@@ -86,7 +86,7 @@ try {
   const s = JSON.parse(fs.readFileSync('$STATE_FILE', 'utf8'));
   const d = s.deferred_stages || [];
   if (d.length > 0) {
-    const names = {2: 'snake-create', 3: 'production-verify'};
+    const names = {2: 'production-verify'};
     const labels = d.map(n => names[n] || 'stage-' + n).join(', ');
     console.log('HAS_DEFERRED:' + labels);
   } else { console.log('NONE'); }
@@ -95,7 +95,7 @@ try {
 
   if [[ "$DEFERRED" == HAS_DEFERRED:* ]]; then
     STAGES=${DEFERRED#HAS_DEFERRED:}
-    echo "{\"hookSpecificOutput\": {\"hookEventName\": \"Stop\", \"decision\": \"allow\", \"additionalContext\": \"✅ Stage 0-1 全部通过。Stage 2-3 已标记为 deferred（需手动触发 CI 构建 + 生产部署）。已完成的验收：7/9 criteria。剩余工作：1) 在 Workspace 聊天输入'做一个贪吃蛇游戏'触发 CI 构建 2) 部署到 gh-pages 验证生产站点。\"}}"
+    echo "{\"hookSpecificOutput\": {\"hookEventName\": \"Stop\", \"decision\": \"allow\", \"additionalContext\": \"✅ Stage 0-1 全部通过。Stage 2 (production-verify) 已标记为 deferred（需手动部署到 gh-pages）。已完成的验收：7/9 criteria。剩余工作：用 git worktree 部署 dist/ 到 gh-pages 分支，验证 mitosis.zenheart.site 可访问。\"}}"
   else
     echo '{"hookSpecificOutput": {"hookEventName": "Stop", "decision": "allow", "additionalContext": "✅ 所有验收标准已通过 (verdict: PASS)。可以安全停止。"}}'
   fi
