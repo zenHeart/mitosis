@@ -10,6 +10,10 @@ const REDIRECT_URI = `${window.location.origin}/auth/callback`
 // This is required because GitHub's /login/oauth/access_token does not support CORS
 const OAUTH_PROXY_URL = 'https://mitosis-oauth-proxy.zenheart1991.workers.dev'
 
+// 开发模式：走 Vite proxy（解决本地网络不通问题）
+const IS_DEV = import.meta.env.DEV
+const API_BASE = IS_DEV ? '/api/github' : 'https://api.github.com'
+
 // ---- OAuth URLs ----
 
 export function getLoginUrl(): string {
@@ -40,7 +44,7 @@ export async function exchangeCodeForToken(code: string): Promise<{ access_token
 // ---- User API ----
 
 export async function fetchGitHubUser(token: string): Promise<GitHubUser> {
-  const res = await fetch('https://api.github.com/user', {
+  const res = await fetch(`${API_BASE}/user`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
@@ -56,7 +60,7 @@ export async function verifyRepoOwnership(
   token: string,
   userLogin: string
 ): Promise<boolean> {
-  const res = await fetch(`https://api.github.com/repos/${userLogin}/${REPO_NAME}`, {
+  const res = await fetch(`${API_BASE}/repos/${userLogin}/${REPO_NAME}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',

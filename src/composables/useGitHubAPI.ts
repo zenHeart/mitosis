@@ -1,5 +1,16 @@
 import type { BuildIssue, AppInfo } from '../types/app'
 
+// ── API 基础 URL ──────────────────────────────────────────────
+// 开发模式：走 Vite dev server proxy（/api/github/ → api.github.com）
+//   自动走 macOS 系统代理，解决本地网络不通问题
+// 生产模式：直接访问 api.github.com（公开仓库无需认证）
+const IS_DEV = import.meta.env.DEV
+const GITHUB_API_BASE = IS_DEV ? '/api/github' : 'https://api.github.com'
+
+function ghUrl(repo: string, path: string): string {
+  return `${GITHUB_API_BASE}/repos/${repo}${path}`
+}
+
 export async function createIssue(
   token: string,
   repo: string,
@@ -7,13 +18,16 @@ export async function createIssue(
   body: string,
   labels: string[]
 ): Promise<BuildIssue> {
-  const res = await fetch(`https://api.github.com/repos/${repo}/issues`, {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/vnd.github+json',
+  }
+  // 开发模式 token 由 Vite proxy 自动添加，但传了也安全
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  const res = await fetch(ghUrl(repo, '/issues'), {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({ title, body, labels }),
   })
   if (!res.ok) {
@@ -28,23 +42,23 @@ export async function getIssue(
   repo: string,
   issueNumber: number
 ): Promise<BuildIssue> {
-  const res = await fetch(`https://api.github.com/repos/${repo}/issues/${issueNumber}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-    },
-  })
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+  }
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  const res = await fetch(ghUrl(repo, `/issues/${issueNumber}`), { headers })
   if (!res.ok) throw new Error(`Failed to get issue: ${res.status}`)
   return res.json()
 }
 
 export async function listApps(token: string, repo: string): Promise<AppInfo[]> {
-  const res = await fetch(`https://api.github.com/repos/${repo}/contents/apps`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-    },
-  })
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+  }
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  const res = await fetch(ghUrl(repo, '/contents/apps'), { headers })
   if (!res.ok) return []
   const items = await res.json()
   if (!Array.isArray(items)) return []
@@ -52,15 +66,9 @@ export async function listApps(token: string, repo: string): Promise<AppInfo[]> 
   const apps: AppInfo[] = []
   for (const item of items) {
     if (item.type === 'dir') {
-      const versionsRes = await fetch(
-        `https://api.github.com/repos/${repo}/contents/apps/${item.name}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/vnd.github+json',
-          },
-        }
-      )
+      const versionsRes = await fetch(ghUrl(repo, `/contents/apps/${item.name}`), {
+        headers,
+      })
       if (versionsRes.ok) {
         const versions = await versionsRes.json()
         const versionDirs = Array.isArray(versions)

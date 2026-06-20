@@ -1,3 +1,4 @@
+.claude/.goal-state.json
 .claude/.goal-verdict
 .claude/verification-report.txt
 .claude/settings.local.json
@@ -13,11 +14,12 @@ node_modules/
 dist/
 dist-ssr/
 *.local
-# Allow app-specific entry points
+# Build output assets (root only)
+dist/assets/
+# Allow app-specific entry points and assets
 !apps/*/v*/index.html
 !apps/*/v*/dist/
-index.html
-assets/
+!apps/*/v*/src/assets/
 
 # Editor directories and files
 .vscode/*
@@ -56,3 +58,10 @@ src/**/*.d.ts
 src/**/*.js
 !src/**/*.vue.js*.d.ts
 *.tsbuildinfo
+
+# Playwright MCP temp files
+.playwright-mcp/
+*.png
+# Keep .gitkeep in apps/ root
+apps/.gitkeep
+dist/

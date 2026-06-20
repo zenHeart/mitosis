@@ -1,39 +1,110 @@
-# Goal Loop Rules
+# Goal Loop Rules — Executor + Verifier 双 Agent 协议
 
-本规则用于本地 Claude Code `/goal` 会话。CI 不读取本文件；CI 路径见 `docs/agent-loop.md`。
+## 核心循环（每 turn）
 
-## 启动顺序
+```
+Executor turn 完成
+  → 调用 mvp-verifier subagent（独立上下文）
+  → Verifier 返回 JSON 报告
+  → Executor 更新 .claude/.goal-state.json
+  → Executor 尝试停止
+  → Stop hook 拦截，检查 state 中的 verdict
+  → verdict=PASS → 允许停止
+  → verdict=FAIL → block + additionalContext → Executor 继续
+```
 
-1. 先读 `goal.md`。
-2. 再读 `AGENT.md`、`agent/README.md`、`agent/acceptance.md`、`agent/verifier.md`。
-3. 只执行 `goal.md` 中允许的范围。
-4. 不读取 `.claude/settings.local.json`，不复制任何真实 token/key/secret。
+## 每 turn 的执行步骤
 
-## 执行循环
+1. **读状态** — 读 `.claude/.goal-state.json`，提取未通过 criteria 和上一轮反馈
+2. **读目标** — 读 `goal.md`，确认当前需要验证的验收项
+3. **选任务** — 选择下一个 `pending` 或 `fail` 的 criteria，一次只做 1 个
+4. **执行** — 最小化修改实现该验收项
+5. **构建** — 运行 `npm run build` + 相关命令
+6. **调用 Verifier** — 使用 `Agent` 工具调用 `mvp-verifier` subagent，传入 goal.md + state 路径
+7. **读 Verifier 报告** — 解析 JSON 输出，提取 `failed_items` 和 `next_actions`
+8. **更新 State** — 写回 `.claude/.goal-state.json`，更新 criteria 状态和 `last_verdict`
+9. **判断** —
+   - `verdict=PASS` → 尝试停止 → Stop hook 确认 PASS → 允许停止 → 输出验收报告
+   - `verdict=PARTIAL` → 基于 `next_actions` 继续修复
+   - `verdict=FAIL` → 基于 `failed_items` 修复
+10. **如果被 Stop hook block** → 读 `additionalContext` → 回到步骤 1
 
-1. 将 `goal.md` 的验收标准转成 checklist。
-2. 小步修改，每次只改与当前 goal 直接相关的文件。
-3. 修改后运行 `goal.md` 中列出的验证命令。
-4. 完成前必须运行 verifier：
-   - 文档/平台任务：至少运行残留搜索和 `npm run build`。
-   - 生成应用任务：从 `apps/{name}/v{n}` 运行 `bash ../../../worker/verify-build.sh`。
-5. verifier FAIL 时继续修复，不得声称完成。
-6. verifier PASS 后，在回复中引用验证命令和结果。
+## State 文件格式（`.claude/.goal-state.json`）
 
-## 完成条件
+```json
+{
+  "current_goal": "mitosis-mvp",
+  "started_at": "2026-06-20T...",
+  "turns_used": 0,
+  "max_turns": 1000,
+  "criteria": {
+    "c1-anon-gallery": {
+      "description": "匿名用户可以浏览 Gallery 并打开应用",
+      "status": "pending|pass|fail",
+      "attempts": 0,
+      "last_result": "verifier 返回的 detail",
+      "verifier_phase": "phase1-browser"
+    }
+  },
+  "last_verdict": "PASS|FAIL|PARTIAL|null",
+  "last_verifier_output": "verifier subagent 的完整 JSON 输出",
+  "feedback_history": ["上一轮 verifier 的失败摘要"],
+  "consecutive_failures": 0
+}
+```
 
-只有同时满足以下条件才可结束：
+## Stop Hook 行为（`.claude/hooks/stop-verifier.sh`）
 
-- `goal.md` 所有验收标准均满足。
-- transcript 中包含 fresh 验证命令输出。
-- verifier 输出 `VERDICT: PASS` 或等价的 PASS 摘要。
-- 没有 P0/P1 未解释风险。
-- `agent/backlog.md` 和 `agent/archive.md` 已按需更新。
+- 读 `.claude/.goal-state.json` 的 `last_verdict`
+- `PASS` → 输出 `additionalContext: "所有验收标准已通过"`，允许停止
+- `FAIL` → 输出 `additionalContext: "verifier FAIL: ..."` + 具体失败项，block 停止
+- `PARTIAL` → 输出 `additionalContext: "部分通过，剩余: ..."`，block 停止
+- `null` / 不存在 → 运行 `npm run build` 快速检查，构建失败则 block
+
+## Verifier Subagent（`mvp-verifier`）
+
+定义在 `.claude/agents/verifier.md`。
+
+**三大阶段：**
+- Phase 1: Playwright MCP 浏览器测试（匿名 Gallery → 登录 → Workspace 分流）
+- Phase 2: Bash 构建验证（npm run build + verify-build.sh + 安全扫描）
+- Phase 3: GitHub API 状态检查（Issue label + PR 状态）
+
+**输出：** 严格 JSON，包含 `verdict` + `criteria_results` + `failed_items` + `next_actions`
+
+## 判定规则
+
+| 条件 | Verdict |
+|------|---------|
+| 所有 criteria PASS/SKIPPED，无 FAIL | PASS |
+| 1-2 个非阻断性 FAIL | PARTIAL |
+| 阻断性 FAIL（平台构建失败、安全扫描发现 token） | FAIL |
+| Phase 1 全部 SKIPPED 但 Phase 2/3 通过 | PARTIAL |
+
+**阻断性 FAIL：** 平台 `npm run build` 失败、安全扫描发现真实 token/key/secret、关键文件缺失
+
+## Verifier 调用示例
+
+```
+# Executor turn 结束时，使用 Agent 工具调用:
+Agent(name: "mvp-verifier", prompt: "验证 Mitosis MVP 验收标准。读 goal.md 和 .claude/.goal-state.json，执行 Phase 1 (Playwright)、Phase 2 (Bash)、Phase 3 (GitHub) 验证。输出严格 JSON。")
+```
 
 ## 禁止事项
 
-- 禁止“看起来可以”“应该通过”等无证据结论。
-- 禁止为只使用一次的逻辑做额外抽象。
-- 禁止顺手重构无关代码。
-- 禁止提交 `.claude/.goal-verdict`、本地日志、真实凭据。
-- Stop Hook 失败反馈必须使用 `decision: "block"` 或 `additionalContext`，不要用 `continue:false` 作为让模型继续修复的机制。
+- 禁止声称通过而没有 Verifier 的 fresh JSON 输出
+- 禁止同时修改多个验收项（一次一个）
+- 禁止编辑 `.claude/.goal-state.json` 跳过失败项
+- 禁止超过 1000 turn（足够完成任何 MVP 级目标）
+- 禁止将 Verifier 的 SKIPPED 当作 PASS
+- 禁止在 verifier 输出前停止
+
+## 与 CI Loop 的关系
+
+| 维度 | 本地 /goal | CI --bare |
+|------|-----------|-----------|
+| 机制 | Executor + Verifier subagent + Stop hook | Shell for-loop + verify-build.sh |
+| 验证 | Playwright + Bash + GitHub MCP | verify-build.sh (构建+功能) |
+| 重试 | 1000 turn 上限，verifier 驱动 | 3 次 attempt，shell 驱动 |
+| 适用 | 平台流程验证（端到端） | 生成应用质量（构建产物） |
+| 人工介入 | Stop hook block + 反馈 | draft PR + human review |

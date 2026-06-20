@@ -1,6 +1,10 @@
 import { defineStore } from 'pinia'
 import type { AuthState, GitHubUser } from '../types/auth'
 
+// @ts-ignore - injected at build time via vite define
+// eslint-disable-next-line no-undef
+declare const __GITHUB_TOKEN__: string
+
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     user: null,
@@ -40,6 +44,7 @@ export const useAuthStore = defineStore('auth', {
     async init() {
       if (typeof window === 'undefined') return
 
+      // ── 优先检查 sessionStorage（OAuth 登录态）────────────────
       const token = sessionStorage.getItem('mitosis_token')
       const userStr = sessionStorage.getItem('mitosis_user')
       const setupComplete = localStorage.getItem('mitosis_setup_complete') === 'true'
@@ -53,6 +58,41 @@ export const useAuthStore = defineStore('auth', {
           this.setupComplete = setupComplete
         } catch {
           this.clearSession()
+        }
+        return
+      }
+
+      // ── 本地开发：使用 Vite 注入的 token 自动登录 ──────────
+      // 线上环境 (DEV=false) 不会走此分支
+      if (import.meta.env.DEV && typeof __GITHUB_TOKEN__ === 'string' && __GITHUB_TOKEN__) {
+        const devToken = __GITHUB_TOKEN__ as string
+        try {
+          const res = await fetch('/api/github/user', {
+            headers: {
+              Authorization: `Bearer ${devToken}`,
+              Accept: 'application/vnd.github+json',
+            },
+          })
+          if (res.ok) {
+            const user = await res.json()
+            this.token = devToken
+            this.user = {
+              login: user.login,
+              id: user.id,
+              avatar_url: user.avatar_url,
+              html_url: user.html_url,
+              name: user.name || user.login,
+            }
+            this.isAuthenticated = true
+            // 持久化，避免每次刷新都调 API
+            sessionStorage.setItem('mitosis_token', devToken)
+            sessionStorage.setItem(
+              'mitosis_user',
+              JSON.stringify(this.user)
+            )
+          }
+        } catch {
+          // 本地 token 无效或网络不通，静默忽略
         }
       }
     },

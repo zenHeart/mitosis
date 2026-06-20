@@ -4,11 +4,19 @@ import type { AppInfo } from '../types/app'
 import { useAuthStore } from '../stores/auth'
 import { getLoginUrl } from '../composables/useAuth'
 import { REPO_FULL_NAME } from '../config/repo'
+import { listApps } from '../composables/useGitHubAPI'
 
 const props = defineProps<{
   initialApp?: string
 }>()
 
+// ── 本地 fallback 数据（当 GitHub API 不可用时使用）─────────────────
+const LOCAL_APPS: AppInfo[] = [
+  { id: 'tetris-game', name: '俄罗斯方块', latestVersion: 1, url: '/apps/tetris-game/v1/', createdAt: '' },
+  { id: 'snake-game',   name: '贪吃蛇',   latestVersion: 1, url: '/apps/snake-game/v1/',   createdAt: '' },
+]
+
+// ── State ──────────────────────────────────────────────────────────
 const authStore = useAuthStore()
 const isLoggedIn = computed(() => !!authStore.token)
 
@@ -31,59 +39,32 @@ function handleLogin() {
   window.location.href = getLoginUrl()
 }
 
+function openApp(app: AppInfo) {
+  selectedApp.value = app.id
+  window.location.href = app.url
+}
+
 watch(selectedApp, async (newApp) => {
   if (!newApp) return
   await nextTick()
   selectedCardRef.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 })
 
-// Public GitHub API — no auth required for public repos
-async function listAppsPublic(): Promise<AppInfo[]> {
-  const res = await fetch(
-    `https://api.github.com/repos/${REPO_FULL_NAME}/contents/apps`
-  )
-  if (!res.ok) return []
-  const items = await res.json()
-  if (!Array.isArray(items)) return []
-
-  const apps: AppInfo[] = []
-  for (const item of items) {
-    if (item.type === 'dir') {
-      const versionsRes = await fetch(
-        `https://api.github.com/repos/${REPO_FULL_NAME}/contents/apps/${item.name}`
-      )
-      if (versionsRes.ok) {
-        const versions = await versionsRes.json()
-        const versionDirs = Array.isArray(versions)
-          ? versions.filter((v: { type: string }) => v.type === 'dir')
-          : []
-        const latestVersion = versionDirs
-          .map((v: { name?: string }) => Number((v.name || '').replace(/^v/, '')))
-          .filter((v: number) => Number.isInteger(v) && v >= 0)
-          .sort((a: number, b: number) => b - a)[0] ?? 0
-        apps.push({
-          id: item.name,
-          name: item.name,
-          latestVersion,
-          url: `/apps/${item.name}/v${latestVersion}/`,
-          createdAt: '',
-        })
-      }
-    }
-  }
-  return apps
-}
-
-function openApp(app: AppInfo) {
-  selectedApp.value = app.id
-  window.location.href = app.url
-}
-
 onMounted(async () => {
   try {
-    apps.value = await listAppsPublic()
+    // 优先使用带 token 的 API（DEV 走 Vite proxy → github-proxy → api.github.com）
+    // 本地自动登录模式下 authStore.token 已被注入
+    const apiApps = await listApps(authStore.token || '', REPO_FULL_NAME)
+    if (apiApps.length > 0) {
+      apps.value = apiApps
+    } else {
+      // API 返回空或超时：使用本地 fallback
+      apps.value = LOCAL_APPS
+    }
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '加载失败'
+    // API 失败：使用本地 fallback 数据
+    apps.value = LOCAL_APPS
+    error.value = ''
   } finally {
     loading.value = false
   }

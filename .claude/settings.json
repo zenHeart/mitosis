@@ -9,6 +9,50 @@
       "Read(./secrets/**)",
       "Read(./**/*.pem)",
       "Read(./**/*.key)"
+    ],
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(git *)",
+      "Bash(bash agent/verify-mvp.sh *)",
+      "Bash(bash worker/verify-build.sh)",
+      "Bash(rg *)",
+      "Bash(curl *)",
+      "Read(./src/**)",
+      "Read(./apps/**)",
+      "Read(./worker/**)",
+      "Read(./docs/**)",
+      "Read(./agent/**)",
+      "Read(.claude/**)",
+      "Read(.github/**)",
+      "Read(./*.json)",
+      "Read(./*.md)",
+      "Read(./*.ts)",
+      "Read(./*.vue)",
+      "Read(./vite.config.*)",
+      "Read(./tsconfig.*)",
+      "Read(./package.json)",
+      "Edit(./src/**)",
+      "Edit(./apps/**)",
+      "Edit(./worker/**)",
+      "Edit(./docs/**)",
+      "Edit(./agent/**)",
+      "Edit(.claude/**)",
+      "Edit(.github/**)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/stop-verifier.sh",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }

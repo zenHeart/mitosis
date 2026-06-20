@@ -105,11 +105,55 @@ mcp__playwright__browser_navigate({ url: "http://localhost:5173/apps/tetris-game
 
 > **铁律：构建通过 ≠ 可玩。verify-build.sh 只检查文件完整性，不检查游戏逻辑。**
 > 必须用 Playwright MCP 真实操作键盘验证游戏交互。
+>
+> **第二铁律：按键有响应 ≠ 游戏能玩。必须视觉验证主窗口渲染了 10x20 网格+下落方块。**
 
 ```javascript
 // 导航到游戏页面
 mcp__playwright__browser_navigate({ url: "http://localhost:5173/apps/tetris-game/v2/" })
 ```
+
+**★★★ 第一步：主窗口视觉验证（阻断性 — 未通过直接 FAIL）★★★**
+
+在按任何键之前，必须先确认游戏主窗口存在且包含可玩的网格：
+
+```javascript
+// 检查游戏主区域是否存在
+const boardCells = await mcp__playwright__browser_evaluate({
+  function: () => {
+    // 查找游戏面板 — 尝试多种可能的选择器
+    const board = document.querySelector('.board-container') ||
+                  document.querySelector('.board-wrapper') ||
+                  document.querySelector('main.board-wrapper') ||
+                  document.querySelector('[class*="board"]');
+    if (!board) return { found: false, reason: 'no-board-element' };
+
+    // 检查是否有 board-cell 元素（网格单元）
+    const cells = board.querySelectorAll('.board-cell');
+    if (cells.length === 0) return { found: false, reason: 'no-board-cells', cellCount: 0 };
+
+    // 检查是否有 filled 单元格（已落下的方块）
+    const filled = board.querySelectorAll('.board-cell.filled');
+    if (filled.length === 0) return { found: false, reason: 'no-filled-cells', cellCount: cells.length };
+
+    // 检查网格尺寸（应该是 10x20 = 200 个单元格）
+    return { found: true, totalCells: cells.length, filledCells: filled.length };
+  }
+})
+```
+
+**检查点（全部满足才算通过）：**
+- [ ] `.board-container` 或 `.board-wrapper` 元素存在
+- [ ] `.board-cell` 元素数量 > 0（应该是 ~200 个，即 10×20 网格）
+- [ ] 至少有一些 `.board-cell.filled` 单元格（说明游戏有渲染内容）
+
+**如果主窗口验证 FAIL：**
+- 立即标记 `"c6-gameplay": "FAIL"`
+- detail 包含具体原因（"no-board-element" / "no-board-cells" / "no-filled-cells"）
+- 这是**阻断性 FAIL**，不继续后续键盘测试
+- 在 failed_items 中明确写："游戏主窗口（10x20 网格）未渲染 — 这是核心功能缺失，不是小 bug"
+
+**★★★ 第二步：键盘交互验证（仅在第一步通过后执行）★★★**
 
 **必须逐项验证：**
 - [ ] 页面标题包含 "TETRIS" 或 "俄罗斯方块"
@@ -307,6 +351,7 @@ gh pr list --repo zenHeart/mitosis --state open
 
 **阻断性 FAIL（游戏相关）：**
 - c6-gameplay = FAIL（游戏启动失败、按键无响应、计分错误）
+- **游戏主窗口（.board-container）未渲染或没有 filled 单元格 — 核心功能缺失**
 - 平台 `npm run build` 失败
 - 安全扫描发现真实 token/key/secret
 - 关键文件缺失

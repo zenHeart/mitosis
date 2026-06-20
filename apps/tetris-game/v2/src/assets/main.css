@@ -1,0 +1,9 @@
+/* Tetris Game v2 Styles */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a1a;
+  color: #e0e0e0;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+}
+#app { width: 100%; height: 100vh; }

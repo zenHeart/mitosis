@@ -11,10 +11,27 @@ const currentView = ref<'gallery' | 'login' | 'setup' | 'workspace'>('gallery')
 
 const view = computed(() => currentView.value)
 
+// Detect if current URL is an app path: /apps/{name}/v{n}/...
+const isAppPath = computed(() => {
+  if (typeof window !== 'undefined') {
+    return /^\/apps\/[^/]+\/v\d+/i.test((window as any).location.pathname)
+  }
+  return false
+})
+
+// Detect if viewing Gallery (root path, unauthenticated)
+const isGalleryPath = computed(() => {
+  if (typeof window !== 'undefined') {
+    const p = (window as any).location.pathname
+    return p === '/' || p === ''
+  }
+  return false
+})
+
 // Detect if we're viewing a specific app (from 404.html redirect with ?app= param)
 const initialApp = computed(() => {
   if (typeof window !== 'undefined') {
-    const params = new URLSearchParams(window.location.search)
+    const params = new URLSearchParams((window as any).location.search)
     return params.get('app') || undefined
   }
   return undefined
@@ -50,10 +67,18 @@ function onSetupComplete() {
 function onBrowsePublic() {
   currentView.value = 'gallery'
 }
+
+const appIframeSrc = computed(() => {
+  if (typeof window !== 'undefined') {
+    return (window as any).location.pathname
+  }
+  return ''
+})
 </script>
 
 <template>
-  <Gallery v-if="view === 'gallery'" :initial-app="initialApp" />
+  <!-- App viewer: iframe for standalone app paths, Gallery for root -->
+  <Gallery v-if="view === 'gallery' || isGalleryPath" :initial-app="initialApp" />
   <LoginPage v-else-if="view === 'login'" @login-success="onLoginSuccess" />
   <SetupPage
     v-else-if="view === 'setup'"
@@ -61,5 +86,13 @@ function onBrowsePublic() {
     @complete="onSetupComplete"
     @browse="onBrowsePublic"
   />
-  <Workspace v-else />
+  <!-- Workspace always visible for sidebar; iframe overlay for app viewing -->
+  <div v-if="view === 'workspace'" style="position: relative; width: 100%; height: 100vh;">
+    <Workspace />
+    <iframe
+      v-if="isAppPath"
+      :src="appIframeSrc"
+      style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; border: none; z-index: 1000; background: #0a0a1a;"
+    />
+  </div>
 </template>
