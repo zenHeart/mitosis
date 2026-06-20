@@ -53,13 +53,13 @@ Executor turn 完成
 }
 ```
 
-## Stop Hook 行为（`.claude/hooks/stop-verifier.sh`）
+## Stop Hook 行为
 
-- 读 `.claude/.goal-state.json` 的 `last_verdict`
-- `PASS` → 输出 `additionalContext: "所有验收标准已通过"`，允许停止
-- `FAIL` → 输出 `additionalContext: "verifier FAIL: ..."` + 具体失败项，block 停止
-- `PARTIAL` → 输出 `additionalContext: "部分通过，剩余: ..."`，block 停止
-- `null` / 不存在 → 运行 `npm run build` 快速检查，构建失败则 block
+> **MVP 完成后已移除 stop hook**（2026-06-20）。以下为历史参考。
+
+- 原文件 `.claude/hooks/stop-verifier.sh` 已删除
+- 原因：MVP 闭环已完成（9/9 PASS），hook 始终返回 `allow`，无阻断价值
+- 如需恢复，参考 git history 恢复该文件 + `settings.json` 中的 hooks 配置
 
 ## Verifier Subagent（`mvp-verifier`）
 
