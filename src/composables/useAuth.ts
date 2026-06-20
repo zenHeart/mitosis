@@ -4,6 +4,7 @@ import { REPO_NAME } from '../config/repo'
 // @ts-ignore - injected at build time via vite define
 // eslint-disable-next-line no-undef
 const GITHUB_CLIENT_ID = __GITHUB_CLIENT_ID__
+export const isOAuthConfigured = !!GITHUB_CLIENT_ID
 const REDIRECT_URI = `${window.location.origin}/auth/callback`
 
 // Cloudflare Worker proxy URL — exchanges authorization code for access token
