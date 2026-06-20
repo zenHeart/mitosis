@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import type { AuthState, GitHubUser } from '../types/auth'
+import { exchangeCodeForToken, fetchGitHubUser, saveSession } from '../composables/useAuth'
 
 // @ts-ignore - injected at build time via vite define
 // eslint-disable-next-line no-undef
@@ -58,6 +59,33 @@ export const useAuthStore = defineStore('auth', {
           this.setupComplete = setupComplete
         } catch {
           this.clearSession()
+        }
+        return
+      }
+
+      // ── OAuth callback：exchange authorization code for token ──
+      const oauthCode = sessionStorage.getItem('mitosis_oauth_code')
+      if (oauthCode) {
+        try {
+          const { access_token } = await exchangeCodeForToken(oauthCode)
+          const githubUser = await fetchGitHubUser(access_token)
+          const user: GitHubUser = {
+            login: githubUser.login,
+            id: githubUser.id,
+            avatar_url: githubUser.avatar_url,
+            html_url: githubUser.html_url,
+            name: githubUser.name || githubUser.login,
+          }
+          saveSession(access_token, user)
+          this.token = access_token
+          this.user = user
+          this.isAuthenticated = true
+          this.setupComplete = setupComplete
+        } catch {
+          this.clearSession()
+        } finally {
+          sessionStorage.removeItem('mitosis_oauth_code')
+          sessionStorage.removeItem('mitosis_oauth_redirect')
         }
         return
       }
