@@ -147,7 +147,37 @@ const boardCells = await mcp__playwright__browser_evaluate({
 - [ ] `.board-cell` 元素数量 > 0（应该是 ~200 个，即 10×20 网格）
 - [ ] 至少有一些 `.board-cell.filled` 单元格（说明游戏有渲染内容）
 
-**如果主窗口验证 FAIL：**
+**★★★ 尺寸验证（阻断性 — 4x4px 坍缩检测）★★★**
+元素存在但尺寸错误是核心功能缺失，不是小 bug。
+```javascript
+const boardDimensions = await mcp__playwright__browser_evaluate({
+  function: () => {
+    const board = document.querySelector('.board-container') ||
+                  document.querySelector('.board-wrapper');
+    if (!board) return { found: false, reason: 'no-board-element' };
+    const rect = board.getBoundingClientRect();
+    const style = window.getComputedStyle(board);
+    return {
+      found: rect.width > 100 && rect.height > 100,
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      display: style.display,
+      visibility: style.visibility,
+      opacity: parseFloat(style.opacity),
+      hasCSSVars: style.getPropertyValue('--cols') !== '' ||
+                  board.style.getPropertyValue('--cols') !== ''
+    };
+  }
+})
+```
+- [ ] board-container width >= 300px（预期 ~318px）
+- [ ] board-container height >= 600px（预期 ~638px）
+- [ ] display !== 'none', visibility !== 'hidden', opacity > 0
+
+**如果尺寸验证 FAIL：**
+- 立即标记 `"c6-gameplay": "FAIL"`
+- detail 包含具体尺寸和可能原因（CSS calc() 失败、元素隐藏）
+- 这是**阻断性 FAIL**，不继续后续测试
 - 立即标记 `"c6-gameplay": "FAIL"`
 - detail 包含具体原因（"no-board-element" / "no-board-cells" / "no-filled-cells"）
 - 这是**阻断性 FAIL**，不继续后续键盘测试
@@ -197,9 +227,95 @@ mcp__playwright__browser_evaluate({
 - 持续玩到方块堆到顶部
 - 检查 `.game-over-overlay` 是否可见
 
+**★★★ FPS 性能测量（阻断性 — 卡顿检测）★★★**
+
+> 功能正确 ≠ 性能可接受。即使所有按键都有响应，低 FPS 也意味着游戏无法正常游玩。
+> 必须在实际游戏过程中测量 FPS，不能只测静态页面。
+
+**测量方法：** 在游戏进行中（活跃操作期间）用 `requestAnimationFrame` 采样，持续 3 秒：
+
+```javascript
+mcp__playwright__browser_evaluate({
+  function: async () => {
+    const samples = []
+    let lastTime = performance.now()
+    let count = 0
+    return new Promise((resolve) => {
+      const measure = (timestamp) => {
+        count++
+        if (timestamp - lastTime >= 1000) {
+          samples.push(count)
+          count = 0
+          lastTime = timestamp
+        }
+        if (samples.length < 3) {
+          requestAnimationFrame(measure)
+        } else {
+          const avg = Math.round(samples.reduce((a, b) => a + b, 0) / samples.length)
+          const min = Math.min(...samples)
+          const jank = samples.filter(s => s < avg * 0.7).length
+          resolve({ avgFPS: avg, minFPS: min, jankFrames: jank, samples })
+        }
+      }
+      requestAnimationFrame(measure)
+    })
+  }
+})
+```
+
+**判定标准：**
+- avgFPS >= 55 → PASS（可接受，接近 60fps）
+- 50 <= avgFPS < 55 → WARN（可玩但不够流畅）
+- avgFPS < 50 → **FAIL**（阻断性 — 性能不可接受）
+- minFPS < 30 → **FAIL**（有持续卡顿）
+
+**如果 FPS FAIL：**
+- detail 包含 avgFPS, minFPS, jankFrames
+- 提示检查：粒子数量、DOM 变更频率、box-shadow 过度绘制
+- 这是**阻断性 FAIL**
+
 **如果 Playwright MCP 不可用：**
 - 标记 `"c6-gameplay": "SKIPPED"`，但明确标注"未验证游戏可玩性"
 - 在 next_actions 中提醒 Executor 需要 Playwright 验证
+
+**★★★ 第三步：功能约束验证（阻断性 — 检查不该存在的元素）★★★**
+
+> 用户可能在对话中明确要求移除某些功能（如"去掉虚线方块""去掉粒子效果"）。
+> 这些约束必须被 formalize 为 verifier 检查，否则 Executor 会反复添加再移除。
+
+```javascript
+const featureBlacklist = await mcp__playwright__browser_evaluate({
+  function: () => {
+    // 检查不该存在的元素 — 从 goal.md "Feature Constraints" 提取
+    // 当前已知约束（Tetris 教训）：
+    const checks = {
+      // NO ghost piece (用户: "不该有下落的虚线方块")
+      'ghost-piece': !!document.querySelector('.ghost-piece, [class*="ghost"]'),
+      // NO particle system (用户: "粒子效果太卡去掉")
+      'particles': !!document.querySelector('.particles-container, .particle'),
+      // NO glow effects (用户反馈: 太卡/太亮)
+      'glow-effects': document.querySelectorAll('[style*="box-shadow"]').length > 5,
+      // NO deleted apps in gallery (snake-game 已删除)
+      'snake-game': !!document.querySelector('[href*="snake"], [data-app="snake-game"]')
+    };
+    const violations = Object.entries(checks)
+      .filter(([, present]) => present)
+      .map(([feature]) => feature);
+    return { violations, checks };
+  }
+})
+```
+
+**检查点：**
+- [ ] 无 ghost-piece 相关 CSS class
+- [ ] 无 particle 相关 DOM 元素
+- [ ] 无过量 inline box-shadow（>5 个可能是性能问题）
+- [ ] 无已删除应用的引用
+
+**如果违反功能约束：**
+- 标记 `"c6-gameplay": "FAIL"`
+- detail 列出具体违反的约束
+- 这是**阻断性 FAIL**
 
 ### 1.4 Workspace 分流（C4）
 
@@ -284,6 +400,28 @@ grep -c "configureServer" vite.config.ts
 # 应 >= 1
 ```
 
+### 2.7 CSS 健康检查
+
+```bash
+# G1: 检测 CSS calc() 中是否使用了 JS 常量（大写字母标识符）
+# 正确做法: calc(var(--cols) * 30px), 错误做法: calc(COLS * 30px)
+rg "calc\([^)]*[A-Z]{2,}[^)]*\)" apps/*/src/*.vue apps/*/src/*.css \
+  --type-add 'vue:*.vue' -g '*.vue' -g '*.css' \
+  | grep -v "var(--" | grep -v "calc(var(" | grep -v "px\|em\|rem\|%\|vh\|vw" || echo "PASS"
+# 有输出 = WARN（可能使用了 JS 常量而非 CSS 变量）
+
+# G2: 检测过量 DOM 节点（游戏页面不应超过 500 个元素）
+# Tetris 标准: 200 board cells + ~20 UI elements + 5 particles = ~225
+node -e "
+const fs = require('fs');
+const html = fs.readFileSync('apps/tetris-game/v2/dist/index.html', 'utf8');
+const cellMatches = html.match(/class=\"board-cell\"/g);
+const particleMatches = html.match(/class=\"particle\"/g);
+console.log('board-cells:', cellMatches ? cellMatches.length : 0);
+console.log('particles:', particleMatches ? particleMatches.length : 0);
+"
+```
+
 ---
 
 ## Phase 3: GitHub 状态（可选）
@@ -335,7 +473,7 @@ gh pr list --repo zenHeart/mitosis --state open
 
 **c6-app-quality vs c6-gameplay 的区别：**
 - `c6-app-quality`：构建层面（npm run build, verify-build.sh, 安全扫描）— 检查"能不能运行"
-- `c6-gameplay`：交互层面（Playwright 键盘操作 + 计分验证）— 检查"能不能玩"
+- `c6-gameplay`：交互层面（Playwright 键盘操作 + 计分验证 + 尺寸 + FPS + 功能约束）— 检查"能不能玩"
 
 **两者必须同时 PASS 才算应用真正可用。** 如果 c6-app-quality=PASS 但 c6-gameplay=FAIL/SKIPPED，整体 verdict 应为 PARTIAL 而非 PASS。
 
@@ -351,7 +489,9 @@ gh pr list --repo zenHeart/mitosis --state open
 
 **阻断性 FAIL（游戏相关）：**
 - c6-gameplay = FAIL（游戏启动失败、按键无响应、计分错误）
-- **游戏主窗口（.board-container）未渲染或没有 filled 单元格 — 核心功能缺失**
+- **游戏主窗口尺寸异常**（.board-container width < 300px 或 height < 600px）— 核心渲染缺失
+- **FPS < 50**（性能不可接受，游戏卡顿无法游玩）
+- **功能约束违反**（存在不该有的 ghost piece / particles / 已删除应用引用）
 - 平台 `npm run build` 失败
 - 安全扫描发现真实 token/key/secret
 - 关键文件缺失
@@ -360,7 +500,7 @@ gh pr list --repo zenHeart/mitosis --state open
 - Playwright MCP 不可用 → c6-gameplay = SKIPPED
 - GitHub CLI 未认证 → Phase 3 SKIPPED
 - StepFun API 不可用 → WARN
-- 某个应用构建失败但游戏本身可玩
+- FPS 50-55 → WARN（可玩但不够流畅）
 
 ## 铁律
 
