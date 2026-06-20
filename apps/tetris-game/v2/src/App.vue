@@ -21,18 +21,6 @@ interface Piece {
   y: number
 }
 
-interface Particle {
-  id: number
-  x: number
-  y: number
-  vx: number
-  vy: number
-  color: string
-  life: number
-  maxLife: number
-  size: number
-}
-
 interface GameState {
   board: CellValue[][]
   currentPiece: Piece | null
@@ -108,46 +96,6 @@ const state = reactive<GameState>({
 
 let timerId: ReturnType<typeof setInterval> | null = null
 const bag: number[] = []
-
-// ── Particles ───────────────────────────────────────────────────────────
-
-const particles = ref<Particle[]>([])
-let particleId = 0
-const MAX_PARTICLES = 30 // 粒子上限，防止卡顿
-
-function spawnParticles(row: number, color: string): void {
-  // 每 3 个格子生成 1 个粒子（4 个/行），减少 DOM 数量
-  const newParticles: Particle[] = []
-  for (let c = 0; c < COLS; c += 3) {
-    newParticles.push({
-      id: particleId++,
-      x: c * 30 + 15 + (Math.random() - 0.5) * 20,
-      y: row * 30 + 15,
-      vx: (Math.random() - 0.5) * 3,
-      vy: (Math.random() - 0.5) * 3 - 1.5,
-      color,
-      life: 1,
-      maxLife: 1,
-      size: Math.random() * 2.5 + 1.5,
-    })
-  }
-  const combined = [...particles.value, ...newParticles]
-  particles.value = combined.length > MAX_PARTICLES
-    ? combined.slice(combined.length - MAX_PARTICLES)
-    : combined
-}
-
-function updateParticles(): void {
-  particles.value = particles.value
-    .map((p) => ({
-      ...p,
-      x: p.x + p.vx,
-      y: p.y + p.vy,
-      vy: p.vy + 0.25,
-      life: p.life - 0.03,
-    }))
-    .filter((p) => p.life > 0)
-}
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -249,7 +197,6 @@ function startGame(): void {
   state.currentPiece = randomPiece()
   state.nextPiece = randomPiece()
   state.lastClearType = ''
-  particles.value = []
   state.isRunning = true
   startTimer()
 }
@@ -280,25 +227,15 @@ function startTimer(): void {
 
 function tick(): void {
   if (!state.isRunning || !state.currentPiece || state.isGameOver) return
-  updateParticles()
 
   const moved = { ...state.currentPiece, y: state.currentPiece.y + 1 }
   if (!collides(moved, state.board)) {
     state.currentPiece.y = moved.y
   } else {
     lockPiece(state.currentPiece, state.board)
-    const { cleared, rows } = clearLines(state.board)
+    const { cleared } = clearLines(state.board)
 
-    // Spawn particles for cleared lines
     if (cleared > 0) {
-      rows.forEach((row) => {
-        for (let c = 0; c < COLS; c++) {
-          const cell = state.board[row][c]
-          if (cell !== 0) {
-            spawnParticles(row, COLORS[cell])
-          }
-        }
-      })
       state.combo++
       let lineScore = LINE_SCORES[cleared]! * state.level
       if (state.combo > 0) {
@@ -472,17 +409,6 @@ const displayBoard = computed<CellValue[][]>(() => {
     }
   }
   return display
-})
-
-const ghostY = computed<number>(() => {
-  if (!state.currentPiece) return 0
-  let gy = state.currentPiece.y
-  while (true) {
-    const test = { ...state.currentPiece, y: gy + 1 }
-    if (collides(test, state.board)) break
-    gy++
-  }
-  return gy
 })
 
 // ── Hold Piece Shape ────────────────────────────────────────────────────
@@ -743,12 +669,6 @@ onUnmounted(() => {
                 class="board-cell"
                 :class="{
                   filled: cell !== 0,
-                  ghost:
-                    cell === 0 &&
-                    state.currentPiece &&
-                    r >= ghostY &&
-                    r < ghostY + state.currentPiece.shape.length &&
-                    state.currentPiece.shape[r - ghostY]?.[c],
                 }"
                 :style="
                   cell !== 0
@@ -759,22 +679,6 @@ onUnmounted(() => {
                 "
               />
             </div>
-          </div>
-
-          <!-- Particles -->
-          <div class="particles-container">
-            <div
-              v-for="p in particles"
-              :key="p.id"
-              class="particle"
-              :style="{
-                transform: `translate3d(${p.x}px, ${p.y}px, 0)`,
-                width: p.size + 'px',
-                height: p.size + 'px',
-                backgroundColor: p.color,
-                opacity: p.life,
-              }"
-            />
           </div>
 
           <!-- Clear Message -->
@@ -1239,34 +1143,6 @@ kbd {
 
 .board-cell.filled {
   border-color: rgba(255, 255, 255, 0.15);
-}
-
-.board-cell.ghost {
-  background: rgba(255, 255, 255, 0.06);
-  border: 2px dashed rgba(255, 255, 255, 0.2);
-  border-radius: 3px;
-}
-
-/* ── Particles ───────────────────────────────────────────────────────── */
-
-.particles-container {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  overflow: hidden;
-  contain: strict; /* 隔离重绘区域 */
-}
-
-.particle {
-  position: absolute;
-  top: 0;
-  left: 0;
-  border-radius: 50%;
-  pointer-events: none;
-  will-change: transform, opacity; /* GPU 合成层 */
 }
 
 /* ── Clear Message ───────────────────────────────────────────────────── */
