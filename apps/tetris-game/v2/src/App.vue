@@ -113,25 +113,29 @@ const bag: number[] = []
 
 const particles = ref<Particle[]>([])
 let particleId = 0
+const MAX_PARTICLES = 60 // 粒子上限，防止卡顿
 
 function spawnParticles(row: number, color: string): void {
+  // 每 2 个格子生成 1 个粒子（5 个/行），减少 DOM 数量
   const newParticles: Particle[] = []
-  for (let c = 0; c < COLS; c++) {
-    for (let i = 0; i < 3; i++) {
-      newParticles.push({
-        id: particleId++,
-        x: c * 30 + 15,
-        y: row * 30 + 15,
-        vx: (Math.random() - 0.5) * 8,
-        vy: (Math.random() - 0.5) * 8 - 2,
-        color,
-        life: 1,
-        maxLife: 1,
-        size: Math.random() * 4 + 2,
-      })
-    }
+  for (let c = 0; c < COLS; c += 2) {
+    newParticles.push({
+      id: particleId++,
+      x: c * 30 + 15 + (Math.random() - 0.5) * 20,
+      y: row * 30 + 15,
+      vx: (Math.random() - 0.5) * 4,
+      vy: (Math.random() - 0.5) * 4 - 2,
+      color,
+      life: 1,
+      maxLife: 1,
+      size: Math.random() * 3 + 2,
+    })
   }
-  particles.value = [...particles.value, ...newParticles]
+  // 合并 + 截断到上限
+  const combined = [...particles.value, ...newParticles]
+  particles.value = combined.length > MAX_PARTICLES
+    ? combined.slice(combined.length - MAX_PARTICLES)
+    : combined
 }
 
 function updateParticles(): void {
@@ -140,8 +144,8 @@ function updateParticles(): void {
       ...p,
       x: p.x + p.vx,
       y: p.y + p.vy,
-      vy: p.vy + 0.3, // gravity
-      life: p.life - 0.02,
+      vy: p.vy + 0.3,
+      life: p.life - 0.025,
     }))
     .filter((p) => p.life > 0)
 }
@@ -779,8 +783,7 @@ onUnmounted(() => {
               :key="p.id"
               class="particle"
               :style="{
-                left: p.x + 'px',
-                top: p.y + 'px',
+                transform: `translate3d(${p.x}px, ${p.y}px, 0)`,
                 width: p.size + 'px',
                 height: p.size + 'px',
                 backgroundColor: p.color,
@@ -1269,12 +1272,16 @@ kbd {
   height: 100%;
   pointer-events: none;
   overflow: hidden;
+  contain: strict; /* 隔离重绘区域 */
 }
 
 .particle {
   position: absolute;
+  top: 0;
+  left: 0;
   border-radius: 50%;
   pointer-events: none;
+  will-change: transform, opacity; /* GPU 合成层 */
 }
 
 /* ── Clear Message ───────────────────────────────────────────────────── */
