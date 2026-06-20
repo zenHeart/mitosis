@@ -1,0 +1,7 @@
+# Environment
+.env
+.env.local
+.env.*.local
+.claude/.goal-state.json
+.claude/.goal-verdict
+.claude/verification-report.txt

@@ -37,6 +37,17 @@ Repository ownership is configurable, not hardcoded:
 
 Project rules are in `.claude/rules/*.md`. Do not add arbitrary files under `.claude/`; use only official Claude Code locations such as `settings.json`, `rules/*.md`, `commands/*.md`, `agents/*.md`, and `skills/*/SKILL.md`.
 
+## Lessons Learned System
+
+项目维护两层经验沉淀机制，避免重复踩坑：
+
+| 层级 | 位置 | 用途 | 加载方式 |
+|------|------|------|---------|
+| 自动记忆 | `~/.claude/projects/<proj>/memory/` + `MEMORY.md` 索引 | 可复用规则、历史教训、配置模式 | 每次会话自动加载进 context |
+| 深度复盘 | `docs/retrospectives/` | 具体事件的完整根因分析、时间线、修复过程 | 人工查阅，版本化随代码库 |
+
+**规则：** 每次修复 Bug 后，必须将教训沉淀到自动记忆（`.claude/projects/.../memory/`）。当事件涉及多个提交的连锁反应时，额外撰写深度复盘放入 `docs/retrospectives/YYYY-MM-DD-<topic>.md`。
+
 ## Commands
 
 ```bash

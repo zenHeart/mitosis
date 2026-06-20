@@ -11,7 +11,7 @@ function ghUrl(repo: string, path: string): string {
   return `${GITHUB_API_BASE}/repos/${repo}${path}`
 }
 
-async function fetchWithTimeout(
+export async function fetchWithTimeout(
   input: RequestInfo,
   init: RequestInit = {},
   timeout = 10000
