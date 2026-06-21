@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify'
+import { marked } from 'marked'
 
 // ── DOMPurify 白名单配置 ──────────────────────────────────
 // 安全原则：仅允许必要标签，禁止 on* 事件属性
@@ -42,4 +43,15 @@ export function sanitize(dirty: string): string {
     FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'onchange', 'onsubmit'],
     ADD_ATTR: ['target', 'rel'],
   })
+}
+
+/**
+ * 将 Markdown 文本转换为安全 HTML：marked 解析 → DOMPurify 过滤
+ * - 适用于 GitHub Issue body、评论等 Markdown 内容
+ * - 两步过滤确保 XSS 安全（M2, M3）
+ */
+export function markdownToHtml(md: string): string {
+  if (!md) return ''
+  const html = marked.parse(md, { async: false }) as string
+  return sanitize(html)
 }

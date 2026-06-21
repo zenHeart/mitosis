@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import type { ChatSession } from '../types/app'
-import { listUserIssues, getIssueComments, createIssueComment } from '../composables/useGitHubAPI'
+import { listUserIssues, getIssue, getIssueComments, createIssueComment } from '../composables/useGitHubAPI'
+import { markdownToHtml } from '../composables/useSanitize'
 
 export interface Message {
   id?: string
@@ -69,15 +70,31 @@ export const useSessionStore = defineStore('session', {
       this.loading = true
       this.error = null
       try {
-        const comments = await getIssueComments(token, repo, issueNumber)
-        this.messages = comments.map((c) => ({
+        const [issue, comments] = await Promise.all([
+          getIssue(token, repo, issueNumber),
+          getIssueComments(token, repo, issueNumber),
+        ])
+        const msgs: Message[] = []
+        // Issue body 作为第一条消息（需求描述/AI 分析等上下文）
+        if (issue.body) {
+          msgs.push({
+            id: `issue-body-${issue.number}`,
+            role: 'system',
+            content: markdownToHtml(issue.body),
+            createdAt: issue.created_at,
+            sanitized: true,
+          })
+        }
+        // Comments 作为后续消息
+        msgs.push(...comments.map((c) => ({
           id: `msg-${c.id}`,
           role: 'user' as const,
-          content: c.body,
+          content: markdownToHtml(c.body),
           createdAt: c.created_at,
           sanitized: true,
-        }))
-        // 回写 messageCount 到对应 session
+        })))
+        this.messages = msgs
+        // 回写 messageCount 到对应 session（含 body 共 +1）
         const session = this.sessions.find((s) => s.issueNumber === issueNumber)
         if (session) {
           session.messageCount = this.messages.length

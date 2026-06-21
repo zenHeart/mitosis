@@ -44,7 +44,7 @@ function getNextIssueNumber(): number {
 // ── Mock API 函数 ──────────────────────────────────────────
 
 export async function mockListUserIssues(_token: string, _repo: string): Promise<ChatSession[]> {
-  return readSessions().filter((s) => s.status === 'open')
+  return readSessions()
 }
 
 export async function mockGetIssueComments(

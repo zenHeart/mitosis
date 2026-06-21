@@ -3,20 +3,18 @@ import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useSessionStore } from '../stores/session'
 import { usePolling } from '../composables/usePolling'
-import { createIssue, getIssue, listApps } from '../composables/useGitHubAPI'
 import { chatWithStepFun } from '../composables/useStepFun'
 import { sanitize } from '../composables/useSanitize'
 import { detectCreateCommand } from '../composables/useMockGitHub'
-import AppCard from './AppCard.vue'
+import { createIssue, getIssue } from '../composables/useGitHubAPI'
 import ChatInput from './ChatInput.vue'
-import type { BuildIssue, AppInfo, ChatSession } from '../types/app'
+import type { BuildIssue, ChatSession } from '../types/app'
 import { REPO_FULL_NAME, userRepoFullName } from '../config/repo'
 
 const authStore = useAuthStore()
 const sessionStore = useSessionStore()
 const { start, stopAll } = usePolling()
 
-const apps = ref<AppInfo[]>([])
 const inputText = ref('')
 const building = ref(false)
 const activeIssue = ref<BuildIssue | null>(null)
@@ -166,8 +164,19 @@ onMounted(async () => {
       inputText.value = `我想在 ${refApp} 的基础上继续开发，帮我...`
       window.history.replaceState({}, '', window.location.pathname)
     }
+    // RESTful: 从 URL ?session={issueNumber} 恢复会话
+    const sessionParam = params.get('session')
+    if (sessionParam && authStore.token) {
+      const issueNumber = Number(sessionParam)
+      if (Number.isInteger(issueNumber)) {
+        await sessionStore.loadSessions(authStore.token, repo.value)
+        const session = sessionStore.sessions.find(s => s.issueNumber === issueNumber)
+        if (session) {
+          await loadSession(session)
+        }
+      }
+    }
   }
-  await loadApps()
   if (authStore.token) {
     await sessionStore.loadSessions(authStore.token, repo.value)
   }
@@ -181,15 +190,6 @@ function getConversationHistory() {
       role: m.role as 'user' | 'assistant',
       content: m.content,
     }))
-}
-
-async function loadApps() {
-  if (!authStore.token) return
-  try {
-    apps.value = await listApps(authStore.token, repo.value)
-  } catch (e) {
-    console.error('Failed to load apps:', e)
-  }
 }
 
 async function handleSend() {
@@ -388,7 +388,6 @@ function onIssueUpdate(issue: BuildIssue) {
     })
     building.value = false
     stopAll()
-    loadApps()
     return
   }
 
@@ -429,7 +428,6 @@ function onIssueUpdate(issue: BuildIssue) {
     })
     building.value = false
     stopAll()
-    loadApps()
   }
 }
 
@@ -453,6 +451,14 @@ function extractAppName(input: string): string {
   const cleaned = input.toLowerCase().replace(/[^a-z0-9一-龥]/g, '-')
   const collapsed = cleaned.replace(/-+/g, '-').replace(/^-|-$/g, '')
   return collapsed || 'my-app'
+}
+
+async function navigateToSession(session: ChatSession) {
+  // RESTful: URL query 参数记录会话状态
+  const url = new URL(window.location.href)
+  url.searchParams.set('session', String(session.issueNumber))
+  window.history.pushState({}, '', url.toString())
+  await loadSession(session)
 }
 
 async function loadSession(session: ChatSession) {
@@ -508,24 +514,25 @@ function handleNewChat() {
             :key="session.issueNumber"
             class="session-item"
             :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber, closed: session.status === 'closed' }"
-            @click="loadSession(session)"
+            @click="navigateToSession(session)"
           >
             <span class="session-title">{{ session.title }}</span>
             <span class="session-status" :class="session.status">{{ session.status === 'open' ? '●' : '○' }}</span>
           </div>
         </template>
 
-        <!-- 应用会话：点击直接跳转应用路由 -->
+        <!-- 应用会话：也是「我的应用」入口，点击会话查看历史，点击「打开」跳转路由 -->
         <template v-if="sessionStore.groupedSessions.app.length">
           <div class="session-group-label">📦 应用</div>
           <div
             v-for="session in sessionStore.groupedSessions.app"
             :key="session.issueNumber"
-            class="session-item app-session"
-            :class="{ closed: session.status === 'closed' }"
+            class="session-item"
+            :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber, closed: session.status === 'closed' }"
+            @click="navigateToSession(session)"
           >
             <span class="session-title">{{ session.title }}</span>
-            <span v-if="session.appLabel" class="session-app-tag">{{ session.appLabel.replace('app/', '') }}</span>
+            <span class="session-status" :class="session.status">{{ session.status === 'open' ? '●' : '○' }}</span>
             <button class="session-open-btn" @click.stop="openAppSession(session)" title="打开应用">打开</button>
           </div>
         </template>
@@ -538,22 +545,23 @@ function handleNewChat() {
             :key="session.issueNumber"
             class="session-item"
             :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber, closed: session.status === 'closed' }"
-            @click="loadSession(session)"
+            @click="navigateToSession(session)"
           >
             <span class="session-title">{{ session.title }}</span>
             <span class="session-status" :class="session.status">{{ session.status === 'open' ? '●' : '○' }}</span>
           </div>
         </template>
       </div>
-      <div class="apps-list">
-        <h3>我的应用</h3>
-        <div v-if="apps.length === 0" class="empty-apps">暂无应用</div>
-        <AppCard v-for="app in apps" :key="app.id" :app="app" />
-      </div>
     </aside>
     <main class="chat-area">
       <div class="messages">
-        <div v-if="displayMessages.length === 0 && isOwner" class="welcome">
+        <!-- 有活跃会话且没有消息时显示会话标题 -->
+        <div v-if="displayMessages.length === 0 && sessionStore.activeSession" class="welcome session-welcome">
+          <h3>{{ sessionStore.activeSession.title }}</h3>
+          <p>Issue #{{ sessionStore.activeSession.issueNumber }} · {{ sessionStore.activeSession.messageCount }} 条消息</p>
+          <p class="hint-text">发送消息开始对话</p>
+        </div>
+        <div v-else-if="displayMessages.length === 0 && isOwner" class="welcome">
           <h3>👋 你好，{{ authStore.user?.login }}</h3>
           <p>描述你想做的事情，AI 会自动判断是构建应用还是平台变更。</p>
           <div class="examples">
@@ -814,6 +822,21 @@ function handleNewChat() {
   text-align: center;
   margin: auto;
   padding: 2rem;
+}
+
+.welcome.session-welcome {
+  margin-top: 4rem;
+}
+
+.welcome.session-welcome h3 {
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.welcome.session-welcome .hint-text {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
 }
 
 .welcome h3 {
