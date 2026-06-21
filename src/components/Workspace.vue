@@ -55,10 +55,11 @@ const INTENT_LABELS: Record<string, string> = {
 function triageMessage(text: string): TriageResult {
   const lower = text.toLowerCase()
 
-  // 平台关键词 — 触及 src/、CI、认证、部署、Mitosis 自身
+  // 平台关键词 — Mitosis 自身变更（动词在前或 mito 在后均可）
   const isPlatform =
     /src\//i.test(text) ||
-    /mitosis 本身|mitosis 平台|优化 Mitosis|改进 Mitosis/.test(text) ||
+    /mitosis\s*(支持|增加|去掉|删除|修改|优化|改进|加个|加上|升级|重构)/i.test(text) ||
+    /(?:给|帮|让)\s*mitosis\s*(加|增加|加个|去掉|删|改|优化|升级|支持)/i.test(text) ||
     /(?:GitHub Actions|workflow|CI|OAuth|认证|deploy|gh-pages|composable|组件库|架构|核心逻辑)/.test(text) ||
     /(?:Workspace|SetupPage|Gallery|ChatInput)/.test(text)
 
