@@ -63,7 +63,7 @@ Executor turn 完成
 
 ## Verifier Subagent（`mvp-verifier`）
 
-定义在 `.claude/agents/verifier.md`。
+定义在 `.claude/skills/setgoal/SKILL.md`。
 
 **三大阶段：**
 - Phase 1: Playwright MCP 浏览器测试（匿名 Gallery → 登录 → Workspace 分流）

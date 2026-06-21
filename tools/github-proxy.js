@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * agent/github-proxy.js — GitHub API 本地代理
+ * tools/github-proxy.js — GitHub API 本地代理
  *
  * 解决本地网络不通 api.github.com 的问题。
  * 浏览器 → localhost:5174 → (走系统代理) → api.github.com
  *
- * 用法: node agent/github-proxy.js
+ * 用法: node tools/github-proxy.js
  * 环境变量:
  *   GITHUB_MCP_PAT 或 VITE_GITHUB_TOKEN — GitHub API token
  */

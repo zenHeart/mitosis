@@ -18,7 +18,7 @@
 - `docs/` 收口为长期核心信息。
 - `agent/` 收口为执行、验收、目标队列和完成记录。
 - `goal.md` 成为当前唯一活跃目标。
-- `CLAUDE.md` 与 `.claude/rules/goal-loop.md` 成为本地 Claude Code 官方规则入口。
+- `CLAUDE.md` 与 `.claude/rules/setgoal.md` 成为本地 Claude Code 官方规则入口。
 - CI 路径明确为 `--bare` + 显式 verifier loop。
 - IssueOps 收口为 owner gate + verifier + draft PR review，不直接自动合入主干。
 

@@ -596,7 +596,7 @@ Week 3 (P2 — Polish):
 
 The `stop-verifier.sh` stale stage name bug reveals a deeper architectural issue: **the verifier is not itself verified**. The proposed improvements include:
 
-1. **Self-consistency check** — Before each run, verify that all stage/app names referenced in `.claude/hooks/` and `.claude/agents/` match the current `goal.md` definition
+1. **Self-consistency check** — Before each run, verify that all stage/app names referenced in `.claude/hooks/` and `.claude/skills/` match the current `goal.md` definition
 2. **Verifier test suite** — A set of known-bad and known-good inputs that exercise the verifier to ensure it catches what it should catch
 3. **Regression test for each bug** — Each bug that slipped through should become a permanent test case:
    - `test-4x4px-board`: Board with collapsed CSS should FAIL dimension check

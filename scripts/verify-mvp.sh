@@ -1,6 +1,6 @@
 #!/bin/bash
-# agent/verify-mvp.sh — Mitosis MVP 构建验证脚本（Phase 2: 构建 + 安全 + 结构）
-# 用法: bash agent/verify-mvp.sh [--skip-build] [--skip-app]
+# scripts/verify-mvp.sh — Mitosis MVP 构建验证脚本（Phase 2: 构建 + 安全 + 结构）
+# 用法: bash scripts/verify-mvp.sh [--skip-build] [--skip-app]
 #
 # 退出码: 0 = PASS, 1 = FAIL, 2 = SKIP (Phase 2 跳过，Phase 1/3 在其他地方验证)
 #
@@ -35,7 +35,7 @@ log_warn()  { echo -e "  \033[1;33m⚠️  $1\033[0m"; WARNINGS=$((WARNINGS + 1)
 log_info()  { echo -e "  ℹ️  $1"; }
 
 echo "═══════════════════════════════════════════════════════════"
-echo "  Phase 2: 构建验证 (agent/verify-mvp.sh)"
+echo "  Phase 2: 构建验证 (scripts/verify-mvp.sh)"
 echo "═══════════════════════════════════════════════════════════"
 
 # ── 2.1 平台构建 ──────────────────────────────────────────

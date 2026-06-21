@@ -1,0 +1,45 @@
+{
+  "skill_name": "setgoal",
+  "description": "目标驱动迭代技能的测试用例",
+  "evals": [
+    {
+      "id": 1,
+      "name": "manual-trigger-goal",
+      "prompt": "/goal",
+      "expected_output": "调用 setgoal 技能，读取 goal.md 和 state，执行 Phase A 评估",
+      "assertions": [
+        {"type": "file_read", "path": "goal.md", "required": true},
+        {"type": "file_read", "path": ".claude/.goal-state.json", "required": true},
+        {"type": "skill_invoke", "skill": "setgoal", "required": true}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "manual-trigger-text",
+      "prompt": "继续推进目标",
+      "expected_output": "同 /goal，触发 setgoal 技能",
+      "assertions": [
+        {"type": "skill_invoke", "skill": "setgoal", "required": true}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "non-trigger",
+      "prompt": "帮我看看这个文件",
+      "expected_output": "不触发 setgoal 技能，直接响应请求",
+      "assertions": [
+        {"type": "skill_invoke", "skill": "setgoal", "required": false}
+      ]
+    },
+    {
+      "id": 4,
+      "name": "phase-a-evaluate",
+      "prompt": "/goal 评估当前状态",
+      "expected_output": "读取 goal.md 和 state，输出当前 criteria 状态",
+      "assertions": [
+        {"type": "file_read", "path": "goal.md", "required": true},
+        {"type": "file_read", "path": ".claude/.goal-state.json", "required": true}
+      ]
+    }
+  ]
+}

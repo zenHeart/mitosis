@@ -104,5 +104,5 @@ ANTHROPIC_BASE_URL=https://api.stepfun.com/step_plan
 推荐命令：
 
 ```text
-/goal Read goal.md and follow CLAUDE.md plus .claude/rules/goal-loop.md, complete all acceptance criteria, include verifier PASS and command outputs in the transcript, stop after 20 turns if blocked.
+/goal Read goal.md and follow CLAUDE.md plus .claude/rules/setgoal.md, complete all acceptance criteria, include verifier PASS and command outputs in the transcript, stop after 20 turns if blocked.
 ```

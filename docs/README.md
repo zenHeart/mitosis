@@ -1,20 +1,28 @@
-# Mitosis 文档地图
+# 文档地图
 
-`docs/` 保存长期核心信息。当前目标和执行状态不放在这里，而放在根目录 `goal.md` 与 `agent/`。
+`docs/` 保存长期技术架构和规范。`docs/product/` 保存产品需求、功能设计和业务决策。
 
 ## 阅读顺序
 
 | 顺序 | 文档 | 用途 |
 |------|------|------|
-| 1 | [overview.md](overview.md) | 产品目标、MVP 范围、自举闭环 |
-| 2 | [architecture.md](architecture.md) | 当前代码结构和端到端数据流 |
+| 1 | [product/overview.md](product/overview.md) | 产品目标、MVP 范围、自举闭环 |
+| 2 | [architecture.md](architecture.md) | 代码结构、数据流、技术架构 |
 | 3 | [setup.md](setup.md) | GitHub OAuth、StepFun、Cloudflare Worker 配置 |
-| 4 | [deployment.md](deployment.md) | GitHub Pages 部署和 Vite base 语义 |
-| 5 | [agent-loop.md](agent-loop.md) | CI Agent Loop 和 `--bare` 执行路径 |
-| 6 | [quality.md](quality.md) | P1/P2/P3/F 质量标准和验收门控 |
-| 7 | [security.md](security.md) | 密钥、敏感信息和本地文件规则 |
-| 8 | [decisions.md](decisions.md) | ADR 决策记录 |
-| 9 | [history.md](history.md) | 已完成里程碑和经验摘要 |
+| 4 | [agent-loop.md](agent-loop.md) | CI Agent Loop 和 `--bare` 执行路径 |
+| 5 | [quality.md](quality.md) | P1/P2/P3/F 质量标准和验收门控 |
+| 6 | [security.md](security.md) | 密钥、敏感信息和本地文件规则 |
+| 7 | [decisions.md](decisions.md) | ADR 决策记录 |
+| 8 | [history.md](history.md) | 已完成里程碑和经验摘要 |
+| 9 | [goals/README.md](goals/README.md) | Agent 运行时入口 |
+
+## docs/product/ — 产品需求文档
+
+| 文档 | 用途 |
+|------|------|
+| [product/overview.md](product/overview.md) | 产品目标、MVP 范围、自举闭环 |
+| [product/deployment.md](product/deployment.md) | 部署策略、GitHub Pages、Vite base 语义 |
+| [product/chat-session-design.md](product/chat-session-design.md) | 聊天会话管理架构设计（Issue-backed sessions） |
 
 ## 非 docs 入口
 
@@ -24,5 +32,5 @@
 | [../AGENT.md](../AGENT.md) | Agent 总入口 |
 | [../goal.md](../goal.md) | 当前唯一活跃目标 |
 | [../CLAUDE.md](../CLAUDE.md) | Claude Code 官方项目入口 |
-| [../.claude/rules/goal-loop.md](../.claude/rules/goal-loop.md) | 本地 Claude Code `/goal` 规则 |
-| [../agent/README.md](../agent/README.md) | Agent 执行文档入口 |
+| [../.claude/rules/setgoal.md](../.claude/rules/setgoal.md) | 本地 Claude Code `/goal` 规则 |
+| [goals/README.md](goals/README.md) | Agent 执行文档入口 |

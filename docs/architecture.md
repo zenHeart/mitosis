@@ -335,7 +335,128 @@ flowchart TD
 | **L1 扩展** | 用户在闭环基础上扩展应用功能 | 版本管理、多轮迭代、模板市场、云服务集成 |
 | **L2 增强** | Mitosis 平台自身能力增强 | 多 LLM、自定义 Agent、团队协作、插件系统 |
 
-铁律：L0 闭环是系统存在的前提。任何 L1/L2 的改动都不能影响最小闭环的完整性和可用性，即“通过 Mitosis 页面描述目标 → 聊天澄清 → 创建 Issue → owner gate → Claude Code loop → verifier → draft PR → human review → merge deploy → 回到 Mitosis 页面继续迭代”这一链路必须始终畅通。初始化配置环节的可扩展性（从纯 GitHub 到云服务集成）是平台自迭代的核心机制。
+铁律：L0 闭环是系统存在的前提。任何 L1/L2 的改动都不能影响最小闭环的完整性和可用性，即”通过 Mitosis 页面描述目标 → 聊天澄清 → 创建 Issue → owner gate → Claude Code loop → verifier → draft PR → human review → merge deploy → 回到 Mitosis 页面继续迭代”这一链路必须始终畅通。初始化配置环节的可扩展性（从纯 GitHub 到云服务集成）是平台自迭代的核心机制。
+
+## 会话管理架构（Issue-backed Chat Sessions）
+
+每个聊天 session 对应一个 GitHub Issue。Issue comments 作为消息持久化层，天然支持历史恢复和权限控制。
+
+```text
+Session ↔ GitHub Issue
+Message ↔ Issue Comment
+System Status ↔ Issue Labels
+Build Trigger ↔ /create Comment (owner only)
+```
+
+**Session 生命周期：**
+```mermaid
+stateDiagram-v2
+    [*] --> Open: 用户发送第一条消息
+    Open --> Active: 用户继续对话
+    Active --> Active: 发送消息 (Issue comment)
+    Active --> Building: 用户输入 /create (仅 owner)
+    Building --> Review: agent loop 通过 verifier
+    Building --> Open: 构建失败 (status:failed)
+    Review --> Open: PR 合入，新版本可用
+    Review --> Open: PR 关闭，不满足需求
+    Open --> Closed: 用户手动关闭
+```
+
+**消息流：**
+```mermaid
+sequenceDiagram
+    participant User
+    participant SPA as Vue SPA
+    participant Session as Session Store
+    participant GH as GitHub Issues API
+    participant CI as GitHub Actions
+
+    User->>SPA: 打开 Workspace
+    SPA->>Session: loadSessions()
+    Session->>GH: listUserIssues(open)
+    GH->>Session: 返回 open Issues
+    alt 有历史 Issues
+        Session->>SPA: 自动恢复最近一个 session
+        SPA->>GH: getIssueComments(issueNumber)
+        GH->>SPA: 历史评论 → messages[]
+    else 无历史 Issues
+        Session->>GH: createIssue(“新对话”)
+        GH->>Session: 新 Issue
+    end
+
+    User->>SPA: 发送消息
+    SPA->>Session: sendMessage(text)
+    Session->>GH: postComment(issueNumber, text)
+    GH->>SPA: 确认
+    SPA->>SPA: 乐观更新 messages[]
+
+    User->>SPA: 输入 /create 确认构建
+    SPA->>GH: postComment(issueNumber, “/create”)
+    GH->>CI: issue_comment event
+    CI->>CI: 验证 owner + app/{name} label
+    CI->>CI: 触发 agent loop
+```
+
+**/create 安全门控：**
+```mermaid
+flowchart TD
+    A[“issue_comment.created 事件”] --> B{“COMMENT_BODY 包含 /create?”}
+    B -->|否| C[忽略]
+    B -->|是| D{“COMMENT_AUTHOR === REPO_OWNER?”}
+    D -->|否| E[忽略 — 非 owner 无权触发]
+    D -->|是| F{“Issue 有 app/{name} label?”}
+    F -->|否| G[评论提示: 需要 app/{name} label]
+    F -->|是| H{“已有 status:building label?”}
+    H -->|是| I[去重跳过 — 已在构建中]
+    H -->|否| J[“触发 agent loop → status:building”]
+```
+
+**分流协议（扩展）：**
+| 分流结果 | 行为 | Issue 操作 |
+|---------|------|-----------|
+| `chat` (R1) | 直接 AI 回复 | 不创建 Issue（临时对话） |
+| `chat` (R2 simple tweak) | 直接 AI 回复 | 不创建 Issue |
+| `build` (R3) | AI 确认 BUILD_APP → 用户 `/create` | 创建 Issue，用户确认后 post comment |
+| `platform` (R4/R5) | AI 分析 + 创建 Issue | 创建 Issue + `platform`/`needs-review` label |
+| `clarify` (R6) | 追问用户 | 不创建 Issue |
+
+**状态从 Labels 读取（替代仅 polling body）：**
+| Label | 含义 | UI 表现 |
+|-------|------|--------|
+| `status:building` | Agent Loop 构建中 | 显示 构建中 |
+| `status:verifying` | Verifier 运行中 | 显示 验证中 |
+| `status:review` | 验证通过，等待审查 | 显示 等待人工审查 |
+| `status:failed` | 构建失败 | 显示 失败 |
+| `app/{name}` | 应用名称 | 解析应用名和版本 |
+| `platform` | 平台变更 | 显示平台变更标记 |
+| `needs-review` | 需要人工审核 | 平台 Issue 专用 |
+
+**历史恢复机制：**
+1. 用户登录后，`sessionStore.loadSessions()` 调用 `listUserIssues()`
+2. 按 `updated_at` 倒序排列，取第一个 open Issue
+3. 调用 `getIssueComments()` 加载所有评论
+4. 按 `created_at` 排序，还原为 messages[] 数组
+5. 用户可手动切换到其他历史 session
+
+**GFM Markdown 渲染：**
+- 库：`marked` + `DOMPurify`
+- 渲染路径：`markdown → HTML → DOMPurify.sanitize() → v-html`
+- 白名单标签：`p, br, strong, em, code, pre, ul, ol, li, a, blockquote, table, h1-h6, img, input`
+- 白名单属性：`href, title, alt, class, target, rel, type, checked, disabled`
+- XSS 防护：禁止 `javascript:` / `data:` URL，禁止 `<script>` / `<iframe>` / `<form>`
+
+**本地 Mock 模式：**
+```bash
+VITE_USE_LOCAL_MOCK=true npm run dev
+```
+- 所有 GitHub API 调用路由到 localStorage
+- 数据结构：
+  - `mitosis_mock_issues` → Issue 列表
+  - `mitosis_mock_comments_{issueNumber}` → Comment 列表
+- 支持完整的 create/read/update/close 操作
+- 重启后数据保留（localStorage 持久化）
+
+> **产品设计细节**（方案选型、分流协议、时序图）见 [`product/chat-session-design.md`](product/chat-session-design.md)。
 
 ## 架构设计
 

@@ -1,6 +1,6 @@
 #!/bin/bash
-# agent/verify-local.sh — 本地环境验证（含 Playwright 游戏交互测试）
-# 用法: bash agent/verify-local.sh [--verbose]
+# scripts/verify-local.sh — 本地环境验证（含 Playwright 游戏交互测试）
+# 用法: bash scripts/verify-local.sh [--verbose]
 #
 # 验证内容:
 #   1. HTTP 可访问性（Gallery + 应用页面）

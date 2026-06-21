@@ -6,12 +6,56 @@
 
 | 场景 | 入口 | 可用能力 | 验证方式 |
 |------|------|----------|----------|
-| 本地 Claude Code | `CLAUDE.md` + `.claude/rules/goal-loop.md` + `/goal` | hooks、MCP、subagent、project memory | verifier + Stop Hook |
+| 本地 Claude Code | `CLAUDE.md` + `.claude/rules/setgoal.md` + `/goal` | hooks、MCP、subagent、project memory | verifier + Stop Hook |
 | GitHub Actions CI | `.github/workflows/mitosis.yml` | `claude -p --bare` | 显式 shell loop + `worker/verify-build.sh` |
 
 `--bare` 会跳过 hooks、skills、plugins、MCP、auto memory 和 `CLAUDE.md`/`.claude/rules/*.md` 自动发现。因此 CI 不能依赖本地规则或本地 verifier 自动运行。
 
 本地 `.claude/settings.json` 禁用 bypass permissions 以保护开发环境；CI 在隔离的 GitHub runner 中使用 `--bare` 并显式传入 `--permission-mode bypassPermissions`、`--allowed-tools` 和 verifier 命令。两条路径共享验收合同，但不共享本地自动发现配置。
+
+## 执行原则
+
+- 目标来自 `goal.md`。
+- 范围来自 `goal.md`。
+- 验收来自 `goal.md`、`docs/goals/acceptance.md`、`docs/quality.md`。
+- 当前 goal 未完成前，不新增自发任务。
+
+## 执行步骤
+
+1. 读 `goal.md`，列出验收 checklist。
+2. 读必要文档，不通读无关历史。
+3. 做最小修改。
+4. 运行验证命令。
+5. 根据 verifier 结果决定：
+   - PASS：更新 backlog/archive，输出结果。
+   - FAIL：修复失败项，重新验证。
+   - BLOCKED：说明阻塞证据和下一步，不伪装通过。
+
+## 本地 /goal
+
+本地 Claude Code 可以使用 `CLAUDE.md`、`.claude/rules/*.md`、hooks、MCP、subagent。
+
+Stop Hook 阻止结束时应使用：
+
+```json
+{
+  "decision": "block",
+  "reason": "Verifier failed. Continue fixing the listed issues."
+}
+```
+
+或者：
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "Stop",
+    "additionalContext": "Verifier failed. Continue fixing the listed issues."
+  }
+}
+```
+
+不要用 `continue:false` 作为失败回环机制；它会停止处理，且 `stopReason` 不会反馈给模型继续修。
 
 ## CI 输入
 

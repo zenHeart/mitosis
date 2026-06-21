@@ -5,9 +5,9 @@
 ## 开工顺序
 
 1. 读 [goal.md](goal.md)：当前唯一活跃目标、范围、验收标准。
-2. 读 [CLAUDE.md](CLAUDE.md) 和 [.claude/rules/goal-loop.md](.claude/rules/goal-loop.md)：本地 Claude Code 项目规则。
-3. 读 [agent/README.md](agent/README.md)：Agent 工作流入口。
-4. 按 [docs/quality.md](docs/quality.md) 和 [agent/acceptance.md](agent/acceptance.md) 验收。
+2. 读 [CLAUDE.md](CLAUDE.md) 和 [.claude/rules/setgoal.md](.claude/rules/setgoal.md)：本地 Claude Code 项目规则。
+3. 读 [docs/goals/README.md](docs/goals/README.md)：Agent 工作流入口。
+4. 按 [docs/quality.md](docs/quality.md) 和 [docs/goals/acceptance.md](docs/goals/acceptance.md) 验收。
 
 ## 不可违反
 
@@ -20,13 +20,13 @@
 ## 标准命令
 
 ```text
-/goal Read goal.md and follow CLAUDE.md plus .claude/rules/goal-loop.md, complete all acceptance criteria, include verifier PASS and command outputs in the transcript, stop after 20 turns if blocked.
+/goal Read goal.md and follow CLAUDE.md plus .claude/rules/setgoal.md, complete all acceptance criteria, include verifier PASS and command outputs in the transcript, stop after 20 turns if blocked.
 ```
 
 ## 文档入口
 
 - 项目总览：[README.md](README.md)
 - 长期文档：[docs/README.md](docs/README.md)
-- Agent 执行：[agent/README.md](agent/README.md)
+- Agent 执行：[docs/goals/README.md](docs/goals/README.md)
 - CI Loop：[docs/agent-loop.md](docs/agent-loop.md)
 - 安全规则：[docs/security.md](docs/security.md)

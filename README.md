@@ -45,12 +45,12 @@
 | 想了解 | 入口 | 用途 |
 |--------|------|------|
 | 文档地图 | [docs/README.md](docs/README.md) | 长期核心文档入口 |
-| 产品目标 | [docs/overview.md](docs/overview.md) | MVP 范围、自举闭环、核心约束、项目起源 |
+| 产品目标 | [docs/product/overview.md](docs/product/overview.md) | MVP 范围、自举闭环、核心约束、项目起源 |
 | 架构细节 | [docs/architecture.md](docs/architecture.md) | 三阶段流程、完整架构图、数据流、约束条件 |
 | 初始化配置 | [docs/setup.md](docs/setup.md) | GitHub OAuth、Cloudflare Worker、StepFun、Claude Code 本地配置 |
 | CI Loop | [docs/agent-loop.md](docs/agent-loop.md) | GitHub Actions 中的 `--bare` 执行路径 |
 | 质量门控 | [docs/quality.md](docs/quality.md) | P1/P2/P3/F 和验收标准 |
-| Agent 执行 | [AGENT.md](AGENT.md) / [agent/README.md](agent/README.md) | Agent 总入口和执行协议 |
+| Agent 执行 | [AGENT.md](AGENT.md) / [docs/goals/README.md](docs/goals/README.md) | Agent 总入口和执行协议 |
 | 当前目标 | [goal.md](goal.md) | 当前唯一活跃目标和验收标准 |
 
 ## 核心原理
@@ -83,14 +83,14 @@ mitosis/
 ├── .claude/
 │   ├── settings.json       # Claude Code 项目级共享设置
 │   └── rules/
-│       ├── goal-loop.md    # 本地 /goal 执行规则
+│       ├── setgoal.md    # 本地 /goal 执行协议
 │       └── mermaid.md      # Markdown Mermaid 写法规则
 ├── .github/
 │   └── workflows/
 │       ├── mitosis.yml     # IssueOps + Agent Loop + verifier + draft PR
 │       └── deploy.yml      # master 合入后部署到 GitHub Pages
 ├── docs/                   # 长期核心文档
-├── agent/                  # Agent 执行、验收、目标队列
+├── docs/goals/              # Agent 执行、验收、目标队列
 ├── worker/                 # OAuth Worker + CI prompt + verifier
 ├── apps/                   # Agent 生成的应用（版本化）
 │   └── {app-name}/

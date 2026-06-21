@@ -15,7 +15,7 @@
       "Bash(npx *)",
       "Bash(node *)",
       "Bash(git *)",
-      "Bash(bash agent/verify-mvp.sh *)",
+      "Bash(bash scripts/verify-mvp.sh *)",
       "Bash(bash worker/verify-build.sh)",
       "Bash(rg *)",
       "Bash(curl *)",
@@ -23,7 +23,7 @@
       "Read(./apps/**)",
       "Read(./worker/**)",
       "Read(./docs/**)",
-      "Read(./agent/**)",
+      "Read(./docs/goals/**)",
       "Read(.claude/**)",
       "Read(.github/**)",
       "Read(./*.json)",
@@ -37,7 +37,7 @@
       "Edit(./apps/**)",
       "Edit(./worker/**)",
       "Edit(./docs/**)",
-      "Edit(./agent/**)",
+      "Edit(./docs/goals/**)",
       "Edit(.claude/**)",
       "Edit(.github/**)"
     ]
