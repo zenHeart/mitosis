@@ -315,14 +315,13 @@ async function createBuild(appName: string, description: string, basedOn?: strin
 
   building.value = true
   activeIssue.value = null
+  const version = basedOn ? 'v1' : 'v0'
+  const labels = basedOn ? [`app/${appName}`, 'update'] : [`app/${appName}`]
+  const basedOnLine = basedOn ? `\n- 基于: ${basedOn}` : ''
+  const body = `## 需求描述\n\n${description}${basedOn ? `\n\n## 基于现有应用\n\n基于应用: ${basedOn}` : ''}\n\n## 构建信息\n\n- 应用名称: ${appName}\n- 版本: ${version}\n- 触发方式: Web 界面${basedOnLine}`
 
   try {
     const token = authStore.token!
-    const version = basedOn ? 'v1' : 'v0'
-    const labels = basedOn ? [`app/${appName}`, 'update'] : [`app/${appName}`]
-    const basedOnLine = basedOn ? `\n- 基于: ${basedOn}` : ''
-    const body = `## 需求描述\n\n${description}${basedOn ? `\n\n## 基于现有应用\n\n基于应用: ${basedOn}` : ''}\n\n## 构建信息\n\n- 应用名称: ${appName}\n- 版本: ${version}\n- 触发方式: Web 界面${basedOnLine}`
-
     const issue = await createIssue(token, repo.value, `build: ${appName} ${version}`, body, labels)
 
     sessionStore.addMessage({
@@ -333,9 +332,21 @@ async function createBuild(appName: string, description: string, basedOn?: strin
 
     start(issue.number, () => getIssue(token, repo.value, issue.number), onIssueUpdate)
   } catch (e) {
+    const err = e instanceof Error ? e : new Error('未知错误')
+    const statusMatch = err.message.match(/(\d{3})/)
+    const status = statusMatch?.[1]
+    const repoFull = repo.value
+    const title = `build: ${appName} ${version}`
+    const encodedBody = encodeURIComponent(`## 需求描述\n\n${description}${basedOn ? `\n\n## 基于现有应用\n\n基于应用: ${basedOn}` : ''}`)
+    const fallbackUrl = `https://github.com/${repoFull}/issues/new?title=${encodeURIComponent(title)}&body=${encodedBody}&labels=app/${appName}`
+
+    const fallbackMsg = status === '403'
+      ? `⚠️ 当前 Token 无仓库写入权限（403），无法自动创建构建任务。\n\n请点击下方链接手动创建 Issue（已预填内容），创建后 CI 将自动构建：\n[在 GitHub 上创建构建任务](${fallbackUrl})`
+      : `❌ 创建任务失败: ${err.message}`
+
     sessionStore.addMessage({
       role: 'system',
-      content: `❌ 创建任务失败: ${e instanceof Error ? e.message : '未知错误'}`,
+      content: fallbackMsg,
       createdAt: new Date().toISOString(),
     })
     building.value = false
@@ -362,9 +373,22 @@ async function createPlatformIssue(originalText: string, analysis: string) {
       createdAt: new Date().toISOString(),
     })
   } catch (e) {
+    // 403: token 无 repo 权限 → 降级到 GitHub Web UI
+    const err = e instanceof Error ? e : new Error('未知错误')
+    const statusMatch = err.message.match(/(\d{3})/)
+    const status = statusMatch?.[1]
+    const repoFull = repo.value
+    const title = `platform: ${originalText.slice(0, 60)}${originalText.length > 60 ? '…' : ''}`
+    const encodedTitle = encodeURIComponent(`## 需求描述\n\n${originalText}\n\n## AI 分析\n\n${analysis}\n\n## 影响范围\n\n平台代码变更 — 需要人工审核`)
+    const fallbackUrl = `https://github.com/${repoFull}/issues/new?title=${encodeURIComponent(title)}&body=${encodedTitle}&labels=platform,needs-review`
+
+    const fallbackMsg = status === '403'
+      ? `⚠️ 当前 Token 无仓库写入权限（403），无法自动创建 Issue。\n\n请点击下方链接手动创建（已预填内容）：\n[在 GitHub 上创建 Issue](${fallbackUrl})`
+      : `❌ 创建 Issue 失败: ${err.message}`
+
     sessionStore.addMessage({
       role: 'system',
-      content: `❌ 创建 Issue 失败: ${e instanceof Error ? e.message : '未知错误'}`,
+      content: fallbackMsg,
       createdAt: new Date().toISOString(),
     })
   } finally {
