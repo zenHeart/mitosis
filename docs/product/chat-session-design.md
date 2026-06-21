@@ -139,17 +139,13 @@ mock 层实现：
 - Mock 数据存储在 localStorage
 - 支持: createIssue, getIssue, listIssues, getComments, postComment, addLabel, removeLabel
 
-### 代理模式（Phase 2 集成测试）
+### 代理模式（集成测试）
 
-```bash
-node tools/github-proxy.js &
-npm run dev
-```
+直接运行 `npm run dev` 即可——Vite proxy 自动将 `/api/github/` 转发到 `api.github.com`，无需额外启动本地代理服务。
 
-- 所有 `/api/github/` 请求 → localhost:5174 → api.github.com
-- 使用真实 GitHub token
-- 创建真实的 Issues/Comments
-- 适合: 端到端流程验证
+- 所有 `/api/github/` 请求 → Vite proxy → api.github.com（自动注入 auth header）
+- 使用真实 GitHub token（`VITE_GITHUB_TOKEN` 环境变量）
+- 支持: 端到端流程验证 + Playwright E2E
 
 ### 生产模式
 

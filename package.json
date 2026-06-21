@@ -15,12 +15,14 @@
   },
   "dependencies": {
     "cors": "^2.8.6",
+    "dompurify": "^3.4.11",
     "express": "^5.2.1",
     "pinia": "^3.0.0",
     "vue": "^3.5.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.0",
+    "@types/dompurify": "^3.0.5",
     "@vitejs/plugin-vue": "^5.2.0",
     "@vitest/ui": "^4.1.9",
     "happy-dom": "^20.10.6",

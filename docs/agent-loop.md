@@ -6,10 +6,10 @@
 
 | 场景 | 入口 | 可用能力 | 验证方式 |
 |------|------|----------|----------|
-| 本地 Claude Code | `CLAUDE.md` + `.claude/rules/setgoal.md` + `/goal` | hooks、MCP、subagent、project memory | verifier + Stop Hook |
+| 本地 Claude Code | `CLAUDE.md` + `.claude/skills/setgoal/SKILL.md` + `/goal` | hooks、MCP、subagent、project memory | verifier + Stop Hook |
 | GitHub Actions CI | `.github/workflows/mitosis.yml` | `claude -p --bare` | 显式 shell loop + `worker/verify-build.sh` |
 
-`--bare` 会跳过 hooks、skills、plugins、MCP、auto memory 和 `CLAUDE.md`/`.claude/rules/*.md` 自动发现。因此 CI 不能依赖本地规则或本地 verifier 自动运行。
+`--bare` 会跳过 hooks、skills、plugins、MCP、auto memory 和 `CLAUDE.md`/`.claude/skills/*` 自动发现。因此 CI 不能依赖本地规则或本地 verifier 自动运行。
 
 本地 `.claude/settings.json` 禁用 bypass permissions 以保护开发环境；CI 在隔离的 GitHub runner 中使用 `--bare` 并显式传入 `--permission-mode bypassPermissions`、`--allowed-tools` 和 verifier 命令。两条路径共享验收合同，但不共享本地自动发现配置。
 

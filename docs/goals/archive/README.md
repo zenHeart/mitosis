@@ -49,6 +49,32 @@ frontmatter 之后是归档时刻的完整 `goal.md` 内容。
 
 - 建立 `README.md`、`docs/`、`docs/goals/` 三层文档结构。
 - 建立根目录 `goal.md` 作为唯一活跃目标。
-- 建立 `CLAUDE.md` 与 `.claude/rules/setgoal.md` 作为本地 Claude Code 官方规则入口。
+- 建立 `CLAUDE.md` 与 `.claude/skills/setgoal/SKILL.md` 作为本地 Claude Code 官方规则入口。
 - 明确本地 `/goal` 与 CI `--bare` 是两条路径。
 - 明确 CI 必须显式运行 `worker/verify-build.sh`。
+
+## 2026-06-21 chat-session-management-mvp
+
+- **状态**: ✅ 完成（18/18 PASS）
+- **Turn**: 6
+- **成果**: Issue-backed 会话管理系统 MVP，含 CI 安全门控、DOMPurify 渲染、隐私脱敏
+- **新增文件**: types/app.ts, stores/session.ts, composables/useGitHubAPI/Mock/Sanitize/Security.ts
+- **下一阶段**: 本地集成调试（Mock 模式 wiring）
+
+## 2026-06-21 local-integration-wiring
+
+- **状态**: ✅ 完成（5/5 PASS）
+- **成果**: Mock 路由层、session store wiring、/create 命令集成、env 文档
+- **新增**: .env.example, .env.local
+
+## 2026-06-21 session-lifecycle-ui
+
+- **状态**: ✅ 完成
+- **成果**: 侧边栏会话列表 + loadSession + 自动分组（appLabel）
+- **设计**: 极简设计，最小认知负荷，~40行改动
+
+### session-lifecycle-ui
+- **状态**: ✅ PASS（5/5）
+- **改动**: Workspace.vue 侧边栏加会话列表 + loadSession 函数 + 样式
+- **行数**: ~50 行（模板 15 + 脚本 6 + 样式 30）
+- **设计**: 极简，无新标签/类型/API，利用已有 appLabel 自动分组

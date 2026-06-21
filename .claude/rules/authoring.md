@@ -3,13 +3,13 @@ paths:
   - "**/*.md"
 ---
 
-# Markdown 链接路径规则
+# Authoring Rules — Markdown 编写规范
 
-## 禁止冗余路径
+## Markdown 链接路径
+
+### 禁止冗余路径
 
 Markdown 链接不得包含"回退再进入同一目录"的冗余路径。
-
-### 规则
 
 **从 `docs/` 内的文件链接到 `docs/` 内其他文件：**
 
@@ -48,15 +48,12 @@ Markdown 链接不得包含"回退再进入同一目录"的冗余路径。
 | `docs/x.md` → `docs/y.md` | `../docs/y.md` | `y.md` |
 | `docs/goals/x.md` → `docs/goals/y.md` | `y.md` | `y.md` |
 
-### 判断方法
-
+**判断方法：**
 1. 确定当前文件所在目录
 2. 确定目标文件所在目录
 3. 计算最简相对路径（不经过祖父目录再返回子目录）
 
----
-
-## 根目录引用（超过 1 层回退时使用）
+### 根目录引用（超过 1 层回退时使用）
 
 当相对路径需要 `../` 超过 1 次时（即出现 `../../` 或更多），直接使用以 `/` 开头的根目录引用。`/` 代表项目根目录。
 
@@ -75,3 +72,23 @@ Markdown 链接不得包含"回退再进入同一目录"的冗余路径。
 ```
 
 **判断方法：** 如果需要 `../` 两次或更多 → 用 `/.claude/...` 或 `/<path-from-root>`。
+
+---
+
+## Mermaid 图表
+
+Mermaid flowchart/node labels inside `[...]` must not contain Chinese smart quotes `"` or `"`; they can cause parse errors.
+
+```mermaid
+# Bad
+flowchart TD
+    A[点击"继续迭代"]
+
+# Good
+flowchart TD
+    A[点击继续迭代]
+    B[点击'继续迭代']
+    C["点击继续迭代"]
+```
+
+When editing Markdown diagrams, check all Mermaid node labels before declaring the document verified.

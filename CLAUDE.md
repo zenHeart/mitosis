@@ -57,7 +57,8 @@ mitosis/
 │   ├── settings.json       # 项目级设置
 │   ├── rules/              # 项目规则
 │   ├── skills/             # 技能定义（setgoal、security-audit 等）
-│   └── agents/             # Claude Code 原生自定义 agent
+│   ├── agents/             # Claude Code 原生自定义 agent
+│   └── memory/             # 项目工作记忆（MEMORY.md + 分类记忆文件）
 ├── src/                    # 平台源码
 ├── scripts/               # 验证脚本
 ├── tools/                 # 工具脚本
@@ -78,10 +79,15 @@ mitosis/
 
 | 层级 | 位置 | 用途 | 加载方式 |
 |------|------|------|---------|
-| 自动记忆 | `~/.claude/projects/<proj>/memory/` + `MEMORY.md` 索引 | 可复用规则、历史教训、配置模式 | 每次会话自动加载进 context |
+| 自动记忆 | `.claude/memory/` + `MEMORY.md` 索引 | 可复用规则、历史教训、配置模式 | 每次会话自动加载进 context |
 | 深度复盘 | `docs/retrospectives/` | 具体事件的完整根因分析、时间线、修复过程 | 人工查阅，版本化随代码库 |
 
-**规则：** 每次修复 Bug 后，必须将教训沉淀到自动记忆（`.claude/projects/.../memory/`）。当事件涉及多个提交的连锁反应时，额外撰写深度复盘放入 `docs/retrospectives/YYYY-MM-DD-<topic>.md`。
+**规则：** 每次修复 Bug 后，将教训沉淀到 `.claude/memory/`。当事件涉及多个提交的连锁反应时，额外撰写深度复盘放入 `docs/retrospectives/YYYY-MM-DD-<topic>.md`。
+
+**记忆组织原则：**
+- 同类规则合并为单一文件，不要为同一事件拆成多个文件
+- 每个记忆必须包含不可从代码/文档推断的洞见
+- 过时/一次性内容及时清理，避免浪费 context window
 
 ## Commands
 

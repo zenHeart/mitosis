@@ -25,8 +25,8 @@ echo "[verifier] C6-C9: /create Trigger + CI Owner Gate"
 echo ""
 
 # C6: 创建 Issue 不自动触发（createIssue 和 agent loop 分离）
-CREATE_COUNT=$(grep -r "createIssue\|createSession\|openIssue" src/ 2>/dev/null | wc -l | tr -d ' ')
-TRIGGER_COUNT=$(grep -r "triggerAgentLoop\|startBuild\|agentLoop\|onCreate" src/ .github/ 2>/dev/null | wc -l | tr -d ' ')
+CREATE_COUNT=$(grep -r "createIssue\|createSession\|openIssue" src/ 2>/dev/null | wc -l | tr -d ' ') || true
+TRIGGER_COUNT=$(grep -r "triggerAgentLoop\|startBuild\|agentLoop\|onCreate" src/ .github/ 2>/dev/null | wc -l | tr -d ' ') || true
 
 if [[ "$CREATE_COUNT" -gt 0 ]]; then
   check "Issue creation code exists (C6)" "pass"
@@ -97,7 +97,8 @@ if [[ -f ".github/workflows/mitosis.yml" ]]; then
 
   # 检查不使用 issues 事件作为触发器
   # issues 事件包括: opened, closed, reopened, edited, deleted, transferred, pinned, unpinned, assigned, unassigned, labeled, unlabeled, locked, unlocked, milestoned, demilestoned
-  ISSUES_EVENT_TRIGGER=$(grep -E "^\s*issues:" .github/workflows/mitosis.yml 2>/dev/null || true)
+  # 只检查 on: 块中的 issues:（排除 permissions 中的 issues: write）
+  ISSUES_EVENT_TRIGGER=$(awk '/^on:/{found=1} found && /^\s*issues:/ && !/write/{print; exit}' .github/workflows/mitosis.yml 2>/dev/null || true)
   if [[ -z "$ISSUES_EVENT_TRIGGER" ]]; then
     check "CI does NOT use issues event trigger (C9)" "pass"
   else

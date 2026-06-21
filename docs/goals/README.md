@@ -5,7 +5,7 @@
 ## 开工顺序
 
 1. [/goal.md](/goal.md) — 当前唯一活跃目标。
-2. [/CLAUDE.md](/CLAUDE.md) 与 [/.claude/rules/setgoal.md](/.claude/rules/setgoal.md) — 本地 Claude Code 项目规则。
+2. [/CLAUDE.md](/CLAUDE.md) 与 [/.claude/skills/setgoal/SKILL.md](/.claude/skills/setgoal/SKILL.md) — 本地 Claude Code 项目规则。
 3. [/docs/agent-loop.md](/docs/agent-loop.md) — Agent Loop 详细协议（含本地和 CI）。
 4. [acceptance.md](acceptance.md) — 完成前验收协议。
 5. [verifier.md](verifier.md) — 本地与 CI verifier 输出格式。
@@ -15,7 +15,7 @@
 ## 标准 `/goal`
 
 ```text
-/goal Read goal.md and follow CLAUDE.md plus .claude/rules/setgoal.md, complete all acceptance criteria, include verifier PASS and command outputs in the transcript, stop after 20 turns if blocked.
+/goal Read goal.md and follow CLAUDE.md plus .claude/skills/setgoal/SKILL.md, complete all acceptance criteria, include verifier PASS and command outputs in the transcript, stop after 20 turns if blocked.
 ```
 
 ## 完成定义

@@ -51,6 +51,34 @@ Phase E: 演进                ← 评估是否需要调整目标
 7. **状态即文档** — `.goal-state.json` 和 `goal.md` 是唯一可信源
 8. **代码现实优先** — Phase A 先核查代码，不信任 state  alone
 
+## Verdict 判定规则
+
+| 条件 | Verdict |
+|------|---------|
+| 所有 criteria PASS/SKIPPED，无 FAIL | PASS |
+| 1-2 个非阻断性 FAIL | PARTIAL |
+| 阻断性 FAIL（平台构建失败、安全扫描发现 token） | FAIL |
+| Phase 1 全部 SKIPPED 但 Phase 2/3 通过 | PARTIAL |
+
+**阻断性 FAIL：** 平台 `npm run build` 失败、安全扫描发现真实 token/key/secret、关键文件缺失
+
+**Verifier 三大阶段：**
+- Phase 1: Playwright MCP 浏览器测试（匿名 Gallery → 登录 → Workspace 分流）
+- Phase 2: Bash 构建验证（npm run build + verify-build.sh + 安全扫描）
+- Phase 3: GitHub API 状态检查（Issue label + PR 状态）
+
+**输出：** 严格 JSON，包含 `verdict` + `criteria_results` + `failed_items` + `next_actions`
+
+## 与 CI Loop 的关系
+
+| 维度 | 本地 /goal | CI --bare |
+|------|-----------|------|
+| 机制 | Executor + Verifier subagent + Stop hook | Shell for-loop + verify-build.sh |
+| 验证 | Playwright + Bash + GitHub MCP | verify-build.sh (构建+功能) |
+| 重试 | 1000 turn 上限，verifier 驱动 | 3 次 attempt，shell 驱动 |
+| 适用 | 平台流程验证（端到端） | 生成应用质量（构建产物） |
+| 人工介入 | Stop hook block + 反馈 | draft PR + human review |
+
 ## 安全审计
 
 每轮 Phase C 必须调用 `security-audit` skill：
@@ -97,7 +125,6 @@ Skill(skill: "security-audit")
 | 原生 `/goal <条件>` | 循环控制：每轮自动执行，评估条件是否满足 |
 | `setgoal` 技能 | 执行协议：定义每轮内部的 Phase 0→A→X→B→C→D→E 流程 |
 | `security-audit` 技能 | 安全扫描：每轮 Phase C 调用，5 步快速扫描 |
-| `/setgoal` 命令 | 目标定义：创建/迭代 goal.md + verifier |
 | `.goal-state.json` | 跨轮状态持久化 |
 | `docs/goals/archive.md` | 已完成目标归档摘要 |
 | `docs/goal-history/` | 目标快照版本库 |

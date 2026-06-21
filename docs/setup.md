@@ -63,6 +63,24 @@ VITE_GITHUB_REPO_NAME=mitosis
 
 生产部署时在 GitHub Actions secret 或 Pages 构建环境中配置同名值。默认仓库是 `zenHeart/mitosis`；fork/复制到自己的仓库后，应把 `VITE_GITHUB_REPO_OWNER` 改为自己的 GitHub 用户名或组织名。
 
+### Mock 模式（无需 GitHub 仓库）
+
+在 `.env.local` 中设置 `VITE_USE_MOCK_GITHUB=true`，然后直接运行：
+
+```bash
+npm run dev
+```
+
+> `.env.local` 已加入 `.gitignore`，不会被提交。
+
+设置 `VITE_USE_MOCK_GITHUB=true` 后，所有 GitHub API 调用路由到浏览器 `localStorage`，无需真实仓库和 OAuth 配置。适合 UI 开发和集成测试：
+
+- `mitosis_mock_sessions` — 存储 chat session 列表
+- `mitosis_mock_sessions_messages` — 存储每个 session 的评论（消息）
+- `/create 描述` 命令直接触发构建流程，跳过 AI 对话
+
+清除 mock 数据：在浏览器控制台执行 `localStorage.removeItem('mitosis_mock_sessions')` 和 `localStorage.removeItem('mitosis_mock_sessions_messages')`，或在代码中调用 `clearMockData()`。
+
 ## 3. Cloudflare Worker
 
 Worker 位于 `worker/`，负责 OAuth code exchange。
@@ -104,5 +122,5 @@ ANTHROPIC_BASE_URL=https://api.stepfun.com/step_plan
 推荐命令：
 
 ```text
-/goal Read goal.md and follow CLAUDE.md plus .claude/rules/setgoal.md, complete all acceptance criteria, include verifier PASS and command outputs in the transcript, stop after 20 turns if blocked.
+/goal Read goal.md and follow CLAUDE.md plus .claude/skills/setgoal/SKILL.md, complete all acceptance criteria, include verifier PASS and command outputs in the transcript, stop after 20 turns if blocked.
 ```

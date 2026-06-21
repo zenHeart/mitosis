@@ -446,13 +446,16 @@ flowchart TD
 - XSS 防护：禁止 `javascript:` / `data:` URL，禁止 `<script>` / `<iframe>` / `<form>`
 
 **本地 Mock 模式：**
+
+在 `.env.local` 中设置 `VITE_USE_MOCK_GITHUB=true`，然后直接运行：
 ```bash
-VITE_USE_LOCAL_MOCK=true npm run dev
+npm run dev
 ```
+
 - 所有 GitHub API 调用路由到 localStorage
 - 数据结构：
-  - `mitosis_mock_issues` → Issue 列表
-  - `mitosis_mock_comments_{issueNumber}` → Comment 列表
+  - `mitosis_mock_sessions` → Chat session 列表
+  - `mitosis_mock_sessions_messages` → 每个 session 的评论（消息）
 - 支持完整的 create/read/update/close 操作
 - 重启后数据保留（localStorage 持久化）
 

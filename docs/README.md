@@ -32,5 +32,5 @@
 | [../AGENT.md](../AGENT.md) | Agent 总入口 |
 | [../goal.md](../goal.md) | 当前唯一活跃目标 |
 | [../CLAUDE.md](../CLAUDE.md) | Claude Code 官方项目入口 |
-| [../.claude/rules/setgoal.md](../.claude/rules/setgoal.md) | 本地 Claude Code `/goal` 规则 |
+| [../.claude/skills/setgoal/SKILL.md](../.claude/skills/setgoal/SKILL.md) | 本地 Claude Code `/goal` 规则 |
 | [goals/README.md](goals/README.md) | Agent 执行文档入口 |

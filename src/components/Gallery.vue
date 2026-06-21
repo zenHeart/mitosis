@@ -51,7 +51,7 @@ watch(selectedApp, async (newApp) => {
 
 onMounted(async () => {
   try {
-    // 优先使用带 token 的 API（DEV 走 Vite proxy → github-proxy → api.github.com）
+    // 优先使用带 token 的 API（DEV 走 Vite proxy → api.github.com，自动注入 auth header）
     // 本地自动登录模式下 authStore.token 已被注入
     const apiApps = await listApps(authStore.token || '', REPO_FULL_NAME)
     if (apiApps.length > 0) {

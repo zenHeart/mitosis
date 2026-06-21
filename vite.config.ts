@@ -99,9 +99,13 @@ export default defineConfig({
   server: {
     proxy: {
       '/api/github/': {
-        target: 'http://localhost:5174',
+        target: 'https://api.github.com',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/github/, ''),
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Accept: 'application/vnd.github+json',
+        },
       },
     },
   },

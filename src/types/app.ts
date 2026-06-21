@@ -14,3 +14,23 @@ export interface BuildIssue {
   labels: { name: string }[]
   created_at: string
 }
+
+// ── 会话管理系统类型 ──────────────────────────────────────
+
+export interface IssueComment {
+  id: number
+  body: string
+  user: { login: string; avatar_url?: string }
+  created_at: string
+}
+
+export interface ChatSession {
+  issueNumber: number
+  title: string
+  status: 'open' | 'closed'
+  labels: string[]
+  messageCount: number
+  createdAt: string
+  updatedAt: string
+  appLabel?: string
+}

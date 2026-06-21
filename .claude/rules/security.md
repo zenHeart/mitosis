@@ -121,8 +121,8 @@ git worktree add .claude/worktrees/security-fix <commit>^
 
 ## 相关记忆
 
-- [[auth-exchange-must-be-in-store-init]]
-- [[gallery-api-timeout-protection]]
-- [[ci-env-vars-not-passed-by-default]]
-- [[oauth-redirect-loop-github-pages]]
-- [[chat-session-architecture]]
+- [[oauth-redirect-loop-github-pages]] — OAuth 安全流程（含 authStore.init() 铁律）
+- [[gallery-api-timeout-protection]] — Gallery API 超时保护
+- [[ci-workflow-lessons-learned]] — CI 构建经验（含 env vars 处理）
+- [[chat-session-architecture]] — Issue-backed 安全模型
+- [[vite-proxy-direct-to-upstream]] — Vite proxy 直接代理

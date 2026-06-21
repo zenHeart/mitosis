@@ -1,20 +1,23 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
+import { useSessionStore } from '../stores/session'
 import { usePolling } from '../composables/usePolling'
 import { createIssue, getIssue, listApps } from '../composables/useGitHubAPI'
 import { chatWithStepFun } from '../composables/useStepFun'
+import { sanitize } from '../composables/useSanitize'
+import { detectCreateCommand } from '../composables/useMockGitHub'
 import AppCard from './AppCard.vue'
 import ChatInput from './ChatInput.vue'
-import type { BuildIssue, AppInfo } from '../types/app'
+import type { BuildIssue, AppInfo, ChatSession } from '../types/app'
 import { REPO_FULL_NAME, userRepoFullName } from '../config/repo'
 
 const authStore = useAuthStore()
+const sessionStore = useSessionStore()
 const { start, stopAll } = usePolling()
 
 const apps = ref<AppInfo[]>([])
 const inputText = ref('')
-const messages = ref<{ role: 'user' | 'assistant' | 'system'; text: string; time: string }[]>([])
 const building = ref(false)
 const activeIssue = ref<BuildIssue | null>(null)
 const thinking = ref(false)
@@ -23,6 +26,15 @@ const clarifying = ref(false)
 const clarifyingMsg = ref('')
 const triageLog = ref<string[]>([])
 const pendingBuildContext = ref('')
+
+// Map store messages to template shape
+const displayMessages = computed(() =>
+  sessionStore.messages.map(m => ({
+    role: m.role,
+    text: m.content,
+    time: new Date(m.createdAt).toLocaleTimeString(),
+  }))
+)
 
 // ─── 分流协议 ───────────────────────────────────────────
 type TriageAction = 'chat' | 'build' | 'platform' | 'clarify'
@@ -156,15 +168,18 @@ onMounted(async () => {
     }
   }
   await loadApps()
+  if (authStore.token) {
+    await sessionStore.loadSessions(authStore.token, repo.value)
+  }
 })
 
 function getConversationHistory() {
-  return messages.value
+  return sessionStore.messages
     .filter(m => m.role === 'user' || m.role === 'assistant')
     .slice(-20)
     .map(m => ({
       role: m.role as 'user' | 'assistant',
-      content: m.text,
+      content: m.content,
     }))
 }
 
@@ -182,6 +197,26 @@ async function handleSend() {
   const text = inputText.value.trim()
   if (!text || building.value || !authStore.token) return
 
+  // ── /create 命令：直接触发构建，跳过 StepFun ──
+  const createCmd = detectCreateCommand(text)
+  if (createCmd.triggered) {
+    const description = createCmd.description || text
+    const appName = extractAppName(description)
+    sessionStore.addMessage({
+      role: 'user',
+      content: text,
+      createdAt: new Date().toISOString(),
+    })
+    sessionStore.addMessage({
+      role: 'assistant',
+      content: `🚀 检测到 /create 命令，直接启动构建流程...\n\n${description}`,
+      createdAt: new Date().toISOString(),
+    })
+    inputText.value = ''
+    await createBuild(appName, description)
+    return
+  }
+
   // 如果正在澄清，把用户回复当作澄清回答重新分流
   const previousBuildContext = pendingBuildContext.value
   if (clarifying.value) {
@@ -189,7 +224,11 @@ async function handleSend() {
     clarifyingMsg.value = ''
   }
 
-  messages.value.push({ role: 'user', text, time: new Date().toLocaleTimeString() })
+  sessionStore.addMessage({
+    role: 'user',
+    content: text,
+    createdAt: new Date().toISOString(),
+  })
   inputText.value = ''
   thinking.value = true
 
@@ -208,10 +247,10 @@ async function handleSend() {
    - 修改已有应用：请告诉我应用名称和具体要改什么
 
 2. **这个改动是在 Mitosis 平台本身，还是在某个已部署的应用上？**`
-      messages.value.push({
+      sessionStore.addMessage({
         role: 'assistant',
-        text: clarifyingMsg.value,
-        time: new Date().toLocaleTimeString(),
+        content: clarifyingMsg.value,
+        createdAt: new Date().toISOString(),
       })
       return
     }
@@ -231,10 +270,10 @@ async function handleSend() {
     ])
     const trimmed = response.trim()
 
-    messages.value.push({
+    sessionStore.addMessage({
       role: 'assistant',
-      text: trimmed,
-      time: new Date().toLocaleTimeString(),
+      content: trimmed,
+      createdAt: new Date().toISOString(),
     })
 
     // ── 4. 根据分流结果执行 ──
@@ -260,10 +299,10 @@ async function handleSend() {
     }
     // R1/R2 (chat): 直接回复，无需进一步操作
   } catch (e) {
-    messages.value.push({
+    sessionStore.addMessage({
       role: 'system',
-      text: `❌ 请求失败: ${e instanceof Error ? e.message : '未知错误'}`,
-      time: new Date().toLocaleTimeString(),
+      content: `❌ 请求失败: ${e instanceof Error ? e.message : '未知错误'}`,
+      createdAt: new Date().toISOString(),
     })
   } finally {
     thinking.value = false
@@ -285,18 +324,18 @@ async function createBuild(appName: string, description: string, basedOn?: strin
 
     const issue = await createIssue(token, repo.value, `build: ${appName} ${version}`, body, labels)
 
-    messages.value.push({
+    sessionStore.addMessage({
       role: 'system',
-      text: `📝 已创建构建任务 #${issue.number} — ${appName} ${version}\n正在启动构建流程...`,
-      time: new Date().toLocaleTimeString(),
+      content: `📝 已创建构建任务 #${issue.number} — ${appName} ${version}\n正在启动构建流程...`,
+      createdAt: new Date().toISOString(),
     })
 
     start(issue.number, () => getIssue(token, repo.value, issue.number), onIssueUpdate)
   } catch (e) {
-    messages.value.push({
+    sessionStore.addMessage({
       role: 'system',
-      text: `❌ 创建任务失败: ${e instanceof Error ? e.message : '未知错误'}`,
-      time: new Date().toLocaleTimeString(),
+      content: `❌ 创建任务失败: ${e instanceof Error ? e.message : '未知错误'}`,
+      createdAt: new Date().toISOString(),
     })
     building.value = false
   }
@@ -316,16 +355,16 @@ async function createPlatformIssue(originalText: string, analysis: string) {
 
     const issue = await createIssue(token, repo.value, title, body, ['platform', 'needs-review'])
 
-    messages.value.push({
+    sessionStore.addMessage({
       role: 'system',
-      text: `⚠️ 已创建平台变更请求 #${issue.number}，标记为「需要审核」\n\n平台代码变更不会自动构建，需要人工 review 后处理。\n查看: https://github.com/${repo.value}/issues/${issue.number}`,
-      time: new Date().toLocaleTimeString(),
+      content: `⚠️ 已创建平台变更请求 #${issue.number}，标记为「需要审核」\n\n平台代码变更不会自动构建，需要人工 review 后处理。\n查看: https://github.com/${repo.value}/issues/${issue.number}`,
+      createdAt: new Date().toISOString(),
     })
   } catch (e) {
-    messages.value.push({
+    sessionStore.addMessage({
       role: 'system',
-      text: `❌ 创建 Issue 失败: ${e instanceof Error ? e.message : '未知错误'}`,
-      time: new Date().toLocaleTimeString(),
+      content: `❌ 创建 Issue 失败: ${e instanceof Error ? e.message : '未知错误'}`,
+      createdAt: new Date().toISOString(),
     })
   } finally {
     building.value = false
@@ -341,10 +380,10 @@ function onIssueUpdate(issue: BuildIssue) {
   const appUrl = `https://mitosis.zenheart.site/apps/${appName}/${version}/`
 
   if (labels.has('status:review')) {
-    messages.value.push({
+    sessionStore.addMessage({
       role: 'system',
-      text: `✅ ${appName} ${version} 已通过自动验证，等待人工审查。\n合入 master 后访问: ${appUrl}`,
-      time: new Date().toLocaleTimeString(),
+      content: `✅ ${appName} ${version} 已通过自动验证，等待人工审查。\n合入 master 后访问: ${appUrl}`,
+      createdAt: new Date().toISOString(),
     })
     building.value = false
     stopAll()
@@ -353,10 +392,10 @@ function onIssueUpdate(issue: BuildIssue) {
   }
 
   if (labels.has('status:failed')) {
-    messages.value.push({
+    sessionStore.addMessage({
       role: 'system',
-      text: `❌ ${appName} ${version} 自动验证失败，请查看 Issue #${issue.number} 和 Actions 日志。`,
-      time: new Date().toLocaleTimeString(),
+      content: `❌ ${appName} ${version} 自动验证失败，请查看 Issue #${issue.number} 和 Actions 日志。`,
+      createdAt: new Date().toISOString(),
     })
     building.value = false
     stopAll()
@@ -364,28 +403,28 @@ function onIssueUpdate(issue: BuildIssue) {
   }
 
   if (labels.has('status:verifying') && !previousLabels.has('status:verifying')) {
-    messages.value.push({
+    sessionStore.addMessage({
       role: 'system',
-      text: `🔎 正在验证 ${appName} ${version}... (Issue #${issue.number})`,
-      time: new Date().toLocaleTimeString(),
+      content: `🔎 正在验证 ${appName} ${version}... (Issue #${issue.number})`,
+      createdAt: new Date().toISOString(),
     })
     return
   }
 
   if (labels.has('status:building') && !previousLabels.has('status:building')) {
-    messages.value.push({
+    sessionStore.addMessage({
       role: 'system',
-      text: `🔨 正在构建 ${appName} ${version}... (Issue #${issue.number})`,
-      time: new Date().toLocaleTimeString(),
+      content: `🔨 正在构建 ${appName} ${version}... (Issue #${issue.number})`,
+      createdAt: new Date().toISOString(),
     })
     return
   }
 
   if (issue.state === 'closed') {
-    messages.value.push({
+    sessionStore.addMessage({
       role: 'system',
-      text: `Issue #${issue.number} 已关闭。应用版本路径: ${appUrl}`,
-      time: new Date().toLocaleTimeString(),
+      content: `Issue #${issue.number} 已关闭。应用版本路径: ${appUrl}`,
+      createdAt: new Date().toISOString(),
     })
     building.value = false
     stopAll()
@@ -415,9 +454,15 @@ function extractAppName(input: string): string {
   return collapsed || 'my-app'
 }
 
+async function loadSession(session: ChatSession) {
+  sessionStore.setActiveSession(session)
+  await sessionStore.loadMessages(authStore.token!, repo.value, session.issueNumber)
+  inputText.value = ''
+}
+
 function handleNewChat() {
   stopAll()
-  messages.value = []
+  sessionStore.setActiveSession(null)
   activeIssue.value = null
   building.value = false
   clarifying.value = false
@@ -441,6 +486,19 @@ function handleNewChat() {
       <nav class="nav">
         <button @click="handleNewChat" class="new-chat-btn">+ 新建对话</button>
       </nav>
+      <div class="sessions-list" v-if="sessionStore.sortedSessions.length">
+        <h3>最近对话</h3>
+        <div
+          v-for="session in sessionStore.sortedSessions"
+          :key="session.issueNumber"
+          class="session-item"
+          :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber }"
+          @click="loadSession(session)"
+        >
+          <span class="session-title">{{ session.title }}</span>
+          <span v-if="session.appLabel" class="session-app-tag">{{ session.appLabel.replace('app/', '') }}</span>
+        </div>
+      </div>
       <div class="apps-list">
         <h3>我的应用</h3>
         <div v-if="apps.length === 0" class="empty-apps">暂无应用</div>
@@ -449,7 +507,7 @@ function handleNewChat() {
     </aside>
     <main class="chat-area">
       <div class="messages">
-        <div v-if="messages.length === 0 && isOwner" class="welcome">
+        <div v-if="displayMessages.length === 0 && isOwner" class="welcome">
           <h3>👋 你好，{{ authStore.user?.login }}</h3>
           <p>描述你想做的事情，AI 会自动判断是构建应用还是平台变更。</p>
           <div class="examples">
@@ -461,17 +519,17 @@ function handleNewChat() {
             <button @click="inputText = 'Mitosis 目前的技术栈是什么？'">💬 咨询问题</button>
           </div>
         </div>
-        <div v-else-if="messages.length === 0 && !isOwner" class="welcome">
+        <div v-else-if="displayMessages.length === 0 && !isOwner" class="welcome">
           <h3>👋 你好，{{ authStore.user?.login }}</h3>
           <p>当前账号尚未完成自己仓库的环境设置，可以浏览已有应用，但无法创建新应用。</p>
           <p class="hint-text">完成 `{{ repo }}` 的 Pages、Worker 和 Secrets 配置后，才能使用 AI 构建功能。</p>
         </div>
         <div
-          v-for="(msg, i) in messages"
+          v-for="(msg, i) in displayMessages"
           :key="i"
           :class="['message', msg.role]"
         >
-          <div class="message-content">{{ msg.text }}</div>
+          <div class="message-content" v-html="sanitize(msg.text)"></div>
           <div class="message-time">{{ msg.time }}</div>
         </div>
         <div v-if="thinking" class="message system">
@@ -569,6 +627,58 @@ function handleNewChat() {
 .new-chat-btn:hover {
   background: var(--bg-tertiary);
   border-color: var(--accent);
+}
+
+.sessions-list {
+  padding: 0 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.sessions-list h3 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  padding: 0 0.25rem;
+}
+
+.session-item {
+  padding: 0.45rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 2px;
+  transition: background 0.15s;
+  overflow: hidden;
+}
+
+.session-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.session-item.active {
+  background: var(--bg-tertiary);
+  color: var(--accent);
+}
+
+.session-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-app-tag {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
 .apps-list {

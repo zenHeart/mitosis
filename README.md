@@ -119,6 +119,29 @@ npm run dev     # 本地预览
 npm run build   # 生产构建
 ```
 
+### Mock 模式（无需 GitHub 仓库）
+
+1. 复制 `.env.example` 为 `.env.local`：
+   ```bash
+   cp .env.example .env.local
+   ```
+2. 在 `.env.local` 中设置 `VITE_USE_MOCK_GITHUB=true`
+3. 直接运行：
+   ```bash
+   npm run dev
+   ```
+
+> `.env.local` 已加入 `.gitignore`，不会被提交。
+
+设置 `VITE_USE_MOCK_GITHUB=true` 可在无 GitHub API 访问的情况下本地运行完整流程：
+
+- GitHub Issues API 调用路由到浏览器 `localStorage`，无需真实仓库
+- 发送消息通过 `mockCreateIssueComment` 自动持久化
+- 使用 `/create 描述` 命令可直接触发构建流程，跳过 AI 步骤
+- 数据存储在 `mitosis_mock_sessions` 和 `mitosis_mock_sessions_messages`，可通过 `clearMockData()` 重置
+
+> 注意：Mock 模式下 StepFun AI 对话仍需要有效的 `VITE_STEP_TOKEN`。如需完全离线测试，使用 `/create` 命令跳过 AI 步骤。
+
 ---
 
 ## 路线图

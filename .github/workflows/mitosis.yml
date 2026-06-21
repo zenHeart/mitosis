@@ -1,8 +1,6 @@
 name: Mitosis Build
 
 on:
-  issues:
-    types: [opened, labeled]
   issue_comment:
     types: [created]
 
@@ -33,17 +31,11 @@ jobs:
           NEEDS_APPROVAL=false
           REASON=""
 
-          if [ "$EVENT_NAME" = "issue_comment" ] && ! echo "$COMMENT_BODY" | grep -qi '/build'; then
-            REASON="Comment does not contain /build."
-          elif [ "$EVENT_NAME" = "issues" ] && [ "$ISSUE_AUTHOR" = "$REPO_OWNER" ] && { [ "$EVENT_ACTION" = "opened" ] || [ "$ACTOR" = "$REPO_OWNER" ]; }; then
+          if [ "$EVENT_NAME" = "issue_comment" ] && ! echo "$COMMENT_BODY" | grep -qi '/create'; then
+            REASON="Comment does not contain /create."
+          elif [ "$ACTOR" = "$REPO_OWNER" ] && echo "$COMMENT_BODY" | grep -qi '/create'; then
             AUTHORIZED=true
-            REASON="Issue was created by repository owner."
-          elif [ "$EVENT_NAME" = "issue_comment" ] && [ "$ACTOR" = "$REPO_OWNER" ] && echo "$COMMENT_BODY" | grep -qi '/build'; then
-            AUTHORIZED=true
-            REASON="Repository owner approved with /build."
-          elif [ "$EVENT_NAME" = "issues" ] && [ "$EVENT_ACTION" = "labeled" ] && [ "$LABEL_NAME" = "owner-approved" ] && [ "$ACTOR" = "$REPO_OWNER" ]; then
-            AUTHORIZED=true
-            REASON="Repository owner applied owner-approved label."
+            REASON="Repository owner triggered /create."
           else
             NEEDS_APPROVAL=true
             REASON="External IssueOps request requires repository owner approval."
@@ -56,7 +48,7 @@ jobs:
           if [ "$NEEDS_APPROVAL" = "true" ] && [ -n "$ISSUE_NUMBER" ]; then
             gh issue comment "$ISSUE_NUMBER" \
               --repo "${{ github.repository }}" \
-              --body "🔒 Mitosis did not run the Agent Loop. External issues or comments require repository owner approval. The owner can approve by commenting \`/build\` or applying the \`owner-approved\` label with an \`app/{name}\` label."
+              --body "🔒 Mitosis did not run the Agent Loop. External issues or comments require repository owner approval. The owner can approve by commenting \`/create\` or applying the \`owner-approved\` label with an \`app/{name}\` label."
           else
             echo "$REASON"
           fi
@@ -65,7 +57,7 @@ jobs:
           if [ "$AUTHORIZED" = "true" ] && [ -n "$ISSUE_NUMBER" ]; then
             if gh issue view "$ISSUE_NUMBER" --repo "${{ github.repository }}" --json labels --jq '.labels[].name' 2>/dev/null | grep -q '^status:building$'; then
               echo "dedup_skip=true" >> "$GITHUB_OUTPUT"
-              echo "reason=Build already in progress (status:building label exists). Skipping duplicate /build."
+              echo "reason=Build already in progress (status:building label exists). Skipping duplicate /create."
             else
               echo "dedup_skip=false" >> "$GITHUB_OUTPUT"
             fi
@@ -107,7 +99,7 @@ jobs:
             echo "version=v0" >> "$GITHUB_OUTPUT"
             gh issue comment "$ISSUE_NUMBER" \
               --repo "${{ github.repository }}" \
-              --body "⚠️ Mitosis did not start a build because this issue has no \`app/{name}\` label. Add an explicit app label before approving or running \`/build\`."
+              --body "⚠️ Mitosis did not start a build because this issue has no \`app/{name}\` label. Add an explicit app label before approving or running \`/create\`."
             exit 0
           fi
           echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"

@@ -49,5 +49,5 @@
 
 ## 相关记忆
 
-- [[auth-exchange-must-be-in-store-init]] — OAuth 变更影响分析案例
+- [[oauth-redirect-loop-github-pages]] — OAuth 变更影响分析案例
 - [[verifier-must-measure-not-check]] — 验证要求

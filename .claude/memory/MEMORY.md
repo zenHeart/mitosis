@@ -1,0 +1,12 @@
+- [self-bootstrap-ux-only-not-full-instance](self-bootstrap-ux-only-not-full-instance.md) — Agent-built apps only need a UX entry + minimal metadata, NOT a full independent Mitosis instance — CI/CD stays in main repo
+- [github-oauth-static-hosting](github-oauth-static-hosting.md) — GitHub OAuth cannot be fully implemented on pure static hosting — Implicit Flow is the only viable option, not officially supported but works
+- [oauth-redirect-loop-github-pages](oauth-redirect-loop-github-pages.md) — 404.html SPA fallback for OAuth callback + 铁律: code exchange MUST be in authStore.init(), never in conditionally-rendered UI
+- [gallery-api-timeout-protection](gallery-api-timeout-protection.md) — Gallery API calls must have timeout + LOCAL_APPS default to prevent stuck loading
+- [css-calc-no-js-constants](css-calc-no-js-constants.md) — CSS calc() cannot reference JS constants; use CSS custom properties (--var) instead
+- [stop-hook-reentry-guard](stop-hook-reentry-guard.md) — Stop hooks must detect CLAUDE_CODE_STOP_HOOK_ACTIVE to prevent deadlock from consecutive blocks
+- [ai-over-engineering-antipattern](ai-over-engineering-antipattern.md) — AI tends to add unrequested features; verify against user requirements, maintain functional blacklist
+- [verifier-must-measure-not-check](verifier-must-measure-not-check.md) — Verifier must measure visual dimensions, FPS, CSS health — not just check element existence
+- [ci-workflow-lessons-learned](ci-workflow-lessons-learned.md) — CI 完整经验：Agent Loop 超时、git 主仓库操作、env vars 传递、prompt 质量、gh-pages 部署、worktree 隔离
+- [chat-session-architecture](chat-session-architecture.md) — Issue-backed chat sessions: Issue = Session, Comment = Message, /create = build trigger, GFM + DOMPurify
+- [security-audit-architecture](security-audit-architecture.md) — Three-layer security: rules (.claude/rules/security.md) + skill (security-audit) + verifiers (automated)
+- [vite-proxy-direct-to-upstream](vite-proxy-direct-to-upstream.md) — Vite proxy should target upstream API directly with auth headers; never use unmanaged local middleman processes
