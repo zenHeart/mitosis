@@ -5,6 +5,11 @@ export interface StepFunMessage {
   content: string
 }
 
+export interface StepFunOptions {
+  /** 系统提示词，通过 API 原生 system 字段传入（不混入 messages 数组） */
+  system?: string
+}
+
 export interface StepFunResponse {
   choices: {
     message: {
@@ -23,20 +28,26 @@ export interface StepFunResponse {
 export async function chatWithStepFun(
   token: string,
   messages: StepFunMessage[],
+  options: StepFunOptions & { model?: string } = {},
   model = DEFAULT_MODEL
 ): Promise<string> {
+  const body: Record<string, unknown> = {
+    model,
+    messages,
+    temperature: 0.7,
+    max_tokens: 4096,
+  }
+  if (options.system) {
+    body.system = options.system
+  }
+
   const res = await fetch('https://api.stepfun.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.7,
-      max_tokens: 4096,
-    }),
+    body: JSON.stringify(body),
   })
 
   if (!res.ok) {
