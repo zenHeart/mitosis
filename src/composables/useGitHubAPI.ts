@@ -157,7 +157,7 @@ export async function listUserIssues(
       if (token) headers.Authorization = `Bearer ${token}`
 
       const res = await fetchWithTimeout(
-        ghUrl(repo, '/issues?state=open&labels=session/chat&per_page=50&sort=updated&direction=desc'),
+        ghUrl(repo, '/issues?state=all&per_page=50&sort=updated&direction=desc'),
         { headers }
       )
       if (!res.ok) return []

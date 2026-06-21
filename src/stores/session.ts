@@ -32,6 +32,16 @@ export const useSessionStore = defineStore('session', {
     hasActiveSession: (state) => state.activeSession !== null,
     sortedSessions: (state) =>
       [...state.sessions].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    groupedSessions: (state) => {
+      const sorted = [...state.sessions].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      const groups: Record<string, ChatSession[]> = {}
+      for (const s of sorted) {
+        const key = s.appLabel || '__ungrouped__'
+        if (!groups[key]) groups[key] = []
+        groups[key].push(s)
+      }
+      return groups
+    },
   },
 
   actions: {
@@ -60,6 +70,11 @@ export const useSessionStore = defineStore('session', {
           createdAt: c.created_at,
           sanitized: true,
         }))
+        // 回写 messageCount 到对应 session
+        const session = this.sessions.find((s) => s.issueNumber === issueNumber)
+        if (session) {
+          session.messageCount = this.messages.length
+        }
       } catch (e) {
         this.error = e instanceof Error ? e.message : 'Failed to load messages'
         this.messages = []

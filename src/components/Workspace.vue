@@ -194,6 +194,7 @@ async function loadApps() {
 
 async function handleSend() {
   if (!isOwner.value) return
+  if (sessionStore.activeSession?.status === 'closed') return
   const text = inputText.value.trim()
   if (!text || building.value || !authStore.token) return
 
@@ -488,16 +489,20 @@ function handleNewChat() {
       </nav>
       <div class="sessions-list" v-if="sessionStore.sortedSessions.length">
         <h3>最近对话</h3>
-        <div
-          v-for="session in sessionStore.sortedSessions"
-          :key="session.issueNumber"
-          class="session-item"
-          :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber }"
-          @click="loadSession(session)"
-        >
-          <span class="session-title">{{ session.title }}</span>
-          <span v-if="session.appLabel" class="session-app-tag">{{ session.appLabel.replace('app/', '') }}</span>
-        </div>
+        <template v-for="[group, sessions] in Object.entries(sessionStore.groupedSessions)" :key="group">
+          <div class="session-group-label">{{ group === '__ungrouped__' ? '其他' : group }}</div>
+          <div
+            v-for="session in sessions"
+            :key="session.issueNumber"
+            class="session-item"
+            :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber, closed: session.status === 'closed' }"
+            @click="loadSession(session)"
+          >
+            <span class="session-title">{{ session.title }}</span>
+            <span class="session-status" :class="session.status">{{ session.status === 'open' ? '●' : '○' }}</span>
+            <span v-if="session.appLabel" class="session-app-tag">{{ session.appLabel.replace('app/', '') }}</span>
+          </div>
+        </template>
       </div>
       <div class="apps-list">
         <h3>我的应用</h3>
@@ -654,6 +659,31 @@ function handleNewChat() {
   margin-bottom: 2px;
   transition: background 0.15s;
   overflow: hidden;
+}
+
+.session-item.closed {
+  opacity: 0.55;
+}
+
+.session-group-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 0.35rem 0.5rem 0.1rem;
+  letter-spacing: 0.03em;
+}
+
+.session-status {
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.session-status.open {
+  color: #2ea043;
+}
+
+.session-status.closed {
+  color: #8b949e;
 }
 
 .session-item:hover {
