@@ -8,7 +8,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: 'https://mitosis.zenheart.site',
+    baseURL: process.env.BASE_URL || 'https://mitosis.zenheart.site',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },

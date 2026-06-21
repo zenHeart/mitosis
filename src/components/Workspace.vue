@@ -461,6 +461,16 @@ async function loadSession(session: ChatSession) {
   inputText.value = ''
 }
 
+function openAppSession(session: ChatSession) {
+  const appName = session.appLabel?.replace('app/', '') || ''
+  // 从 title 或 body 提取版本，默认 v0
+  const versionMatch = session.title.match(/v(\d+)/i)
+  const version = versionMatch ? `v${versionMatch[1]}` : 'v0'
+  if (appName) {
+    window.open(`/apps/${appName}/${version}/`, '_blank')
+  }
+}
+
 function handleNewChat() {
   stopAll()
   sessionStore.setActiveSession(null)
@@ -489,10 +499,12 @@ function handleNewChat() {
       </nav>
       <div class="sessions-list" v-if="sessionStore.sortedSessions.length">
         <h3>最近对话</h3>
-        <template v-for="[group, sessions] in Object.entries(sessionStore.groupedSessions)" :key="group">
-          <div class="session-group-label">{{ group === '__ungrouped__' ? '其他' : group }}</div>
+
+        <!-- 平台会话（mitosis 自举） -->
+        <template v-if="sessionStore.groupedSessions.platform.length">
+          <div class="session-group-label">🧬 平台</div>
           <div
-            v-for="session in sessions"
+            v-for="session in sessionStore.groupedSessions.platform"
             :key="session.issueNumber"
             class="session-item"
             :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber, closed: session.status === 'closed' }"
@@ -500,7 +512,36 @@ function handleNewChat() {
           >
             <span class="session-title">{{ session.title }}</span>
             <span class="session-status" :class="session.status">{{ session.status === 'open' ? '●' : '○' }}</span>
+          </div>
+        </template>
+
+        <!-- 应用会话：点击直接跳转应用路由 -->
+        <template v-if="sessionStore.groupedSessions.app.length">
+          <div class="session-group-label">📦 应用</div>
+          <div
+            v-for="session in sessionStore.groupedSessions.app"
+            :key="session.issueNumber"
+            class="session-item app-session"
+            :class="{ closed: session.status === 'closed' }"
+          >
+            <span class="session-title">{{ session.title }}</span>
             <span v-if="session.appLabel" class="session-app-tag">{{ session.appLabel.replace('app/', '') }}</span>
+            <button class="session-open-btn" @click.stop="openAppSession(session)" title="打开应用">打开</button>
+          </div>
+        </template>
+
+        <!-- 其他会话 -->
+        <template v-if="sessionStore.groupedSessions.other.length">
+          <div class="session-group-label">其他</div>
+          <div
+            v-for="session in sessionStore.groupedSessions.other"
+            :key="session.issueNumber"
+            class="session-item"
+            :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber, closed: session.status === 'closed' }"
+            @click="loadSession(session)"
+          >
+            <span class="session-title">{{ session.title }}</span>
+            <span class="session-status" :class="session.status">{{ session.status === 'open' ? '●' : '○' }}</span>
           </div>
         </template>
       </div>
@@ -661,6 +702,10 @@ function handleNewChat() {
   overflow: hidden;
 }
 
+.session-item.app-session {
+  cursor: default;
+}
+
 .session-item.closed {
   opacity: 0.55;
 }
@@ -684,6 +729,24 @@ function handleNewChat() {
 
 .session-status.closed {
   color: #8b949e;
+}
+
+.session-open-btn {
+  margin-left: auto;
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.session-open-btn:hover {
+  background: var(--accent);
+  color: #fff;
 }
 
 .session-item:hover {

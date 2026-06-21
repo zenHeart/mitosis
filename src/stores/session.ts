@@ -34,11 +34,18 @@ export const useSessionStore = defineStore('session', {
       [...state.sessions].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
     groupedSessions: (state) => {
       const sorted = [...state.sessions].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      const groups: Record<string, ChatSession[]> = {}
+      const groups: { platform: ChatSession[]; app: ChatSession[]; other: ChatSession[] } = { platform: [], app: [], other: [] }
       for (const s of sorted) {
-        const key = s.appLabel || '__ungrouped__'
-        if (!groups[key]) groups[key] = []
-        groups[key].push(s)
+        const labels = s.labels || []
+        const isPlatform = labels.includes('platform') || labels.includes('needs-review')
+        const appLabel = s.appLabel
+        if (isPlatform) {
+          groups.platform.push(s)
+        } else if (appLabel) {
+          groups.app.push(s)
+        } else {
+          groups.other.push(s)
+        }
       }
       return groups
     },
