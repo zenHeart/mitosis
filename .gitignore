@@ -67,3 +67,5 @@ src/**/*.js
 # Keep .gitkeep in apps/ root
 apps/.gitkeep
 dist/
+playwright-report/
+test-results/
