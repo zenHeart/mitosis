@@ -146,9 +146,11 @@ function platformSystemPrompt(): string {
 你的任务：
 1. 分析这个修改的影响范围和注意事项
 2. 给出技术建议
-3. 提醒用户：平台代码变更需要人工审核，不会自动构建
+3. 如果用户明确要求执行修改，在回复末尾加一行：BUILD_PLATFORM: [简述修改内容]
+   这样系统会自动创建 Issue 并触发 CI 构建流程。
+   如果只是讨论/分析，不要加 BUILD_PLATFORM 标记。
 
-请正常回复分析，不要包含 BUILD_APP 标记。
+请正常回复分析。
 当前时间: ${new Date().toLocaleString('zh-CN')}`
 }
 
@@ -295,8 +297,10 @@ async function handleSend() {
           : `## 初始需求\n\n${text}\n\n## AI 澄清\n\n${trimmed}`
       }
     } else if (triage.action === 'platform') {
-      // R4/R5: 创建 Issue + 人工审核标记（不触发 CI）
-      await createPlatformIssue(text, trimmed)
+      const platformMatch = trimmed.match(/BUILD_PLATFORM:\s*(.+)/i)
+      if (platformMatch) {
+        await createPlatformBuild(text, platformMatch[1].trim())
+      }
     }
     // R1/R2 (chat): 直接回复，无需进一步操作
   } catch (e) {
@@ -353,45 +357,43 @@ async function createBuild(appName: string, description: string, basedOn?: strin
   }
 }
 
-// R4/R5: 平台变更 → 创建 Issue + needs-review 标记，不触发 CI
-async function createPlatformIssue(originalText: string, analysis: string) {
+// 平台变更直接构建（模型判断可执行时触发）
+async function createPlatformBuild(originalText: string, description: string) {
   if (building.value || !authStore.token || !isOwner.value) return
 
   building.value = true
   activeIssue.value = null
+  const title = `platform: ${originalText.slice(0, 60)}${originalText.length > 60 ? '…' : ''}`
+  const body = `## 需求描述\n\n${description}\n\n## 构建信息\n\n- 触发方式: Web 界面（AI 判断可直接执行）`
 
   try {
     const token = authStore.token!
-    const title = `platform: ${originalText.slice(0, 60)}${originalText.length > 60 ? '…' : ''}`
-    const body = `## 需求描述\n\n${originalText}\n\n## AI 分析\n\n${analysis}\n\n## 影响范围\n\n平台代码变更 — 需要人工审核\n\n## 注意\n\n此 Issue 不会自动触发 CI 构建。请人工 review 后决定如何处理。`
-
-    const issue = await createIssue(token, repo.value, title, body, ['platform', 'needs-review'])
+    const issue = await createIssue(token, repo.value, title, body, ['platform'])
 
     sessionStore.addMessage({
       role: 'system',
-      content: `⚠️ 已创建平台变更请求 #${issue.number}，标记为「需要审核」\n\n平台代码变更不会自动构建，需要人工 review 后处理。\n查看: https://github.com/${repo.value}/issues/${issue.number}`,
+      content: `🔨 已创建平台构建任务 #${issue.number}，CI 将自动构建。\n查看: https://github.com/${repo.value}/issues/${issue.number}`,
       createdAt: new Date().toISOString(),
     })
+
+    start(issue.number, () => getIssue(token, repo.value, issue.number), onIssueUpdate)
   } catch (e) {
-    // 403: token 无 repo 权限 → 降级到 GitHub Web UI
     const err = e instanceof Error ? e : new Error('未知错误')
     const statusMatch = err.message.match(/(\d{3})/)
     const status = statusMatch?.[1]
     const repoFull = repo.value
-    const title = `platform: ${originalText.slice(0, 60)}${originalText.length > 60 ? '…' : ''}`
-    const encodedTitle = encodeURIComponent(`## 需求描述\n\n${originalText}\n\n## AI 分析\n\n${analysis}\n\n## 影响范围\n\n平台代码变更 — 需要人工审核`)
-    const fallbackUrl = `https://github.com/${repoFull}/issues/new?title=${encodeURIComponent(title)}&body=${encodedTitle}&labels=platform,needs-review`
+    const encodedBody = encodeURIComponent(`## 需求描述\n\n${description}\n\n## 构建信息\n\n- 触发方式: Web 界面（AI 判断可直接执行）`)
+    const fallbackUrl = `https://github.com/${repoFull}/issues/new?title=${encodeURIComponent(title)}&body=${encodedBody}&labels=platform`
 
     const fallbackMsg = status === '403'
-      ? `⚠️ 当前 Token 无仓库写入权限（403），无法自动创建 Issue。\n\n请点击下方链接手动创建（已预填内容）：\n[在 GitHub 上创建 Issue](${fallbackUrl})`
-      : `❌ 创建 Issue 失败: ${err.message}`
+      ? `⚠️ 当前 Token 无仓库写入权限（403），无法自动创建平台构建任务。\n\n请点击下方链接手动创建：\n[在 GitHub 上创建 Issue](${fallbackUrl})`
+      : `❌ 创建平台构建失败: ${err.message}`
 
     sessionStore.addMessage({
       role: 'system',
       content: fallbackMsg,
       createdAt: new Date().toISOString(),
     })
-  } finally {
     building.value = false
   }
 }
