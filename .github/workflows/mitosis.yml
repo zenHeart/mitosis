@@ -298,17 +298,7 @@ jobs:
           git push -u origin "$BRANCH"
 
           if [ "$IS_PLATFORM" = "true" ]; then
-            cat > /tmp/mitosis-pr-body.md <<EOF
-            ## Summary
-            - Platform changes from Issue #$ISSUE_NUMBER.
-            - Agent Loop verifier passed before this PR was created.
-            - Merge to \`master\` to deploy platform changes.
-
-            ## Review
-            - [ ] Review all platform file changes.
-            - [ ] Confirm the changes satisfy the Issue requirements.
-            - [ ] Confirm no unintended changes were made.
-            EOF
+            printf '%s\n' '## Summary' "- Platform changes from Issue #$ISSUE_NUMBER." "- Agent Loop verifier passed before this PR was created." "- Merge to \`master\` to deploy platform changes." '' '## Review' "- [ ] Review all platform file changes." "- [ ] Confirm the changes satisfy the Issue requirements." "- [ ] Confirm no unintended changes were made." > /tmp/mitosis-pr-body.md
 
             PR_URL=$(curl -s -X POST \
               -H "Authorization: token $GH_TOKEN" \
@@ -316,17 +306,7 @@ jobs:
               "https://api.github.com/repos/${{ github.repository }}/pulls" \
               -d "{\"title\":\"feat: platform changes (issue #$ISSUE_NUMBER)\",\"head\":\"$BRANCH\",\"base\":\"master\",\"draft\":true,\"body\":$(cat /tmp/mitosis-pr-body.md | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["html_url"])')
           else
-            cat > /tmp/mitosis-pr-body.md <<EOF
-            ## Summary
-            - Builds \`$APP_NAME\` \`$NEXT_VERSION\` from Issue #$ISSUE_NUMBER.
-            - Agent Loop verifier passed before this PR was created.
-            - Merge to \`master\` to publish through the deploy workflow.
-
-            ## Review
-            - [ ] Open and inspect the generated app after deployment.
-            - [ ] Confirm the app satisfies the Issue requirements.
-            - [ ] Confirm the app includes the Mitosis iteration entry.
-            EOF
+            printf '%s\n' '## Summary' "- Builds \`$APP_NAME\` \`$NEXT_VERSION\` from Issue #$ISSUE_NUMBER." "- Agent Loop verifier passed before this PR was created." "- Merge to \`master\` to publish through the deploy workflow." '' '## Review' "- [ ] Open and inspect the generated app after deployment." "- [ ] Confirm the app satisfies the Issue requirements." "- [ ] Confirm the app includes the Mitosis iteration entry." > /tmp/mitosis-pr-body.md
 
             PR_URL=$(curl -s -X POST \
               -H "Authorization: token $GH_TOKEN" \
