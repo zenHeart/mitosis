@@ -297,18 +297,17 @@ jobs:
           fi
           git push --force-with-lease -u origin "$BRANCH"
 
+          REPO_OWNER="${{ github.repository_owner }}"
+          REPO_PATH="${{ github.repository }}"
           # Close any existing PR for this branch (from previous failed runs)
           EXISTING_PR=$(gh api \
-            --repo "${{ github.repository }}" \
-            --method GET \
-            /repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:$BRANCH\&state=open \
+            repos/$REPO_PATH/pulls?head=$REPO_OWNER:$BRANCH\&state=open \
             --jq '.[0].number // empty' 2>/dev/null || true)
           if [ -n "$EXISTING_PR" ]; then
             echo "Closing existing PR #$EXISTING_PR for branch $BRANCH"
             gh api \
-              --repo "${{ github.repository }}" \
-              --method PATCH \
-              /repos/${{ github.repository }}/pulls/$EXISTING_PR \
+              repos/$REPO_PATH/pulls/$EXISTING_PR \
+              -X PATCH \
               -f state=closed >/dev/null 2>&1 || true
           fi
 
@@ -316,11 +315,10 @@ jobs:
             printf '%s\n' '## Summary' "- Platform changes from Issue #$ISSUE_NUMBER." "- Agent Loop verifier passed before this PR was created." "- Merge to \`master\` to deploy platform changes." '' '## Review' "- [ ] Review all platform file changes." "- [ ] Confirm the changes satisfy the Issue requirements." "- [ ] Confirm no unintended changes were made." > /tmp/mitosis-pr-body.md
 
             PR_URL=$(gh api \
-              --repo "${{ github.repository }}" \
-              --method POST \
-              /repos/${{ github.repository }}/pulls \
+              repos/$REPO_PATH/pulls \
+              -X POST \
               -f title="feat: platform changes (issue #$ISSUE_NUMBER)" \
-              -f head="$BRANCH" \
+              -f head="$REPO_OWNER:$BRANCH" \
               -f base="master" \
               -f draft=true \
               -f body="$(cat /tmp/mitosis-pr-body.md)" \
@@ -329,11 +327,10 @@ jobs:
             printf '%s\n' '## Summary' "- Builds \`$APP_NAME\` \`$NEXT_VERSION\` from Issue #$ISSUE_NUMBER." "- Agent Loop verifier passed before this PR was created." "- Merge to \`master\` to publish through the deploy workflow." '' '## Review' "- [ ] Open and inspect the generated app after deployment." "- [ ] Confirm the app satisfies the Issue requirements." "- [ ] Confirm the app includes the Mitosis iteration entry." > /tmp/mitosis-pr-body.md
 
             PR_URL=$(gh api \
-              --repo "${{ github.repository }}" \
-              --method POST \
-              /repos/${{ github.repository }}/pulls \
+              repos/$REPO_PATH/pulls \
+              -X POST \
               -f title="feat: build $APP_NAME $NEXT_VERSION" \
-              -f head="$BRANCH" \
+              -f head="$REPO_OWNER:$BRANCH" \
               -f base="master" \
               -f draft=true \
               -f body="$(cat /tmp/mitosis-pr-body.md)" \
