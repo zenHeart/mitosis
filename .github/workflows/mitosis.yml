@@ -297,6 +297,18 @@ jobs:
           fi
           git push --force-with-lease -u origin "$BRANCH"
 
+          # Close any existing PR for this branch (from previous failed runs)
+          EXISTING_PR=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:$BRANCH&state=open" | python3 -c 'import json,sys; prs=json.load(sys.stdin); print(prs[0]["number"] if prs else "")')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "Closing existing PR #$EXISTING_PR for branch $BRANCH"
+            curl -s -X PATCH -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/$EXISTING_PR" \
+              -d '{"state":"closed"}' > /dev/null
+          fi
+
           if [ "$IS_PLATFORM" = "true" ]; then
             printf '%s\n' '## Summary' "- Platform changes from Issue #$ISSUE_NUMBER." "- Agent Loop verifier passed before this PR was created." "- Merge to \`master\` to deploy platform changes." '' '## Review' "- [ ] Review all platform file changes." "- [ ] Confirm the changes satisfy the Issue requirements." "- [ ] Confirm no unintended changes were made." > /tmp/mitosis-pr-body.md
 
