@@ -298,33 +298,53 @@ jobs:
           git push --force-with-lease -u origin "$BRANCH"
 
           # Close any existing PR for this branch (from previous failed runs)
-          EXISTING_PR=$(curl -s -H "Authorization: token $GH_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:$BRANCH&state=open" | python3 -c 'import json,sys; prs=json.load(sys.stdin); print(prs[0]["number"] if prs else "")')
+          EXISTING_PR=$(gh api \
+            --repo "${{ github.repository }}" \
+            --method GET \
+            /repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:$BRANCH\&state=open \
+            --jq '.[0].number // empty' 2>/dev/null || true)
           if [ -n "$EXISTING_PR" ]; then
             echo "Closing existing PR #$EXISTING_PR for branch $BRANCH"
-            curl -s -X PATCH -H "Authorization: token $GH_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/${{ github.repository }}/pulls/$EXISTING_PR" \
-              -d '{"state":"closed"}' > /dev/null
+            gh api \
+              --repo "${{ github.repository }}" \
+              --method PATCH \
+              /repos/${{ github.repository }}/pulls/$EXISTING_PR \
+              -f state=closed >/dev/null 2>&1 || true
           fi
 
           if [ "$IS_PLATFORM" = "true" ]; then
             printf '%s\n' '## Summary' "- Platform changes from Issue #$ISSUE_NUMBER." "- Agent Loop verifier passed before this PR was created." "- Merge to \`master\` to deploy platform changes." '' '## Review' "- [ ] Review all platform file changes." "- [ ] Confirm the changes satisfy the Issue requirements." "- [ ] Confirm no unintended changes were made." > /tmp/mitosis-pr-body.md
 
-            PR_URL=$(curl -s -X POST \
-              -H "Authorization: token $GH_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/${{ github.repository }}/pulls" \
-              -d "{\"title\":\"feat: platform changes (issue #$ISSUE_NUMBER)\",\"head\":\"$BRANCH\",\"base\":\"master\",\"draft\":true,\"body\":$(cat /tmp/mitosis-pr-body.md | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["html_url"])')
+            PR_URL=$(gh api \
+              --repo "${{ github.repository }}" \
+              --method POST \
+              /repos/${{ github.repository }}/pulls \
+              -f title="feat: platform changes (issue #$ISSUE_NUMBER)" \
+              -f head="$BRANCH" \
+              -f base="master" \
+              -f draft=true \
+              -f body="$(cat /tmp/mitosis-pr-body.md)" \
+              --jq '.html_url' 2>/dev/null || true)
           else
             printf '%s\n' '## Summary' "- Builds \`$APP_NAME\` \`$NEXT_VERSION\` from Issue #$ISSUE_NUMBER." "- Agent Loop verifier passed before this PR was created." "- Merge to \`master\` to publish through the deploy workflow." '' '## Review' "- [ ] Open and inspect the generated app after deployment." "- [ ] Confirm the app satisfies the Issue requirements." "- [ ] Confirm the app includes the Mitosis iteration entry." > /tmp/mitosis-pr-body.md
 
-            PR_URL=$(curl -s -X POST \
-              -H "Authorization: token $GH_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/${{ github.repository }}/pulls" \
-              -d "{\"title\":\"feat: build $APP_NAME $NEXT_VERSION\",\"head\":\"$BRANCH\",\"base\":\"master\",\"draft\":true,\"body\":$(cat /tmp/mitosis-pr-body.md | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["html_url"])')
+            PR_URL=$(gh api \
+              --repo "${{ github.repository }}" \
+              --method POST \
+              /repos/${{ github.repository }}/pulls \
+              -f title="feat: build $APP_NAME $NEXT_VERSION" \
+              -f head="$BRANCH" \
+              -f base="master" \
+              -f draft=true \
+              -f body="$(cat /tmp/mitosis-pr-body.md)" \
+              --jq '.html_url' 2>/dev/null || true)
+          fi
+
+          if [ -z "$PR_URL" ]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "${{ github.repository }}" --remove-label "status:review" >/dev/null 2>&1 || true
+            gh issue edit "$ISSUE_NUMBER" --repo "${{ github.repository }}" --add-label "status:failed"
+            gh issue comment "$ISSUE_NUMBER" --repo "${{ github repository }}" --body "❌ PR 创建失败，请查看 Actions 日志。"
+            exit 1
           fi
 
           echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
