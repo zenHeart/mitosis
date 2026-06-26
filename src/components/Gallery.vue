@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, computed, onMounted } from 'vue'
-import type { AppInfo } from '../types/app'
+import type { AppInfo, ChatSession } from '../types/app'
 import { useAuthStore } from '../stores/auth'
+import { useSessionStore } from '../stores/session'
 import { getLoginUrl } from '../composables/useAuth'
 import { REPO_FULL_NAME } from '../config/repo'
 import { listApps } from '../composables/useGitHubAPI'
@@ -17,17 +18,34 @@ const LOCAL_APPS: AppInfo[] = [
 
 // ── State ──────────────────────────────────────────────────────────
 const authStore = useAuthStore()
+const sessionStore = useSessionStore()
 const isLoggedIn = computed(() => !!authStore.token)
 
 const apps = ref<AppInfo[]>(LOCAL_APPS)
 const loading = ref(true)
 const error = ref('')
 const selectedApp = ref<string | undefined>(props.initialApp)
+const selectedSession = ref<number | undefined>(props.initialApp ? undefined : undefined)
 const selectedCardRef = ref<HTMLElement | null>(null)
 const appsGridRef = ref<HTMLElement | null>(null)
+const sidebarOpen = ref(false)
+
+const sessionGroups = computed(() => {
+  const raw = sessionStore.groupedSessions as { platform: ChatSession[]; app: ChatSession[]; other: ChatSession[] }
+  return [
+    { key: 'platform', label: '🔧 平台', sessions: raw.platform },
+    { key: 'app', label: '📱 应用', sessions: raw.app },
+    { key: 'other', label: '📋 其他', sessions: raw.other },
+  ].filter((g) => g.sessions.length > 0)
+})
 
 function setSelectedCard(el: HTMLElement | null) {
   selectedCardRef.value = el
+}
+
+function selectSession(issueNumber: number) {
+  selectedSession.value = issueNumber
+  window.location.hash = `#session=${issueNumber}`
 }
 
 function scrollToApps() {
@@ -50,18 +68,26 @@ watch(selectedApp, async (newApp) => {
 })
 
 onMounted(async () => {
+  // 加载会话列表
+  if (isLoggedIn.value) {
+    await sessionStore.loadSessions(authStore.token || '', REPO_FULL_NAME)
+  }
+
+  // 从 URL hash 恢复选中的 session
+  const hash = window.location.hash
+  if (hash.startsWith('#session=')) {
+    const num = parseInt(hash.replace('#session=', ''))
+    if (!isNaN(num)) selectedSession.value = num
+  }
+
   try {
-    // 优先使用带 token 的 API（DEV 走 Vite proxy → api.github.com，自动注入 auth header）
-    // 本地自动登录模式下 authStore.token 已被注入
     const apiApps = await listApps(authStore.token || '', REPO_FULL_NAME)
     if (apiApps.length > 0) {
       apps.value = apiApps
     } else {
-      // API 返回空或超时：使用本地 fallback
       apps.value = LOCAL_APPS
     }
   } catch (e) {
-    // API 失败：使用本地 fallback 数据
     apps.value = LOCAL_APPS
     error.value = ''
   } finally {
@@ -72,8 +98,35 @@ onMounted(async () => {
 
 <template>
   <div class="gallery">
+    <!-- 会话侧边栏（登录后可见）────────────────────────────── -->
+    <aside v-if="isLoggedIn" class="session-sidebar" :class="{ open: sidebarOpen }">
+      <div class="sidebar-header">
+        <h3>会话</h3>
+        <button class="sidebar-close" @click="sidebarOpen = false">×</button>
+      </div>
+      <div class="sidebar-sessions">
+        <div
+          v-for="group in sessionGroups"
+          :key="group.key"
+          class="session-group"
+        >
+          <div class="group-label">{{ group.label }}</div>
+          <div
+            v-for="session in group.sessions"
+            :key="session.issueNumber"
+            :class="['session-item', { active: selectedSession === session.issueNumber }]"
+            @click="selectSession(session.issueNumber)"
+          >
+            <span class="session-title">{{ session.title }}</span>
+            <span class="session-status" :class="session.status">{{ session.status }}</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
     <header class="gallery-header">
       <div class="brand">
+        <button v-if="isLoggedIn" class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen">☰</button>
         <span class="logo">🧬</span>
         <h1>Mitosis</h1>
       </div>
@@ -177,6 +230,13 @@ onMounted(async () => {
   width: 100%;
   margin: 0 auto;
   padding: 2rem 1.5rem;
+}
+
+@media (min-width: 1024px) {
+  .gallery-main {
+    max-width: none;
+    margin: 0;
+  }
 }
 
 .hero {
@@ -356,5 +416,152 @@ onMounted(async () => {
 
 .gallery-footer a:hover {
   text-decoration: underline;
+}
+
+/* ── 会话侧边栏 ──────────────────────────────────────────── */
+.session-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 280px;
+  height: 100vh;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  z-index: 100;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.session-sidebar.open {
+  transform: translateX(0);
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.sidebar-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.sidebar-close:hover {
+  color: var(--text-primary);
+}
+
+.sidebar-sessions {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.session-group {
+  margin-bottom: 0.75rem;
+}
+
+.group-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  gap: 0.5rem;
+}
+
+.session-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.session-item.active {
+  background: var(--accent-glow);
+  border: 1px solid var(--accent);
+}
+
+.session-title {
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-status {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.session-status.open {
+  background: #1a7f37;
+  color: #fff;
+}
+
+.session-status.closed {
+  background: #666;
+  color: #fff;
+}
+
+.sidebar-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 1.2rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.3rem 0.6rem;
+  margin-right: 0.5rem;
+  transition: all 0.15s;
+}
+
+.sidebar-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (min-width: 1024px) {
+  .session-sidebar {
+    transform: translateX(0);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+
+  .sidebar-toggle {
+    display: none;
+  }
+
+  .gallery {
+    flex-direction: row;
+  }
 }
 </style>
