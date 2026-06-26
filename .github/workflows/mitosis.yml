@@ -164,7 +164,7 @@ jobs:
               -e "s/__APP_NAME__/platform/g" \
               -e "s/__NEXT_VERSION__/root/g" \
               -e "s/__ISSUE_NUMBER__/${{ github.event.issue.number }}/g" \
-              worker/prompt.txt)
+              worker/prompt-platform.txt)
           else
             BASE_PROMPT=$(sed \
               -e "s/__APP_NAME__/${{ steps.parse.outputs.app_name }}/g" \
