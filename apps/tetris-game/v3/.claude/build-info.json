@@ -1,0 +1,6 @@
+{
+  "app_name": "tetris-game",
+  "version": "v3",
+  "built_by": "zenHeart/mitosis",
+  "prompt_summary": "俄罗斯方块游戏 v3 - 完整的俄罗斯方块游戏，支持旋转、消行、计分、等级、Hold功能、幽灵方块、触屏控制"
+}

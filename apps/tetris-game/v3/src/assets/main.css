@@ -1,0 +1,40 @@
+/* ── Global Styles ─────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --color-bg: #0a0a1a;
+  --color-panel: #111128;
+  --color-border: #1e1e3a;
+  --color-cyan: #00e5ff;
+  --color-yellow: #ffd600;
+  --color-purple: #aa00ff;
+  --color-green: #00e676;
+  --color-red: #ff1744;
+  --color-blue: #2979ff;
+  --color-orange: #ff9100;
+  --color-text: #e0e0e0;
+  --color-text-dim: #666;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  font-family: inherit;
+}
+
+#app {
+  min-height: 100vh;
+}
