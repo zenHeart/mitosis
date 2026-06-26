@@ -295,7 +295,7 @@ jobs:
           else
             git commit -m "feat: build $APP_NAME $NEXT_VERSION (issue #$ISSUE_NUMBER)"
           fi
-          git push -u origin "$BRANCH"
+          git push --force-with-lease -u origin "$BRANCH"
 
           if [ "$IS_PLATFORM" = "true" ]; then
             printf '%s\n' '## Summary' "- Platform changes from Issue #$ISSUE_NUMBER." "- Agent Loop verifier passed before this PR was created." "- Merge to \`master\` to deploy platform changes." '' '## Review' "- [ ] Review all platform file changes." "- [ ] Confirm the changes satisfy the Issue requirements." "- [ ] Confirm no unintended changes were made." > /tmp/mitosis-pr-body.md
