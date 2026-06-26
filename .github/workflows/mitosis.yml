@@ -87,31 +87,38 @@ jobs:
         id: parse
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ISSUE_LABELS: ${{ toJson(github.event.issue.labels) }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
-          COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
-          APP_NAME=$(echo "$ISSUE_LABELS" | grep -oP 'app/\K[a-z0-9-]+' | head -1 || true)
-          if [ -z "$APP_NAME" ]; then
-            echo "app_name=unknown" >> "$GITHUB_OUTPUT"
-            echo "version=v0" >> "$GITHUB_OUTPUT"
-            gh issue comment "$ISSUE_NUMBER" \
-              --repo "${{ github.repository }}" \
-              --body "⚠️ Mitosis did not start a build because this issue has no \`app/{name}\` label. Add an explicit app label before approving or running \`/create\`."
-            exit 0
-          fi
-          echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
+          # 使用 gh CLI 获取 label 名称列表（可靠）
+          LABEL_NAMES=$(gh issue view "$ISSUE_NUMBER" --repo "${{ github.repository }}" --json labels --jq '.labels[].name' 2>/dev/null || true)
 
-          LATEST=$(find "apps/$APP_NAME" -maxdepth 1 -type d -name 'v[0-9]*' 2>/dev/null | sed 's#.*/v##' | sort -n | tail -1)
-          if [ -z "$LATEST" ]; then
-            NEXT_VERSION="v0"
+          # 检查是否有 platform label → 平台构建模式
+          if echo "$LABEL_NAMES" | grep -q '^platform$'; then
+            echo "is_platform=true" >> "$GITHUB_OUTPUT"
+            echo "app_name=platform" >> "$GITHUB_OUTPUT"
+            echo "version=root" >> "$GITHUB_OUTPUT"
           else
-            NEXT=$((LATEST + 1))
-            NEXT_VERSION="v$NEXT"
+            echo "is_platform=false" >> "$GITHUB_OUTPUT"
+            APP_NAME=$(echo "$LABEL_NAMES" | grep '^app/' | sed 's/^app\///' | head -1 || true)
+            if [ -z "$APP_NAME" ]; then
+              echo "app_name=unknown" >> "$GITHUB_OUTPUT"
+              echo "version=v0" >> "$GITHUB_OUTPUT"
+              gh issue comment "$ISSUE_NUMBER" \
+                --repo "${{ github.repository }}" \
+                --body "⚠️ Mitosis did not start a build because this issue has no \`app/{name}\` label and no \`platform\` label. Add an explicit label before approving or running \`/create\`."
+              exit 0
+            fi
+            echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
+
+            LATEST=$(find "apps/$APP_NAME" -maxdepth 1 -type d -name 'v[0-9]*' 2>/dev/null | sed 's#.*/v##' | sort -n | tail -1)
+            if [ -z "$LATEST" ]; then
+              NEXT_VERSION="v0"
+            else
+              NEXT=$((LATEST + 1))
+              NEXT_VERSION="v$NEXT"
+            fi
+            echo "version=$NEXT_VERSION" >> "$GITHUB_OUTPUT"
           fi
-          echo "version=$NEXT_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Run Agent Loop
         if: ${{ steps.parse.outputs.app_name != 'unknown' }}
@@ -122,6 +129,7 @@ jobs:
           APP_NAME: ${{ steps.parse.outputs.app_name }}
           NEXT_VERSION: ${{ steps.parse.outputs.version }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          IS_PLATFORM: ${{ steps.parse.outputs.is_platform }}
         run: |
           ensure_label() {
             gh label create "$1" --repo "${{ github.repository }}" --color "$2" --description "$3" --force >/dev/null 2>&1 || true
@@ -144,13 +152,26 @@ jobs:
             gh issue comment "$ISSUE_NUMBER" --repo "${{ github.repository }}" --body "$MESSAGE"
           }
 
-          set_status "status:building" "🔨 状态：构建中。Mitosis 正在根据 Issue 规格生成 $APP_NAME $NEXT_VERSION。"
+          if [ "$IS_PLATFORM" = "true" ]; then
+            set_status "status:building" "🔨 状态：平台构建中。Mitosis 正在根据 Issue 规格修改平台本身。"
+          else
+            set_status "status:building" "🔨 状态：构建中。Mitosis 正在根据 Issue 规格生成 $APP_NAME $NEXT_VERSION。"
+          fi
 
-          BASE_PROMPT=$(sed \
-            -e "s/__APP_NAME__/${{ steps.parse.outputs.app_name }}/g" \
-            -e "s/__NEXT_VERSION__/${{ steps.parse.outputs.version }}/g" \
-            -e "s/__ISSUE_NUMBER__/${{ github.event.issue.number }}/g" \
-            worker/prompt.txt)
+          # 根据平台/应用选择 prompt 模板
+          if [ "$IS_PLATFORM" = "true" ]; then
+            BASE_PROMPT=$(sed \
+              -e "s/__APP_NAME__/platform/g" \
+              -e "s/__NEXT_VERSION__/root/g" \
+              -e "s/__ISSUE_NUMBER__/${{ github.event.issue.number }}/g" \
+              worker/prompt.txt)
+          else
+            BASE_PROMPT=$(sed \
+              -e "s/__APP_NAME__/${{ steps.parse.outputs.app_name }}/g" \
+              -e "s/__NEXT_VERSION__/${{ steps.parse.outputs.version }}/g" \
+              -e "s/__ISSUE_NUMBER__/${{ github.event.issue.number }}/g" \
+              worker/prompt.txt)
+          fi
 
           FEEDBACK=""
           PASSED=0
@@ -169,25 +190,48 @@ jobs:
               --max-turns 80 \
               --output-format text \
               "$(cat "$PROMPT_FILE")"; then
-              FEEDBACK="Previous Claude Code run failed before verification. Re-read the Issue and produce a valid app in apps/$APP_NAME/$NEXT_VERSION before stopping."
+              if [ "$IS_PLATFORM" = "true" ]; then
+                FEEDBACK="Previous Claude Code run failed before verification. Re-read the Issue and produce valid platform changes before stopping."
+              else
+                FEEDBACK="Previous Claude Code run failed before verification. Re-read the Issue and produce a valid app in apps/$APP_NAME/$NEXT_VERSION before stopping."
+              fi
               continue
             fi
 
-            if [ ! -d "apps/$APP_NAME/$NEXT_VERSION" ]; then
-              FEEDBACK="Previous verifier failed: apps/$APP_NAME/$NEXT_VERSION was not created. Create that exact directory and all required files."
-              continue
+            if [ "$IS_PLATFORM" = "true" ]; then
+              # 平台构建：验证根目录有变更
+              if git diff --quiet HEAD; then
+                FEEDBACK="Previous verifier failed: no platform changes were made. Modify platform files (src/, docs/, .github/, worker/, .claude/) and commit them."
+                continue
+              fi
+            else
+              if [ ! -d "apps/$APP_NAME/$NEXT_VERSION" ]; then
+                FEEDBACK="Previous verifier failed: apps/$APP_NAME/$NEXT_VERSION was not created. Create that exact directory and all required files."
+                continue
+              fi
             fi
 
             set_status "status:verifying" "🔎 状态：验证中。正在运行 verifier（attempt $ATTEMPT/3），通过前不会创建审查 PR。"
 
-            pushd "apps/$APP_NAME/$NEXT_VERSION" >/dev/null
-            if bash ../../../worker/verify-build.sh > /tmp/mitosis-verify.log 2>&1; then
-              PASSED=1
+            if [ "$IS_PLATFORM" = "true" ]; then
+              # 平台构建验证：typecheck + build
+              pushd . >/dev/null
+              if npm run typecheck > /tmp/mitosis-verify.log 2>&1 && npm run build >> /tmp/mitosis-verify.log 2>&1; then
+                PASSED=1
+                echo "Verifier passed"
+                break
+              fi
               popd >/dev/null
-              echo "Verifier passed"
-              break
+            else
+              pushd "apps/$APP_NAME/$NEXT_VERSION" >/dev/null
+              if bash ../../../worker/verify-build.sh > /tmp/mitosis-verify.log 2>&1; then
+                PASSED=1
+                popd >/dev/null
+                echo "Verifier passed"
+                break
+              fi
+              popd >/dev/null
             fi
-            popd >/dev/null
 
             echo "Verifier failed on attempt $ATTEMPT"
             tail -80 /tmp/mitosis-verify.log
@@ -201,7 +245,11 @@ jobs:
             exit 1
           fi
 
-          set_status "status:review" "✅ 状态：验证通过，等待人工审查。下一步会创建审查 PR；合入 master 后由部署 workflow 发布。"
+          if [ "$IS_PLATFORM" = "true" ]; then
+            set_status "status:review" "✅ 状态：平台验证通过，等待人工审查。下一步会创建审查 PR；合入 master 后部署。"
+          else
+            set_status "status:review" "✅ 状态：验证通过，等待人工审查。下一步会创建审查 PR；合入 master 后由部署 workflow 发布。"
+          fi
 
       - name: Commit and create review PR
         if: ${{ steps.parse.outputs.app_name != 'unknown' }}
@@ -211,46 +259,82 @@ jobs:
           APP_NAME: ${{ steps.parse.outputs.app_name }}
           NEXT_VERSION: ${{ steps.parse.outputs.version }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          IS_PLATFORM: ${{ steps.parse.outputs.is_platform }}
         run: |
           git config user.name "mitosis-bot"
           git config user.email "mitosis@users.noreply.github.com"
-          BRANCH="mitosis/$APP_NAME-$NEXT_VERSION-issue-$ISSUE_NUMBER-run-${{ github.run_attempt }}"
+          if [ "$IS_PLATFORM" = "true" ]; then
+            BRANCH="mitosis-platform-issue-$ISSUE_NUMBER-run-${{ github.run_attempt }}"
+          else
+            BRANCH="mitosis/$APP_NAME-$NEXT_VERSION-issue-$ISSUE_NUMBER-run-${{ github.run_attempt }}"
+          fi
           git checkout -B "$BRANCH"
 
           # Discard any unintended root-level changes from agent
           git checkout -- .
-          # Only stage the new app version directory
-          git add "apps/$APP_NAME/$NEXT_VERSION/"
+          if [ "$IS_PLATFORM" = "true" ]; then
+            # 平台构建：提交所有变更
+            git add .
+          else
+            # 应用构建：只提交应用目录
+            git add "apps/$APP_NAME/$NEXT_VERSION/"
+          fi
           # Commit only if there are staged changes
           if git diff --cached --quiet; then
             gh issue edit "$ISSUE_NUMBER" --repo "${{ github.repository }}" --remove-label "status:review" >/dev/null 2>&1 || true
             gh issue edit "$ISSUE_NUMBER" --repo "${{ github.repository }}" --add-label "status:failed"
-            gh issue comment "$ISSUE_NUMBER" --repo "${{ github.repository }}" --body "❌ 验证通过但没有可提交的应用变更，未创建 PR。"
+            gh issue comment "$ISSUE_NUMBER" --repo "${{ github.repository }}" --body "❌ 验证通过但没有可提交的变更，未创建 PR。"
             exit 1
           fi
 
-          git commit -m "feat: build $APP_NAME $NEXT_VERSION (issue #$ISSUE_NUMBER)"
+          if [ "$IS_PLATFORM" = "true" ]; then
+            git commit -m "feat: platform changes (issue #$ISSUE_NUMBER)"
+          else
+            git commit -m "feat: build $APP_NAME $NEXT_VERSION (issue #$ISSUE_NUMBER)"
+          fi
           git push -u origin "$BRANCH"
 
-          cat > /tmp/mitosis-pr-body.md <<EOF
-          ## Summary
-          - Builds \`$APP_NAME\` \`$NEXT_VERSION\` from Issue #$ISSUE_NUMBER.
-          - Agent Loop verifier passed before this PR was created.
-          - Merge to \`master\` to publish through the deploy workflow.
+          if [ "$IS_PLATFORM" = "true" ]; then
+            cat > /tmp/mitosis-pr-body.md <<EOF
+            ## Summary
+            - Platform changes from Issue #$ISSUE_NUMBER.
+            - Agent Loop verifier passed before this PR was created.
+            - Merge to \`master\` to deploy platform changes.
 
-          ## Review
-          - [ ] Open and inspect the generated app after deployment.
-          - [ ] Confirm the app satisfies the Issue requirements.
-          - [ ] Confirm the app includes the Mitosis iteration entry.
-          EOF
+            ## Review
+            - [ ] Review all platform file changes.
+            - [ ] Confirm the changes satisfy the Issue requirements.
+            - [ ] Confirm no unintended changes were made.
+            EOF
 
-          PR_URL=$(gh pr create \
-            --repo "${{ github.repository }}" \
-            --base master \
-            --head "$BRANCH" \
-            --title "feat: build $APP_NAME $NEXT_VERSION" \
-            --body-file /tmp/mitosis-pr-body.md \
-            --draft)
+            PR_URL=$(gh pr create \
+              --repo "${{ github.repository }}" \
+              --base master \
+              --head "$BRANCH" \
+              --title "feat: platform changes (issue #$ISSUE_NUMBER)" \
+              --body-file /tmp/mitosis-pr-body.md \
+              --draft)
+          else
+            cat > /tmp/mitosis-pr-body.md <<EOF
+            ## Summary
+            - Builds \`$APP_NAME\` \`$NEXT_VERSION\` from Issue #$ISSUE_NUMBER.
+            - Agent Loop verifier passed before this PR was created.
+            - Merge to \`master\` to publish through the deploy workflow.
+
+            ## Review
+            - [ ] Open and inspect the generated app after deployment.
+            - [ ] Confirm the app satisfies the Issue requirements.
+            - [ ] Confirm the app includes the Mitosis iteration entry.
+            EOF
+
+            PR_URL=$(gh pr create \
+              --repo "${{ github.repository }}" \
+              --base master \
+              --head "$BRANCH" \
+              --title "feat: build $APP_NAME $NEXT_VERSION" \
+              --body-file /tmp/mitosis-pr-body.md \
+              --draft)
+          fi
 
           echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
 
@@ -262,7 +346,14 @@ jobs:
           NEXT_VERSION: ${{ steps.parse.outputs.version }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           PR_URL: ${{ steps.review_pr.outputs.pr_url }}
+          IS_PLATFORM: ${{ steps.parse.outputs.is_platform }}
         run: |
-          gh issue comment "$ISSUE_NUMBER" \
-            --repo ${{ github.repository }} \
-            --body "🧪 $APP_NAME $NEXT_VERSION 已通过自动验证，进入人工审查。\n\nPR: $PR_URL\n\n合入 master 后，部署 workflow 会发布到 https://mitosis.zenheart.site/apps/$APP_NAME/$NEXT_VERSION/"
+          if [ "$IS_PLATFORM" = "true" ]; then
+            gh issue comment "$ISSUE_NUMBER" \
+              --repo ${{ github.repository }} \
+              --body "🧪 平台变更已通过自动验证，进入人工审查。\n\nPR: $PR_URL\n\n合入 master 后，平台变更将自动部署。"
+          else
+            gh issue comment "$ISSUE_NUMBER" \
+              --repo ${{ github.repository }} \
+              --body "🧪 $APP_NAME $NEXT_VERSION 已通过自动验证，进入人工审查。\n\nPR: $PR_URL\n\n合入 master 后，部署 workflow 会发布到 https://mitosis.zenheart.site/apps/$APP_NAME/$NEXT_VERSION/"
+          fi
