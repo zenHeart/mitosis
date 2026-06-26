@@ -1,0 +1,6 @@
+{
+  "app_name": "snake-game",
+  "version": "v0",
+  "built_by": "zenHeart/mitosis",
+  "prompt_summary": "经典贪吃蛇游戏，支持键盘方向键和触屏按钮控制，包含计分系统、最高分记录、暂停功能和游戏结束判定。"
+}
