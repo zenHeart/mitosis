@@ -341,7 +341,7 @@ jobs:
           if [ -z "$PR_URL" ]; then
             gh issue edit "$ISSUE_NUMBER" --repo "${{ github.repository }}" --remove-label "status:review" >/dev/null 2>&1 || true
             gh issue edit "$ISSUE_NUMBER" --repo "${{ github.repository }}" --add-label "status:failed"
-            gh issue comment "$ISSUE_NUMBER" --repo "${{ github repository }}" --body "❌ PR 创建失败，请查看 Actions 日志。"
+            gh issue comment "$ISSUE_NUMBER" --repo "${{ github.repository }}" --body "❌ PR 创建失败，请查看 Actions 日志。"
             exit 1
           fi
 
