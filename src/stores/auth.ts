@@ -66,6 +66,9 @@ export const useAuthStore = defineStore('auth', {
       // ── OAuth callback：exchange authorization code for token ──
       const oauthCode = sessionStorage.getItem('mitosis_oauth_code')
       if (oauthCode) {
+        // 立即移除 code，防止重复消费或重复触发
+        sessionStorage.removeItem('mitosis_oauth_code')
+        sessionStorage.removeItem('mitosis_oauth_redirect')
         try {
           const { access_token } = await exchangeCodeForToken(oauthCode)
           const githubUser = await fetchGitHubUser(access_token)
@@ -83,9 +86,6 @@ export const useAuthStore = defineStore('auth', {
           this.setupComplete = setupComplete
         } catch {
           this.clearSession()
-        } finally {
-          sessionStorage.removeItem('mitosis_oauth_code')
-          sessionStorage.removeItem('mitosis_oauth_redirect')
         }
         return
       }
