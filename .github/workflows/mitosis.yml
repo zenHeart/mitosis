@@ -177,6 +177,9 @@ jobs:
               worker/prompt.txt)
           fi
 
+          # Save the original commit before the agent loop starts
+          ORIGINAL_SHA=$(git rev-parse HEAD)
+
           FEEDBACK=""
           PASSED=0
 
@@ -203,8 +206,8 @@ jobs:
             fi
 
             if [ "$IS_PLATFORM" = "true" ]; then
-              # 平台构建：验证根目录有变更
-              if git diff --quiet HEAD; then
+              # 平台构建：验证根目录有变更（比较 agent 提交后的 HEAD 与最初的 ORIGINAL_SHA）
+              if git diff --quiet "$ORIGINAL_SHA"; then
                 FEEDBACK="Previous verifier failed: no platform changes were made. Modify platform files (src/, docs/, .github/, worker/, .claude/) and commit them."
                 continue
               fi
@@ -272,31 +275,25 @@ jobs:
           else
             BRANCH="mitosis/$APP_NAME-$NEXT_VERSION-issue-$ISSUE_NUMBER-run-${{ github.run_attempt }}"
           fi
-          git checkout -B "$BRANCH"
 
-          # Discard any unintended root-level changes from agent
-          git checkout -- .
           if [ "$IS_PLATFORM" = "true" ]; then
-            # 平台构建：提交所有变更
-            git add .
+            # 平台构建：agent 已在 loop 中提交并推送到 BRANCH，直接 push 即可
+            git push --force-with-lease -u origin "$BRANCH"
           else
-            # 应用构建：只提交应用目录
+            # 应用构建：从干净状态提交应用目录
+            git checkout -B "$BRANCH"
+            git checkout -- .
             git add "apps/$APP_NAME/$NEXT_VERSION/"
-          fi
-          # Commit only if there are staged changes
-          if git diff --cached --quiet; then
-            gh issue edit "$ISSUE_NUMBER" --repo "${{ github.repository }}" --remove-label "status:review" >/dev/null 2>&1 || true
-            gh issue edit "$ISSUE_NUMBER" --repo "${{ github.repository }}" --add-label "status:failed"
-            gh issue comment "$ISSUE_NUMBER" --repo "${{ github.repository }}" --body "❌ 验证通过但没有可提交的变更，未创建 PR。"
-            exit 1
-          fi
-
-          if [ "$IS_PLATFORM" = "true" ]; then
-            git commit -m "feat: platform changes (issue #$ISSUE_NUMBER)"
-          else
+            # Commit only if there are staged changes
+            if git diff --cached --quiet; then
+              gh issue edit "$ISSUE_NUMBER" --repo "${{ github.repository }}" --remove-label "status:review" >/dev/null 2>&1 || true
+              gh issue edit "$ISSUE_NUMBER" --repo "${{ github.repository }}" --add-label "status:failed"
+              gh issue comment "$ISSUE_NUMBER" --repo "${{ github.repository }}" --body "❌ 验证通过但没有可提交的变更，未创建 PR。"
+              exit 1
+            fi
             git commit -m "feat: build $APP_NAME $NEXT_VERSION (issue #$ISSUE_NUMBER)"
+            git push --force-with-lease -u origin "$BRANCH"
           fi
-          git push --force-with-lease -u origin "$BRANCH"
 
           REPO_OWNER="${{ github.repository_owner }}"
           REPO_PATH="${{ github.repository }}"
