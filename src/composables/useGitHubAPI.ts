@@ -58,6 +58,7 @@ export async function createIssue(
       }
       if (token) headers.Authorization = `Bearer ${token}`
 
+      // mask sensitive data in issue title and body before storing (mask issue, prevent leak)
       const maskedIssueTitle = maskSensitive(title)
       const maskedIssueBody = maskSensitive(body)
 
@@ -238,6 +239,7 @@ export async function createIssueComment(
       }
       if (token) headers.Authorization = `Bearer ${token}`
 
+      // mask sensitive data in comment body before storing (mask comment, prevent leak)
       const maskedCommentBody = maskSensitive(body)
 
       const res = await fetchWithTimeout(
