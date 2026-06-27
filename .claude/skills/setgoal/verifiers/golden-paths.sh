@@ -180,11 +180,13 @@ else
   check "mitosis.yml platform verifier uses npm run build + typecheck (C26)" "missing"
 fi
 
-# S20: 平台构建 git add .（不限制在 apps/）
-if grep -A2 "IS_PLATFORM.*true" .github/workflows/mitosis.yml 2>/dev/null | grep -q "git add \."; then
-  check "mitosis.yml platform build uses git add . (C26)" "pass"
+# S20: 平台构建 Commit 步骤必须 checkout -B 创建 branch（agent 提交到 master，需要从中创建 branch）
+# 且不能有 git checkout -- .（会丢弃 agent 对 tracked files 的修改）
+PLATFORM_COMMIT=$(sed -n '/IS_PLATFORM.*true/,/^          else$/p' .github/workflows/mitosis.yml 2>/dev/null || echo "")
+if echo "$PLATFORM_COMMIT" | grep -q "git checkout -B" && echo "$PLATFORM_COMMIT" | grep -q "git push --force-with-lease" && ! echo "$PLATFORM_COMMIT" | grep -q "git checkout -- \."; then
+  check "mitosis.yml platform commit creates branch + push, no checkout-reset (C26)" "pass"
 else
-  check "mitosis.yml platform build uses git add . (C26)" "missing"
+  check "mitosis.yml platform commit creates branch + push, no checkout-reset (C26)" "missing"
 fi
 
 # ── Mock 模式命令测试准备 ───────────────────────────────

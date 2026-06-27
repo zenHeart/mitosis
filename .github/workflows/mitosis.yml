@@ -277,7 +277,8 @@ jobs:
           fi
 
           if [ "$IS_PLATFORM" = "true" ]; then
-            # 平台构建：agent 已在 loop 中提交并推送到 BRANCH，直接 push 即可
+            # 平台构建：agent 在 loop 中提交变更到 master，在此创建 branch 并 push
+            git checkout -B "$BRANCH"
             git push --force-with-lease -u origin "$BRANCH"
           else
             # 应用构建：从干净状态提交应用目录
