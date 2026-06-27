@@ -1,4 +1,5 @@
 import type { GitHubUser } from '../types/auth'
+import { fetchWithTimeout } from './useGitHubAPI'
 import { REPO_NAME } from '../config/repo'
 
 // @ts-ignore - injected at build time via vite define
@@ -29,11 +30,11 @@ export function getLoginUrl(): string {
 // ---- Token Exchange (via Cloudflare Worker proxy) ----
 
 export async function exchangeCodeForToken(code: string): Promise<{ access_token: string }> {
-  const res = await fetch(OAUTH_PROXY_URL, {
+  const res = await fetchWithTimeout(OAUTH_PROXY_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code }),
-  })
+  }, 15000)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Token exchange failed' }))
     throw new Error(err.error || err.detail || `HTTP ${res.status}`)
@@ -44,12 +45,12 @@ export async function exchangeCodeForToken(code: string): Promise<{ access_token
 // ---- User API ----
 
 export async function fetchGitHubUser(token: string): Promise<GitHubUser> {
-  const res = await fetch(`${API_BASE}/user`, {
+  const res = await fetchWithTimeout(`${API_BASE}/user`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
     },
-  })
+  }, 15000)
   if (!res.ok) {
     throw new Error(`GitHub API error: ${res.status}`)
   }
@@ -60,12 +61,12 @@ export async function verifyRepoOwnership(
   token: string,
   userLogin: string
 ): Promise<boolean> {
-  const res = await fetch(`${API_BASE}/repos/${userLogin}/${REPO_NAME}`, {
+  const res = await fetchWithTimeout(`${API_BASE}/repos/${userLogin}/${REPO_NAME}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
     },
-  })
+  }, 15000)
   if (res.status === 404) return false
   if (!res.ok) return false
   const repo = await res.json()
