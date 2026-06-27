@@ -6,6 +6,7 @@ import { useSessionStore } from '../stores/session'
 import { getLoginUrl } from '../composables/useAuth'
 import { REPO_FULL_NAME } from '../config/repo'
 import { listApps } from '../composables/useGitHubAPI'
+import { useDarkMode } from '../composables/useDarkMode'
 
 const props = defineProps<{
   initialApp?: string
@@ -39,6 +40,8 @@ const sessionGroups = computed(() => {
   ].filter((g) => g.sessions.length > 0)
 })
 
+const { theme: darkMode, toggle: toggleDarkMode, init: initDarkMode } = useDarkMode()
+
 function setSelectedCard(el: HTMLElement | null) {
   selectedCardRef.value = el
 }
@@ -68,6 +71,9 @@ watch(selectedApp, async (newApp) => {
 })
 
 onMounted(async () => {
+  // 初始化暗黑模式
+  initDarkMode()
+
   // 加载会话列表
   if (isLoggedIn.value) {
     await sessionStore.loadSessions(authStore.token || '', REPO_FULL_NAME)
@@ -129,6 +135,9 @@ onMounted(async () => {
         <button v-if="isLoggedIn" class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen">☰</button>
         <span class="logo">🧬</span>
         <h1>Mitosis</h1>
+        <button class="theme-toggle" @click="toggleDarkMode" :title="darkMode === 'dark' ? '切换到亮色模式' : '切换到暗黑模式'">
+          {{ darkMode === 'dark' ? '☀️' : '🌙' }}
+        </button>
       </div>
       <p class="tagline">AI 构建 AI，无限繁衍</p>
     </header>
@@ -546,6 +555,25 @@ onMounted(async () => {
 .sidebar-toggle:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 1.2rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.3rem 0.6rem;
+  margin-left: 0.5rem;
+  transition: all 0.15s;
+  line-height: 1;
+}
+
+.theme-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: scale(1.1);
 }
 
 @media (min-width: 1024px) {

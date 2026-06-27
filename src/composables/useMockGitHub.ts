@@ -143,6 +143,22 @@ export async function mockGetIssue(
   }
 }
 
+// ── 生命周期命令检测 ──────────────────────────────────────
+
+export function detectStatusCommand(text: string): { triggered: boolean } {
+  return { triggered: /^\/status\s*$/.test(text.trim()) }
+}
+
+export function detectStopCommand(text: string): { triggered: boolean } {
+  return { triggered: /^\/stop\s*$/.test(text.trim()) }
+}
+
+export function detectStartCommand(text: string): { triggered: boolean; description: string } {
+  const match = text.trim().match(/^\/start\s*(.*)$/)
+  if (!match) return { triggered: false, description: '' }
+  return { triggered: true, description: match[1]?.trim() || '' }
+}
+
 // ── /create 命令检测 ──────────────────────────────────────
 
 export function detectCreateCommand(text: string): { triggered: boolean; description: string } {

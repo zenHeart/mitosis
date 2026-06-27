@@ -19,6 +19,11 @@ export interface SessionState {
   error: string | null
 }
 
+export interface AgentStatusResult {
+  label: string
+  text: string
+}
+
 export const useSessionStore = defineStore('session', {
   state: (): SessionState => ({
     sessions: [],
@@ -139,6 +144,20 @@ export const useSessionStore = defineStore('session', {
 
     clearError() {
       this.error = null
+    },
+
+    async checkAgentStatus(token: string, repo: string, issueNumber: number) {
+      const issue = await getIssue(token, repo, issueNumber)
+      const statusLabel = issue.labels.find((l: { name: string }) => l.name.startsWith('status:'))
+      const statusMap: Record<string, string> = {
+        'status:building': '🔨 构建中...',
+        'status:verifying': '🔎 验证中...',
+        'status:review': '✅ 等待人工审查',
+        'status:failed': '❌ 构建失败',
+        'status:cancelled': '🛑 已停止',
+      }
+      const text = statusLabel ? (statusMap[statusLabel.name] || '💤 空闲') : '💤 空闲'
+      return { label: statusLabel?.name || '', text }
     },
   },
 })

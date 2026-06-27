@@ -58,6 +58,7 @@ export async function createIssue(
       }
       if (token) headers.Authorization = `Bearer ${token}`
 
+      // mask before create: apply privacy masking to issue title and body
       const maskedIssueTitle = maskSensitive(title)
       const maskedIssueBody = maskSensitive(body)
 
@@ -171,16 +172,29 @@ export async function listUserIssues(
         labels: { name: string }[]
         created_at: string
         updated_at: string
-      }) => ({
-        issueNumber: issue.number,
-        title: issue.title,
-        status: issue.state as 'open' | 'closed',
-        labels: issue.labels.map((l: { name: string }) => l.name),
-        messageCount: 0,
-        createdAt: issue.created_at,
-        updatedAt: issue.updated_at,
-        appLabel: issue.labels.find((l: { name: string }) => l.name.startsWith('app/'))?.name,
-      }))
+      }) => {
+        const labelNames = issue.labels.map((l: { name: string }) => l.name)
+        // scenario 从标签推断
+        let scenario: 'platform' | 'app_create' | 'app_iterate' | undefined
+        if (labelNames.includes('platform')) {
+          scenario = 'platform'
+        } else if (labelNames.includes('update')) {
+          scenario = 'app_iterate'
+        } else if (labelNames.some((l: string) => l.startsWith('app/'))) {
+          scenario = 'app_create'
+        }
+        return {
+          issueNumber: issue.number,
+          title: issue.title,
+          status: issue.state as 'open' | 'closed',
+          labels: labelNames,
+          messageCount: 0,
+          createdAt: issue.created_at,
+          updatedAt: issue.updated_at,
+          appLabel: issue.labels.find((l: { name: string }) => l.name.startsWith('app/'))?.name,
+          scenario,
+        }
+      })
     },
     async () => mockListUserIssues(token, repo)
   )
@@ -238,6 +252,7 @@ export async function createIssueComment(
       }
       if (token) headers.Authorization = `Bearer ${token}`
 
+      // mask before comment: apply privacy masking to comment body
       const maskedCommentBody = maskSensitive(body)
 
       const res = await fetchWithTimeout(
@@ -256,4 +271,34 @@ export async function createIssueComment(
     },
     async () => mockCreateIssueComment(token, repo, issueNumber, body)
   )
+}
+
+/** 更新 Issue 状态和/或标签 */
+export async function updateIssue(
+  token: string,
+  repo: string,
+  issueNumber: number,
+  state?: 'open' | 'closed',
+  labels?: string[]
+): Promise<BuildIssue> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/vnd.github+json',
+  }
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  const body: Record<string, unknown> = {}
+  if (state) body.state = state
+  if (labels) body.labels = labels
+
+  const res = await fetchWithTimeout(ghUrl(repo, `/issues/${issueNumber}`), {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Failed to update issue: ${res.status} — ${err}`)
+  }
+  return res.json()
 }

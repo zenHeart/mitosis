@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from './stores/auth'
+import { useDarkMode } from './composables/useDarkMode'
 import LoginPage from './components/LoginPage.vue'
 import SetupPage from './components/SetupPage.vue'
 import Workspace from './components/Workspace.vue'
@@ -8,6 +9,7 @@ import Gallery from './components/Gallery.vue'
 
 const authStore = useAuthStore()
 const currentView = ref<'gallery' | 'login' | 'setup' | 'workspace'>('gallery')
+const { init: initDarkMode } = useDarkMode()
 
 const view = computed(() => currentView.value)
 
@@ -29,6 +31,7 @@ const initialApp = computed(() => {
 })
 
 onMounted(async () => {
+  initDarkMode()
   await authStore.init()
   if (authStore.isAuthenticated) {
     if (authStore.setupComplete) {

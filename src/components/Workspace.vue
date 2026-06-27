@@ -6,8 +6,8 @@ import { usePolling } from '../composables/usePolling'
 import { chatWithStepFun } from '../composables/useStepFun'
 import { getSystemPrompt } from '../composables/useSystemPrompts'
 import { sanitize } from '../composables/useSanitize'
-import { detectCreateCommand } from '../composables/useMockGitHub'
-import { createIssue, getIssue } from '../composables/useGitHubAPI'
+import { detectCreateCommand, detectStatusCommand, detectStopCommand, detectStartCommand } from '../composables/useMockGitHub'
+import { createIssue, getIssue, updateIssue } from '../composables/useGitHubAPI'
 import ChatInput from './ChatInput.vue'
 import type { BuildIssue, ChatSession } from '../types/app'
 import { REPO_FULL_NAME, userRepoFullName } from '../config/repo'
@@ -40,6 +40,7 @@ type TriageAction = 'chat' | 'build' | 'platform' | 'clarify'
 
 interface TriageResult {
   action: TriageAction
+  scenario: 'platform' | 'app_create' | 'app_iterate'
   intent: 'question' | 'create_app' | 'modify_platform' | 'unknown'
   complexity: 'simple' | 'medium' | 'complex'
   scope: 'none' | 'apps-only' | 'platform'
@@ -90,20 +91,22 @@ function triageMessage(text: string): TriageResult {
   // ── 分流决策 ──
   // R1: 纯询问（无构建意图，无平台范围）
   if (isQuestion && !isAppBuild && !isPlatform && !isContinue) {
-    return { action: 'chat', intent: 'question', complexity: 'simple', scope: 'none' }
+    return { action: 'chat', scenario: 'app_create', intent: 'question', complexity: 'simple', scope: 'none' }
   }
   // R4/R5: 平台变更
   if (isPlatform) {
-    return { action: 'platform', intent: 'modify_platform', complexity: 'medium', scope: 'platform' }
+    return { action: 'platform', scenario: 'platform', intent: 'modify_platform', complexity: 'medium', scope: 'platform' }
   }
   // R2: 已有应用的简单微调
   if (isSimpleTweak && !isAppBuild && !isContinue) {
-    return { action: 'chat', intent: 'create_app', complexity: 'simple', scope: 'apps-only', basedOn }
+    return { action: 'chat', scenario: 'app_iterate', intent: 'create_app', complexity: 'simple', scope: 'apps-only', basedOn }
   }
   // R3: 应用构建（新建 or 复杂修改 or 继续迭代）
   if (isAppBuild || isContinue) {
+    const scenario = basedOn ? 'app_iterate' : 'app_create'
     return {
       action: 'build',
+      scenario,
       intent: 'create_app',
       complexity: isContinue || basedOn ? 'medium' : 'complex',
       scope: 'apps-only',
@@ -111,7 +114,7 @@ function triageMessage(text: string): TriageResult {
     }
   }
   // R6: 无法确定 → 澄清
-  return { action: 'clarify', intent: 'unknown', complexity: 'simple', scope: 'none' }
+  return { action: 'clarify', scenario: 'app_create', intent: 'unknown', complexity: 'simple', scope: 'none' }
 }
 
 function logTriage(text: string, t: TriageResult) {
@@ -187,6 +190,64 @@ async function handleSend() {
     return
   }
 
+  // ── /status 命令：查询 agent 状态 ──
+  const statusCmd = detectStatusCommand(text)
+  if (statusCmd.triggered) {
+    const statusResult = await sessionStore.checkAgentStatus(authStore.token, REPO_FULL_NAME, sessionStore.activeSession!.issueNumber)
+    sessionStore.addMessage({
+      role: 'user',
+      content: text,
+      createdAt: new Date().toISOString(),
+    })
+    sessionStore.addMessage({
+      role: 'system',
+      content: `📊 Agent 状态: ${statusResult.text}`,
+      createdAt: new Date().toISOString(),
+    })
+    inputText.value = ''
+    return
+  }
+
+  // ── /stop 命令：停止构建 ──
+  const stopCmd = detectStopCommand(text)
+  if (stopCmd.triggered) {
+    const session = sessionStore.activeSession!
+    await updateIssue(authStore.token, REPO_FULL_NAME, session.issueNumber, 'closed', [...session.labels, 'status:cancelled'])
+    sessionStore.addMessage({
+      role: 'user',
+      content: text,
+      createdAt: new Date().toISOString(),
+    })
+    sessionStore.addMessage({
+      role: 'system',
+      content: `🛑 已停止 Issue #${session.issueNumber} 的构建任务。`,
+      createdAt: new Date().toISOString(),
+    })
+    session.status = 'closed'
+    inputText.value = ''
+    return
+  }
+
+  // ── /start 命令：重新触发构建 ──
+  const startCmd = detectStartCommand(text)
+  if (startCmd.triggered) {
+    const session = sessionStore.activeSession!
+    await updateIssue(authStore.token, REPO_FULL_NAME, session.issueNumber, 'open', session.labels.filter((l: string) => l !== 'status:cancelled'))
+    sessionStore.addMessage({
+      role: 'user',
+      content: text,
+      createdAt: new Date().toISOString(),
+    })
+    sessionStore.addMessage({
+      role: 'system',
+      content: `🔄 已重新触发 Issue #${session.issueNumber} 的构建。`,
+      createdAt: new Date().toISOString(),
+    })
+    session.status = 'open'
+    inputText.value = ''
+    return
+  }
+
   // 如果正在澄清，把用户回复当作澄清回答重新分流
   const previousBuildContext = pendingBuildContext.value
   if (clarifying.value) {
@@ -248,7 +309,7 @@ async function handleSend() {
           ? `${previousBuildContext}\n\n## 澄清回答\n\n${text}`
           : text
         pendingBuildContext.value = ''
-        await createBuild(appName, description, triage.basedOn)
+        await createBuild(appName, description, triage.basedOn, triage.scenario)
       } else {
         clarifying.value = true
         pendingBuildContext.value = previousBuildContext
@@ -273,13 +334,15 @@ async function handleSend() {
   }
 }
 
-async function createBuild(appName: string, description: string, basedOn?: string) {
+async function createBuild(appName: string, description: string, basedOn?: string, scenario?: 'platform' | 'app_create' | 'app_iterate') {
   if (building.value || !authStore.token || !isOwner.value) return
 
   building.value = true
   activeIssue.value = null
   const version = basedOn ? 'v1' : 'v0'
-  const labels = basedOn ? [`app/${appName}`, 'update'] : [`app/${appName}`]
+  // scenario 优先于 basedOn 推断标签
+  const effectiveScenario = scenario || (basedOn ? 'app_iterate' : 'app_create')
+  const labels = effectiveScenario === 'app_iterate' ? [`app/${appName}`, 'update'] : [`app/${appName}`]
   const basedOnLine = basedOn ? `\n- 基于: ${basedOn}` : ''
   const body = `## 需求描述\n\n${description}${basedOn ? `\n\n## 基于现有应用\n\n基于应用: ${basedOn}` : ''}\n\n## 构建信息\n\n- 应用名称: ${appName}\n- 版本: ${version}\n- 触发方式: Web 界面${basedOnLine}`
 

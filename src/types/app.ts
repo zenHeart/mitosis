@@ -33,4 +33,5 @@ export interface ChatSession {
   createdAt: string
   updatedAt: string
   appLabel?: string
+  scenario?: 'platform' | 'app_create' | 'app_iterate'
 }
