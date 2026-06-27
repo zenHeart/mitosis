@@ -7,6 +7,7 @@
  * - 日志中不能打印原始敏感值
  */
 
+// mask sensitive data before store (C14-C15)
 // 敏感字段关键词
 const SENSITIVE_KEYS = [
   'password', 'passwd', 'pwd',
