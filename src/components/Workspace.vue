@@ -36,6 +36,30 @@ const displayMessages = computed(() =>
   }))
 )
 
+// 按 app name 聚类的会话组（每个 app 只显示最新的一条）
+interface AppGroup {
+  appName: string
+  sessions: ChatSession[]
+  latest: ChatSession
+}
+const appGroups = computed<AppGroup[]>(() => {
+  const appSessions = sessionStore.groupedSessions.app
+  const groups = new Map<string, ChatSession[]>()
+  for (const s of appSessions) {
+    const name = s.appLabel?.replace('app/', '') || s.title.replace(/^build:\s*/i, '').split(' ')[0] || 'unknown'
+    const existing = groups.get(name) || []
+    existing.push(s)
+    groups.set(name, existing)
+  }
+  return Array.from(groups.entries())
+    .map(([appName, sessions]) => ({
+      appName,
+      sessions,
+      latest: sessions.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0],
+    }))
+    .sort((a, b) => new Date(b.latest.updatedAt).getTime() - new Date(a.latest.updatedAt).getTime())
+})
+
 // ─── 分流协议 ───────────────────────────────────────────
 type TriageAction = 'chat' | 'build' | 'platform' | 'clarify'
 
@@ -90,20 +114,12 @@ function triageMessage(text: string): TriageResult {
   const m = text.match(/(?:在|基于)\s*([a-z0-9-]+)\s*(?:的?基础上|之上)/i)
   if (m) basedOn = m[1].toLowerCase()
 
-  // ── 分流决策 ──
-  // R1: 纯询问（无构建意图，无平台范围）
-  if (isQuestion && !isAppBuild && !isPlatform && !isContinue) {
-    return { action: 'chat', scenario: 'app_create', intent: 'question', complexity: 'simple', scope: 'none' }
-  }
-  // R4/R5: 平台变更
+  // R4/R5: 平台变更（优先于 question，避免 "mitosis 支持 xxx" 被误分类）
   if (isPlatform) {
     return { action: 'platform', scenario: 'platform', intent: 'modify_platform', complexity: 'medium', scope: 'platform' }
   }
-  // R2: 已有应用的简单微调
-  if (isSimpleTweak && !isAppBuild && !isContinue) {
-    return { action: 'chat', scenario: 'app_iterate', intent: 'create_app', complexity: 'simple', scope: 'apps-only', basedOn }
-  }
   // R3: 应用构建（新建 or 复杂修改 or 继续迭代）
+  // 注意：isAppBuild 必须在 isQuestion 之前检查，避免 "做一个游戏" 被误判为问题
   if (isAppBuild || isContinue) {
     const scenario = basedOn ? 'app_iterate' : 'app_create'
     return {
@@ -114,6 +130,14 @@ function triageMessage(text: string): TriageResult {
       scope: 'apps-only',
       basedOn,
     }
+  }
+  // R2: 已有应用的简单微调
+  if (isSimpleTweak && !isContinue) {
+    return { action: 'chat', scenario: 'app_iterate', intent: 'create_app', complexity: 'simple', scope: 'apps-only', basedOn }
+  }
+  // R1: 纯询问（无构建意图，无平台范围）
+  if (isQuestion && !isAppBuild && !isPlatform && !isContinue) {
+    return { action: 'chat', scenario: 'app_create', intent: 'question', complexity: 'simple', scope: 'none' }
   }
   // R6: 无法确定 → 澄清
   return { action: 'clarify', scenario: 'app_create', intent: 'unknown', complexity: 'simple', scope: 'none' }
@@ -273,6 +297,10 @@ async function handleSend() {
     // ── 2. 澄清（R6）──
     if (triage.action === 'clarify') {
       clarifying.value = true
+      // 保存原始上下文，澄清回答时合并使用
+      if (!pendingBuildContext.value && text) {
+        pendingBuildContext.value = text
+      }
       clarifyingMsg.value = `我需要确认一下你的意图：
 
 1. **你是想创建一个新应用，还是修改已有的应用？**
@@ -495,8 +523,18 @@ function extractVersionFromIssue(issue: BuildIssue): string {
 }
 
 function extractAppName(input: string): string {
+  // 优先提取中英文应用名（俄罗斯方块、snake、tetris 等）
+  const chineseMatch = input.match(/([一-鿿]+(?:游戏|应用|工具|编辑器|方块|蛇|鸟|棋|牌))/)
+  if (chineseMatch) return chineseMatch[1]
+
+  const englishMatch = input.match(/(?:build|create|make|new)\s+([a-z0-9-]+)/i) ||
+                       input.match(/(snake|tetris|todo|calculator|breakout|flappy|2048|pong|paint|chat)/i)
+  if (englishMatch) return englishMatch[1].toLowerCase()
+
   const cleaned = input.toLowerCase().replace(/[^a-z0-9一-龥]/g, '-')
   const collapsed = cleaned.replace(/-+/g, '-').replace(/^-|-$/g, '')
+  // 如果是纯中文（全是连字符），返回默认名
+  if (/^-+$/.test(collapsed)) return 'my-app'
   return collapsed || 'my-app'
 }
 
@@ -557,7 +595,7 @@ function handleNewChat() {
       <div class="sessions-list" v-if="sessionStore.sortedSessions.length">
         <h3>最近对话</h3>
 
-        <!-- 平台会话（mitosis 自举） -->
+        <!-- 平台会话（mitosis 自举） — 保持独立 -->
         <template v-if="sessionStore.groupedSessions.platform.length">
           <div class="session-group-label">🧬 平台</div>
           <div
@@ -568,27 +606,28 @@ function handleNewChat() {
             @click="navigateToSession(session)"
           >
             <span class="session-title">{{ session.title }}</span>
-            <span class="session-status" :class="session.status">{{ session.status === 'open' ? '●' : '○' }}</span>
+            <span class="session-status">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
           </div>
         </template>
 
-        <!-- 应用会话：也是「我的应用」入口，点击会话查看历史，点击「打开」跳转路由 -->
-        <template v-if="sessionStore.groupedSessions.app.length">
-          <div class="session-group-label">📦 应用</div>
+        <!-- 应用会话：按 app name 聚类，每个 app 只显示一个条目 + 「打开」按钮 -->
+        <template v-if="appGroups.length">
+          <div class="session-group-label">📱 我的应用</div>
           <div
-            v-for="session in sessionStore.groupedSessions.app"
-            :key="session.issueNumber"
-            class="session-item"
-            :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber, closed: session.status === 'closed' }"
-            @click="navigateToSession(session)"
+            v-for="group in appGroups"
+            :key="group.appName"
+            class="session-item app-group"
+            :class="{ active: sessionStore.activeSession?.issueNumber === group.latest.issueNumber }"
+            @click="navigateToSession(group.latest)"
           >
-            <span class="session-title">{{ session.title }}</span>
-            <span class="session-status" :class="session.status">{{ session.status === 'open' ? '●' : '○' }}</span>
-            <button class="session-open-btn" @click.stop="openAppSession(session)" title="打开应用">打开</button>
+            <span class="session-title">{{ group.appName }}</span>
+            <span class="session-count">{{ group.sessions.length }} 次迭代</span>
+            <span class="session-status">{{ sessionStore.getSessionDisplayStatus(group.latest) }}</span>
+            <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
           </div>
         </template>
 
-        <!-- 其他会话 -->
+        <!-- 其他未分类会话 -->
         <template v-if="sessionStore.groupedSessions.other.length">
           <div class="session-group-label">其他</div>
           <div
@@ -599,7 +638,7 @@ function handleNewChat() {
             @click="navigateToSession(session)"
           >
             <span class="session-title">{{ session.title }}</span>
-            <span class="session-status" :class="session.status">{{ session.status === 'open' ? '●' : '○' }}</span>
+            <span class="session-status">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
           </div>
         </template>
       </div>
@@ -611,6 +650,13 @@ function handleNewChat() {
           <h3>{{ sessionStore.activeSession.title }}</h3>
           <p>Issue #{{ sessionStore.activeSession.issueNumber }} · {{ sessionStore.activeSession.messageCount }} 条消息</p>
           <p class="hint-text">发送消息开始对话</p>
+          <button
+            v-if="sessionStore.activeSession.appLabel"
+            @click="openAppSession(sessionStore.activeSession)"
+            class="back-to-app-btn"
+          >
+            ← 返回应用
+          </button>
         </div>
         <div v-else-if="displayMessages.length === 0 && isOwner" class="welcome">
           <h3>👋 你好，{{ authStore.user?.login }}</h3>
@@ -642,6 +688,11 @@ function handleNewChat() {
             <span></span><span></span><span></span>
           </div>
         </div>
+      </div>
+      <!-- 活跃会话的应用导航栏 -->
+      <div v-if="sessionStore.activeSession?.appLabel" class="app-nav-bar">
+        <span class="app-nav-label">📱 {{ sessionStore.activeSession.appLabel.replace('app/', '') }}</span>
+        <button @click="openAppSession(sessionStore.activeSession)" class="app-nav-open-btn">打开应用 →</button>
       </div>
       <ChatInput
         v-model="inputText"
@@ -777,17 +828,19 @@ function handleNewChat() {
   letter-spacing: 0.03em;
 }
 
-.session-status {
-  font-size: 0.7rem;
+.session-count {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  padding: 1px 5px;
+  border-radius: 3px;
   flex-shrink: 0;
 }
 
-.session-status.open {
-  color: #2ea043;
-}
-
-.session-status.closed {
-  color: #8b949e;
+.session-status {
+  font-size: 0.7rem;
+  flex-shrink: 0;
+  color: var(--text-secondary);
 }
 
 .session-open-btn {
@@ -858,6 +911,55 @@ function handleNewChat() {
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+/* 应用导航栏 — 活跃会话显示当前应用 + 打开按钮 */
+.app-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.app-nav-label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.app-nav-open-btn {
+  padding: 0.35rem 0.75rem;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.app-nav-open-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.back-to-app-btn {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.back-to-app-btn:hover {
+  background: var(--accent);
+  color: #fff;
 }
 
 .messages {

@@ -62,13 +62,71 @@ export const useSessionStore = defineStore('session', {
       this.loading = true
       this.error = null
       try {
-        this.sessions = await listUserIssues(token, repo)
+        const remoteSessions = await listUserIssues(token, repo)
+        // 合并远程 sessions 与本地缓存（去重：以 issueNumber 为准）
+        const cached = this._readCache()
+        const merged = this._mergeSessions(remoteSessions, cached)
+        this.sessions = merged
+        this._writeCache(merged)
       } catch (e) {
         this.error = e instanceof Error ? e.message : 'Failed to load sessions'
-        this.sessions = []
+        // API 失败时，从 localStorage 恢复缓存
+        const cached = this._readCache()
+        if (cached.length > 0) {
+          this.sessions = cached
+        }
       } finally {
         this.loading = false
       }
+    },
+
+    // localStorage 缓存辅助方法
+    _CACHE_KEY: 'mitosis_sessions_cache',
+
+    _readCache(): ChatSession[] {
+      try {
+        const raw = localStorage.getItem(this._CACHE_KEY)
+        if (!raw) return []
+        const parsed = JSON.parse(raw)
+        if (!Array.isArray(parsed)) return []
+        // 过滤过期数据（超过 24 小时）
+        const dayMs = 86400000
+        const now = Date.now()
+        return parsed.filter((s: ChatSession) => {
+          const updated = new Date(s.updatedAt).getTime()
+          return !Number.isNaN(updated) && now - updated < dayMs
+        })
+      } catch {
+        return []
+      }
+    },
+
+    _writeCache(sessions: ChatSession[]): void {
+      try {
+        localStorage.setItem(this._CACHE_KEY, JSON.stringify(sessions))
+      } catch {
+        // ignore quota exceeded
+      }
+    },
+
+    _mergeSessions(remote: ChatSession[], cached: ChatSession[]): ChatSession[] {
+      const map = new Map<number, ChatSession>()
+      // 优先远程数据（更新），补充本地独有数据
+      for (const s of [...cached, ...remote]) {
+        const existing = map.get(s.issueNumber)
+        if (!existing) {
+          map.set(s.issueNumber, s)
+        } else {
+          // 合并：远程数据覆盖，但保留本地消息计数
+          map.set(s.issueNumber, {
+            ...s,
+            messageCount: Math.max(s.messageCount, existing.messageCount),
+          })
+        }
+      }
+      return Array.from(map.values()).sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      )
     },
 
     async loadMessages(token: string, repo: string, issueNumber: number) {
@@ -137,6 +195,13 @@ export const useSessionStore = defineStore('session', {
 
       try {
         await createIssueComment(token, repo, issueNumber, content)
+        // 更新 session 的 updatedAt 并刷新缓存
+        const session = this.sessions.find(s => s.issueNumber === issueNumber)
+        if (session) {
+          session.updatedAt = userMsg.createdAt
+          session.messageCount = this.messages.length
+          this._writeCache(this.sessions)
+        }
       } catch (e) {
         this.error = e instanceof Error ? e.message : 'Failed to send message'
       }
@@ -144,6 +209,18 @@ export const useSessionStore = defineStore('session', {
 
     clearError() {
       this.error = null
+    },
+
+    // 根据 labels 推导显示状态
+    getSessionDisplayStatus(session: ChatSession): string {
+      const labels = session.labels || []
+      if (labels.includes('status:cancelled')) return '已停止'
+      if (labels.includes('status:failed')) return '构建失败'
+      if (labels.includes('status:review')) return '等待审查'
+      if (labels.includes('status:verifying')) return '验证中'
+      if (labels.includes('status:building')) return '构建中'
+      if (session.status === 'closed') return '已关闭'
+      return '进行中'
     },
 
     async checkAgentStatus(token: string, repo: string, issueNumber: number) {
