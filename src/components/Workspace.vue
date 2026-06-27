@@ -404,6 +404,8 @@ async function createBuild(appName: string, description: string, basedOn?: strin
     })
     building.value = false
   }
+  // 刷新会话列表（新创建的 Issue 需要重新加载）
+  await sessionStore.loadSessions(authStore.token!, repo.value)
 }
 
 // 平台变更直接构建（模型判断可执行时触发）
@@ -445,6 +447,8 @@ async function createPlatformBuild(originalText: string, description: string) {
     })
     building.value = false
   }
+  // 刷新会话列表
+  await sessionStore.loadSessions(authStore.token!, repo.value)
 }
 
 function onIssueUpdate(issue: BuildIssue) {
