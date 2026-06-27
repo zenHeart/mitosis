@@ -1,0 +1,6 @@
+{
+  "app_name": "tetris-game",
+  "version": "v3",
+  "built_by": "zenHeart/mitosis",
+  "prompt_summary": "Complete Tetris game with all 7 piece types, rotation with wall kicks, line clearing, scoring, levels, pause, next piece preview, on-screen controls, and Mitosis iteration link"
+}
