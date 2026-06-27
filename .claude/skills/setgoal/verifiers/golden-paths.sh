@@ -189,6 +189,13 @@ else
   check "mitosis.yml platform commit creates branch + push, no checkout-reset (C26)" "missing"
 fi
 
+# S20b: PR 创建有 403 降级方案（compare URL fallback）
+if grep -q 'gh pr create' .github/workflows/mitosis.yml 2>/dev/null && grep -q 'compare/master' .github/workflows/mitosis.yml 2>/dev/null; then
+  check "mitosis.yml PR creation has 403 fallback (compare URL) (C27)" "pass"
+else
+  check "mitosis.yml PR creation has 403 fallback (compare URL) (C27)" "missing"
+fi
+
 # ── Mock 模式命令测试准备 ───────────────────────────────
 
 echo ""
