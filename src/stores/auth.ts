@@ -12,6 +12,7 @@ export const useAuthStore = defineStore('auth', {
     token: null,
     isAuthenticated: false,
     setupComplete: false,
+    _oauthProcessing: false,
   }),
 
   actions: {
@@ -39,6 +40,8 @@ export const useAuthStore = defineStore('auth', {
       if (typeof window !== 'undefined') {
         sessionStorage.clear()
         localStorage.removeItem('mitosis_setup_complete')
+        localStorage.removeItem('mitosis_token')
+        localStorage.removeItem('mitosis_user')
       }
     },
 
@@ -46,9 +49,20 @@ export const useAuthStore = defineStore('auth', {
       if (typeof window === 'undefined') return
 
       // ── 优先检查 sessionStorage（OAuth 登录态）────────────────
-      const token = sessionStorage.getItem('mitosis_token')
-      const userStr = sessionStorage.getItem('mitosis_user')
+      let token = sessionStorage.getItem('mitosis_token')
+      let userStr = sessionStorage.getItem('mitosis_user')
       const setupComplete = localStorage.getItem('mitosis_setup_complete') === 'true'
+
+      // 如果 sessionStorage 为空，尝试从 localStorage 恢复（防止关闭标签页后丢失登录态）
+      if (!token && !userStr) {
+        token = localStorage.getItem('mitosis_token')
+        userStr = localStorage.getItem('mitosis_user')
+        if (token && userStr) {
+          // 恢复后同步回 sessionStorage（当前标签页）
+          sessionStorage.setItem('mitosis_token', token)
+          sessionStorage.setItem('mitosis_user', userStr)
+        }
+      }
 
       if (token && userStr) {
         try {
@@ -64,8 +78,13 @@ export const useAuthStore = defineStore('auth', {
       }
 
       // ── OAuth callback：exchange authorization code for token ──
+      // 防止重复处理：如果正在处理 OAuth callback，直接返回
+      if (this._oauthProcessing) return
+
       const oauthCode = sessionStorage.getItem('mitosis_oauth_code')
       if (oauthCode) {
+        // 立即标记为处理中，防止并发或重复进入
+        this._oauthProcessing = true
         // 立即移除 code，防止重复消费或重复触发
         sessionStorage.removeItem('mitosis_oauth_code')
         sessionStorage.removeItem('mitosis_oauth_redirect')
@@ -80,12 +99,19 @@ export const useAuthStore = defineStore('auth', {
             name: githubUser.name || githubUser.login,
           }
           saveSession(access_token, user)
+          // 同时持久化到 localStorage，防止关闭标签页后丢失
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('mitosis_token', access_token)
+            localStorage.setItem('mitosis_user', JSON.stringify(user))
+          }
           this.token = access_token
           this.user = user
           this.isAuthenticated = true
           this.setupComplete = setupComplete
         } catch {
           this.clearSession()
+        } finally {
+          this._oauthProcessing = false
         }
         return
       }
@@ -129,6 +155,8 @@ export const useAuthStore = defineStore('auth', {
       if (typeof window !== 'undefined') {
         sessionStorage.clear()
         localStorage.removeItem('mitosis_setup_complete')
+        localStorage.removeItem('mitosis_token')
+        localStorage.removeItem('mitosis_user')
       }
       this.user = null
       this.token = null

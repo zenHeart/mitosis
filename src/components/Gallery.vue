@@ -30,6 +30,7 @@ const selectedSession = ref<number | undefined>(props.initialApp ? undefined : u
 const selectedCardRef = ref<HTMLElement | null>(null)
 const appsGridRef = ref<HTMLElement | null>(null)
 const sidebarOpen = ref(false)
+const loginLoading = ref(false)
 
 const sessionGroups = computed(() => {
   const raw = sessionStore.groupedSessions as { platform: ChatSession[]; app: ChatSession[]; other: ChatSession[] }
@@ -56,6 +57,7 @@ function scrollToApps() {
 }
 
 function handleLogin() {
+  loginLoading.value = true
   window.location.href = getLoginUrl()
 }
 
@@ -183,8 +185,9 @@ onMounted(async () => {
             v-if="!isLoggedIn"
             @click="handleLogin"
             class="cta-btn cta-login"
+            :disabled="loginLoading"
           >
-            🔨 使用 GitHub 登录后创建自己的应用
+            {{ loginLoading ? '跳转中...' : '🔨 使用 GitHub 登录后创建自己的应用' }}
           </button>
         </div>
       </section>
@@ -574,6 +577,75 @@ onMounted(async () => {
   border-color: var(--accent);
   color: var(--accent);
   transform: scale(1.1);
+}
+
+/* ── 移动端适配 ─────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .gallery-header {
+    padding: 1.5rem 1rem 1rem;
+  }
+
+  .brand h1 {
+    font-size: 1.5rem;
+  }
+
+  .logo {
+    font-size: 1.75rem;
+  }
+
+  .tagline {
+    font-size: 0.85rem;
+  }
+
+  .gallery-main {
+    padding: 1rem;
+  }
+
+  .hero h2 {
+    font-size: 1.25rem;
+  }
+
+  .apps-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .app-item {
+    padding: 0.75rem;
+  }
+
+  .cta-buttons {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .cta-btn {
+    width: 100%;
+    padding: 0.875rem 1.5rem;
+  }
+
+  /* 侧边栏在移动端作为遮罩层 */
+  .session-sidebar {
+    width: 85vw;
+    max-width: 320px;
+  }
+
+  .sidebar-toggle {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* 确保所有可点击元素在移动端有足够大的触摸区域 */
+@media (pointer: coarse) {
+  .theme-toggle,
+  .sidebar-toggle,
+  .sidebar-close,
+  .app-item,
+  .cta-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
 }
 
 @media (min-width: 1024px) {

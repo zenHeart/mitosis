@@ -25,6 +25,7 @@ const clarifying = ref(false)
 const clarifyingMsg = ref('')
 const triageLog = ref<string[]>([])
 const pendingBuildContext = ref('')
+const sidebarOpen = ref(false)
 
 // Map store messages to template shape
 const displayMessages = computed(() =>
@@ -71,10 +72,11 @@ function triageMessage(text: string): TriageResult {
     /[?？]$/.test(text.trim()) ||
     /(?:进度|状态|帮助|介绍|解释|说明|区别|是什么)/.test(text)
 
-  // 创建应用关键词
+  // 创建应用关键词（扩展：直接点名游戏/应用名也视为创建意图）
   const isAppBuild =
-    /(?:做一个|创建.*应用|建.*应用|写.*应用|开发.*应用|实现.*应用|做个|搞个|弄个|做个游戏|做个工具)/.test(text) ||
-    /(?:build|create.*app|make.*app|new app)/i.test(lower)
+    /(?:做一个|创建.*应用|建.*应用|写.*应用|开发.*应用|实现.*应用|做个|搞个|弄个|做个游戏|做个工具|想做个|想做一个)/.test(text) ||
+    /(?:build|create.*app|make.*app|new app)/i.test(lower) ||
+    /^(?:俄罗斯方块|贪吃蛇|snake|tetris|todo|计算器|calculator|俄罗斯|打砖块|breakout|flappy|2048).*$/i.test(text.trim())
 
   // 简单微调关键词（R2：直接回复，不创建 Issue）
   const isSimpleTweak =
@@ -286,7 +288,20 @@ async function handleSend() {
       return
     }
 
-    // ── 3. 调用 StepFun ──
+    // ── 3. 分流执行 ──
+    // R3 build：直接创建构建，不再依赖 StepFun 输出 BUILD_APP 标记
+    // 这样即使模型未按 prompt 输出标记，也能正确触发构建
+    if (triage.action === 'build') {
+      const appName = extractAppName(text)
+      const description = previousBuildContext
+        ? `${previousBuildContext}\n\n## 澄清回答\n\n${text}`
+        : text
+      pendingBuildContext.value = ''
+      await createBuild(appName, description, triage.basedOn, triage.scenario)
+      return
+    }
+
+    // R4/R5 platform + R1/R2 chat：调用 StepFun 生成回复
     const history = getConversationHistory()
     const systemPrompt = getSystemPrompt(triage, authStore.user?.login)
 
@@ -299,30 +314,14 @@ async function handleSend() {
       createdAt: new Date().toISOString(),
     })
 
-    // ── 4. 根据分流结果执行 ──
-    if (triage.action === 'build') {
-      // R3: 检查 BUILD_APP 标记 → 创建 Issue → 触发 CI
-      const buildMatch = trimmed.match(/BUILD_APP:\s*([a-z0-9-]+)/i)
-      if (buildMatch) {
-        const appName = buildMatch[1].toLowerCase()
-        const description = previousBuildContext
-          ? `${previousBuildContext}\n\n## 澄清回答\n\n${text}`
-          : text
-        pendingBuildContext.value = ''
-        await createBuild(appName, description, triage.basedOn, triage.scenario)
-      } else {
-        clarifying.value = true
-        pendingBuildContext.value = previousBuildContext
-          ? `${previousBuildContext}\n\n## 用户补充\n\n${text}\n\n## AI 澄清\n\n${trimmed}`
-          : `## 初始需求\n\n${text}\n\n## AI 澄清\n\n${trimmed}`
-      }
-    } else if (triage.action === 'platform') {
+    // platform 需要 BUILD_PLATFORM 标记才触发构建
+    if (triage.action === 'platform') {
       const platformMatch = trimmed.match(/BUILD_PLATFORM:\s*(.+)/i)
       if (platformMatch) {
         await createPlatformBuild(text, platformMatch[1].trim())
       }
     }
-    // R1/R2 (chat): 直接回复，无需进一步操作
+    // chat (R1/R2): 直接回复，无需进一步操作
   } catch (e) {
     sessionStore.addMessage({
       role: 'system',
@@ -539,7 +538,11 @@ function handleNewChat() {
 
 <template>
   <div class="workspace">
-    <aside class="sidebar">
+    <!-- 移动端侧边栏遮罩 -->
+    <div v-if="sidebarOpen" class="sidebar-overlay" @click="sidebarOpen = false"></div>
+    <!-- 移动端侧边栏开关 -->
+    <button class="sidebar-toggle-mobile" @click="sidebarOpen = !sidebarOpen">☰</button>
+    <aside class="sidebar" :class="{ open: sidebarOpen }">
       <div class="sidebar-header">
         <h2>🧬 Mitosis</h2>
         <div class="user-info">
@@ -982,5 +985,101 @@ function handleNewChat() {
   color: var(--text-secondary);
   font-size: 0.85rem;
   text-align: center;
+}
+
+/* ── 移动端适配 ─────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .workspace {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    max-width: 85vw;
+    height: 100vh;
+    height: 100dvh;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 199;
+  }
+
+  .sidebar-toggle-mobile {
+    display: flex;
+    position: fixed;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 201;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    cursor: pointer;
+  }
+
+  .chat-area {
+    width: 100%;
+  }
+
+  .messages {
+    padding: 1rem;
+    padding-top: 3.5rem;
+  }
+
+  .message {
+    max-width: 90%;
+  }
+
+  .input-area {
+    padding: 0.75rem;
+  }
+
+  .examples button {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+  }
+}
+
+@media (min-width: 641px) {
+  .sidebar-toggle-mobile {
+    display: none;
+  }
+
+  .sidebar-overlay {
+    display: none;
+  }
+}
+
+/* 触摸设备优化 */
+@media (pointer: coarse) {
+  .session-item,
+  .new-chat-btn,
+  .logout-btn,
+  .session-open-btn {
+    min-height: 44px;
+  }
+
+  .sidebar-toggle-mobile {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 </style>
