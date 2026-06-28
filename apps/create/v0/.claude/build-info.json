@@ -1,0 +1,6 @@
+{
+  "app_name": "create",
+  "version": "v0",
+  "built_by": "zenHeart/mitosis",
+  "prompt_summary": "基于 Issue #10 /create 构建的 Todo 任务管理应用，支持任务的增删改查、优先级、过滤和本地存储"
+}
