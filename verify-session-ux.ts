@@ -382,6 +382,125 @@ async function main() {
     }
   })
 
+  // T6: Platform triage — "修复平台聊天不支持上传图片的问题" should route to platform
+  await runTest('T6: Platform triage detects platform keywords', async (page) => {
+    await page.goto(BASE_URL)
+    await page.waitForTimeout(500)
+
+    await page.evaluate(() => {
+      sessionStorage.clear()
+      localStorage.clear()
+      sessionStorage.setItem('mitosis_token', 'mock_token')
+      sessionStorage.setItem('mitosis_oauth_redirect', '1')
+      sessionStorage.setItem('mitosis_user', JSON.stringify({
+        login: 'zenHeart', id: 1,
+        avatar_url: 'https://example.com/avatar.png',
+        html_url: 'https://github.com/zenHeart', name: 'zenHeart'
+      }))
+      localStorage.setItem('mitosis_setup_complete', 'true')
+      localStorage.setItem('mitosis_step_token', 'mock_step_token')
+    })
+
+    await page.reload()
+    await page.waitForSelector('.welcome', { timeout: 10000 })
+    await page.waitForTimeout(2000)
+
+    await page.fill('textarea.chat-input', '修复平台聊天不支持上传图片的问题')
+    await page.press('textarea.chat-input', 'Enter')
+    await page.waitForTimeout(4000)
+
+    const messages = await page.locator('.message').allTextContents()
+    const messageText = messages.join(' ')
+
+    // Should NOT show clarification — should go straight to platform handling
+    if (messageText.includes('你是想创建一个新应用，还是修改已有的应用')) {
+      throw new Error('Platform message incorrectly routed to clarification')
+    }
+    // Should show platform-related response or build task
+    console.log(`    Message text preview: ${messageText.substring(0, 150)}`)
+  })
+
+  // T7: Messages persist across page refresh
+  await runTest('T7: Messages persist across page refresh', async (page) => {
+    await page.goto(BASE_URL)
+    await page.waitForTimeout(500)
+
+    await page.evaluate(() => {
+      sessionStorage.clear()
+      localStorage.clear()
+      sessionStorage.setItem('mitosis_token', 'mock_token')
+      sessionStorage.setItem('mitosis_oauth_redirect', '1')
+      sessionStorage.setItem('mitosis_user', JSON.stringify({
+        login: 'zenHeart', id: 1,
+        avatar_url: 'https://example.com/avatar.png',
+        html_url: 'https://github.com/zenHeart', name: 'zenHeart'
+      }))
+      localStorage.setItem('mitosis_setup_complete', 'true')
+      localStorage.setItem('mitosis_step_token', 'mock_step_token')
+    })
+
+    await page.reload()
+    await page.waitForTimeout(5000)
+
+    // Verify we're on workspace (not setup page)
+    const onWorkspace = await page.locator('.chat-input').count()
+    if (onWorkspace === 0) {
+      throw new Error('Not on workspace page — auth/setup flow failed')
+    }
+
+    // Send a test message (this triggers _persistMessage)
+    await page.fill('textarea.chat-input', 'test persistence')
+    await page.press('textarea.chat-input', 'Enter')
+    await page.waitForTimeout(3000)
+
+    // Verify message was persisted to localStorage
+    const cacheAfterSend = await page.evaluate(() => {
+      const raw = localStorage.getItem('mitosis_messages_cache')
+      return raw ? JSON.parse(raw) : null
+    })
+    if (!cacheAfterSend || cacheAfterSend.length === 0) {
+      throw new Error('Messages not written to localStorage after send')
+    }
+
+    // Pre-populate messages for the fresh-page test
+    await page.evaluate(() => {
+      const messages = [
+        {
+          id: 'persist-test-1',
+          role: 'user',
+          content: '你好，这条消息应该在刷新后保留',
+          createdAt: new Date(Date.now() - 60000).toISOString(),
+          sanitized: false,
+        },
+        {
+          id: 'persist-test-2',
+          role: 'assistant',
+          content: '这是 AI 的回复，也应该保留',
+          createdAt: new Date().toISOString(),
+          sanitized: false,
+        },
+      ]
+      localStorage.setItem('mitosis_messages_cache', JSON.stringify(messages))
+    })
+
+    // Reload the same page (simulates user refresh)
+    await page.reload()
+
+    // Wait for messages to appear (restoreMessages loads from localStorage)
+    await page.locator('.message').first().waitFor({ timeout: 10000 })
+
+    const messageTexts = await page.locator('.message').allTextContents()
+    const hasUserMessage = messageTexts.some((m) => m.includes('你好，这条消息应该在刷新后保留'))
+    const hasAiResponse = messageTexts.some((m) => m.includes('这是 AI 的回复'))
+
+    if (!hasUserMessage) {
+      throw new Error('User message not restored after refresh — restoreMessages() not working')
+    }
+    if (!hasAiResponse) {
+      throw new Error('AI response not restored after refresh — restoreMessages() not working')
+    }
+  })
+
   console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`)
 
   await browser.close()

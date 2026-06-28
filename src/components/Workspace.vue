@@ -124,8 +124,8 @@ function triageMessage(text: string): TriageResult {
     /src\//i.test(text) ||
     /mitosis\s*(支持|增加|去掉|删除|修改|优化|改进|加个|加上|升级|重构)/i.test(text) ||
     /(?:给|帮|让)\s*mitosis\s*(加|增加|加个|去掉|删|改|优化|升级|支持)/i.test(text) ||
-    /(?:GitHub Actions|workflow|CI|OAuth|认证|deploy|gh-pages|composable|组件库|架构|核心逻辑)/.test(text) ||
-    /(?:Workspace|SetupPage|Gallery|ChatInput)/.test(text)
+    /(?:GitHub Actions|workflow|CI|OAuth|认证|deploy|gh-pages|composable|组件库|架构|核心逻辑|SSE|流式)/i.test(text) ||
+    /(?:Workspace|SetupPage|Gallery|ChatInput|平台|聊天|上传|页面|按钮|表单|路由|导航|侧边栏|消息|通知)/i.test(text)
 
   // 询问关键词
   const isQuestion =
@@ -192,6 +192,9 @@ const isOwner = computed(() => !!authStore.user?.login && authStore.setupComplet
 
 onMounted(async () => {
   if (typeof window !== 'undefined') {
+    // 恢复未持久化的消息（防止页面刷新丢失）
+    sessionStore.restoreMessages()
+
     stepToken.value = localStorage.getItem('mitosis_step_token') || ''
     const params = new URLSearchParams(window.location.search)
     const refApp = params.get('ref')
@@ -631,6 +634,7 @@ function openAppSession(session: ChatSession) {
 function handleNewChat() {
   stopAll()
   sessionStore.setActiveSession(null)
+  sessionStore.clearMessages()
   activeIssue.value = null
   buildProgress.value = null
   building.value = false

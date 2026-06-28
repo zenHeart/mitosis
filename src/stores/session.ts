@@ -82,6 +82,7 @@ export const useSessionStore = defineStore('session', {
 
     // localStorage 缓存辅助方法
     _CACHE_KEY: 'mitosis_sessions_cache',
+    _MESSAGES_CACHE_KEY: 'mitosis_messages_cache',
 
     _readCache(): ChatSession[] {
       try {
@@ -106,6 +107,47 @@ export const useSessionStore = defineStore('session', {
         localStorage.setItem(this._CACHE_KEY, JSON.stringify(sessions))
       } catch {
         // ignore quota exceeded
+      }
+    },
+
+    // ── 消息持久化（pre-issue 创建期间，防止刷新丢失） ──
+    _persistMessage(message: Message): void {
+      try {
+        const key = 'mitosis_messages_cache' // Pinia action properties become getters; use literal
+        const existing: Message[] = (() => {
+          try {
+            const raw = localStorage.getItem(key)
+            return raw ? JSON.parse(raw) : []
+          } catch {
+            return []
+          }
+        })()
+        existing.push(message)
+        localStorage.setItem(key, JSON.stringify(existing))
+      } catch (e) {
+        console.error('[PERSIST] failed:', e)
+      }
+    },
+
+    restoreMessages(): Message[] {
+      try {
+        const raw = localStorage.getItem('mitosis_messages_cache')
+        if (!raw) return []
+        const parsed = JSON.parse(raw)
+        if (!Array.isArray(parsed)) return []
+        this.messages = parsed
+        return parsed
+      } catch {
+        return []
+      }
+    },
+
+    clearMessages(): void {
+      this.messages = []
+      try {
+        localStorage.removeItem('mitosis_messages_cache')
+      } catch {
+        // ignore
       }
     },
 
@@ -178,10 +220,13 @@ export const useSessionStore = defineStore('session', {
     },
 
     addMessage(message: Message) {
-      this.messages.push({
+      const msg = {
         ...message,
         id: message.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      })
+      }
+      this.messages.push(msg)
+      // 持久化：防止页面刷新丢失（pre-issue 或 issue 创建前）
+      this._persistMessage(msg)
     },
 
     async sendMessage(token: string, repo: string, issueNumber: number, content: string) {
