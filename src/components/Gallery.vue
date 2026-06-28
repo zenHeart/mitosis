@@ -135,11 +135,13 @@ onMounted(async () => {
     <header class="gallery-header">
       <div class="brand">
         <button v-if="isLoggedIn" class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen">☰</button>
-        <span class="logo">🧬</span>
-        <h1>Mitosis</h1>
-        <button class="theme-toggle" @click="toggleDarkMode" :title="darkMode === 'dark' ? '切换到亮色模式' : '切换到暗黑模式'">
-          {{ darkMode === 'dark' ? '☀️' : '🌙' }}
-        </button>
+        <div class="brand-center">
+          <span class="logo">🧬</span>
+          <h1>Mitosis</h1>
+          <button class="theme-toggle" @click="toggleDarkMode" :title="darkMode === 'dark' ? '切换到亮色模式' : '切换到暗黑模式'">
+            {{ darkMode === 'dark' ? '☀️' : '🌙' }}
+          </button>
+        </div>
       </div>
       <p class="tagline">AI 构建 AI，无限繁衍</p>
     </header>
@@ -216,9 +218,19 @@ onMounted(async () => {
 .brand {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  padding: 0 0.5rem;
+}
+
+.brand-center {
+  display: flex;
+  align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .logo {
@@ -530,7 +542,6 @@ onMounted(async () => {
   -webkit-box-orient: vertical;
   line-clamp: 2;
   line-height: 1.3;
-  word-break: break-word;
 }
 
 .session-status {

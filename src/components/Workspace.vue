@@ -1205,7 +1205,6 @@ function handleNewChat() {
   -webkit-box-orient: vertical;
   line-clamp: 2;
   line-height: 1.3;
-  word-break: break-word;
 }
 
 .session-app-tag {
