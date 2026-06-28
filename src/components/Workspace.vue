@@ -1167,6 +1167,9 @@ function handleNewChat() {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(88, 166, 255, 0.04) 0%, transparent 60%),
+    var(--bg-primary);
 }
 
 .welcome {

@@ -15,6 +15,17 @@
   --border: #2a2a2a;
   --success: #3fb950;
   --error: #f85149;
+
+  /* Type scale — 1.25 modular scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-md: 1.125rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --leading-tight: 1.35;
+  --leading-normal: 1.6;
 }
 
 [data-theme='light'] {
