@@ -625,11 +625,12 @@ watch(dropInterval, () => {
   height: 24px;
   border-radius: 3px;
   background: var(--bg-panel);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   transition: background-color 0.05s ease;
 }
 
 .cell-filled {
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 .cell-active {
