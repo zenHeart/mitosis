@@ -1055,16 +1055,17 @@ function handleNewChat() {
 }
 
 .session-item {
-  padding: 0.45rem 0.5rem;
+  padding: 0.5rem 0.6rem;
   border-radius: 6px;
+  border: 1px solid transparent;
   cursor: pointer;
   font-size: 0.82rem;
   color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   margin-bottom: 2px;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
   overflow: hidden;
 }
 
@@ -1093,7 +1094,7 @@ function handleNewChat() {
 }
 
 .session-time {
-  font-size: 0.65rem;
+  font-size: 0.8rem;
   color: var(--text-secondary);
   opacity: 0.7;
   flex-shrink: 0;
@@ -1115,19 +1116,19 @@ function handleNewChat() {
 }
 
 .session-count {
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   color: var(--text-secondary);
   background: var(--bg-tertiary);
-  padding: 1px 5px;
+  padding: 2px 6px;
   border-radius: 3px;
   flex-shrink: 0;
 }
 
 .session-status {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   flex-shrink: 0;
   color: var(--text-secondary);
-  padding: 1px 6px;
+  padding: 2px 8px;
   border-radius: 3px;
   background: var(--bg-tertiary);
 }
@@ -1138,8 +1139,8 @@ function handleNewChat() {
 }
 
 .status-review {
-  color: #d29922;
-  background: rgba(210, 153, 34, 0.1);
+  color: #b8860b;
+  background: rgba(210, 153, 34, 0.2);
 }
 
 .status-error {
@@ -1155,14 +1156,16 @@ function handleNewChat() {
 .session-open-btn {
   margin-left: auto;
   font-size: 0.7rem;
-  padding: 1px 6px;
-  border-radius: 3px;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
   border: 1px solid var(--accent);
   background: transparent;
   color: var(--accent);
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+  min-height: 28px;
+  line-height: 1.2;
 }
 
 .session-open-btn:hover {
@@ -1182,7 +1185,8 @@ function handleNewChat() {
 }
 
 .session-item.active {
-  background: var(--bg-tertiary);
+  background: var(--accent-glow);
+  border: 1px solid var(--accent);
   color: var(--accent);
 }
 
