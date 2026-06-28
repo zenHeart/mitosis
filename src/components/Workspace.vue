@@ -1408,7 +1408,8 @@ function handleNewChat() {
 }
 
 .examples button {
-  padding: 0.5rem 1rem;
+  padding: 0.6rem 1.2rem;
+  min-height: 44px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 20px;

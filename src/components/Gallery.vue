@@ -210,6 +210,7 @@ onMounted(async () => {
 }
 
 .gallery-header {
+  position: relative;
   text-align: center;
   padding: 3rem 1rem 1.5rem;
   border-bottom: 1px solid var(--border);
