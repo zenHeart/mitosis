@@ -14,9 +14,10 @@ const { init: initDarkMode } = useDarkMode()
 const view = computed(() => currentView.value)
 
 // Detect if current URL is an app path: /apps/{name}/v{n}/...
+// Strict: must be exactly /apps/{name}/v{n}/ — no query strings, no extra segments
 const isAppPath = computed(() => {
   if (typeof window !== 'undefined') {
-    return /^\/apps\/[^/]+\/v\d+/i.test((window as any).location.pathname)
+    return /^\/apps\/[^/]+\/v\d+\/?$/.test((window as any).location.pathname)
   }
   return false
 })

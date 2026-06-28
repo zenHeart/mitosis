@@ -26,6 +26,7 @@ const clarifyingMsg = ref('')
 const triageLog = ref<string[]>([])
 const pendingBuildContext = ref('')
 const sidebarOpen = ref(false)
+const sessionSearch = ref('')
 
 // Map store messages to template shape
 const displayMessages = computed(() =>
@@ -58,6 +59,27 @@ const appGroups = computed<AppGroup[]>(() => {
       latest: sessions.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0],
     }))
     .sort((a, b) => new Date(b.latest.updatedAt).getTime() - new Date(a.latest.updatedAt).getTime())
+})
+
+// 最近 24 小时的会话（快捷跳转区）
+const recentSessions = computed<ChatSession[]>(() => {
+  const dayMs = 86400000
+  const now = Date.now()
+  return sessionStore.sortedSessions.filter(s => {
+    const updated = new Date(s.updatedAt).getTime()
+    return now - updated < dayMs && s.status !== 'closed'
+  })
+})
+
+// 搜索过滤：同时搜索标题和 appLabel
+const searchResults = computed<ChatSession[]>(() => {
+  const q = sessionSearch.value.trim().toLowerCase()
+  if (!q) return []
+  return sessionStore.sortedSessions.filter(s => {
+    const title = (s.title || '').toLowerCase()
+    const app = (s.appLabel || '').toLowerCase().replace('app/', '')
+    return title.includes(q) || app.includes(q)
+  })
 })
 
 // ─── 分流协议 ───────────────────────────────────────────
@@ -170,7 +192,7 @@ onMounted(async () => {
         await sessionStore.loadSessions(authStore.token, repo.value)
         const session = sessionStore.sessions.find(s => s.issueNumber === issueNumber)
         if (session) {
-          await loadSession(session)
+          await loadSession(session, true)
         }
       }
     }
@@ -199,7 +221,9 @@ async function handleSend() {
   // ── /create 命令：直接触发构建，跳过 StepFun ──
   const createCmd = detectCreateCommand(text)
   if (createCmd.triggered) {
-    const description = createCmd.description || text
+    const rawDescription = createCmd.description || text
+    // Strip command prefix for app name extraction
+    const description = rawDescription.replace(/^\/create\s+/, '').trim() || rawDescription
     const appName = extractAppName(description)
     sessionStore.addMessage({
       role: 'user',
@@ -348,6 +372,12 @@ async function handleSend() {
       if (platformMatch) {
         await createPlatformBuild(text, platformMatch[1].trim())
       }
+    }
+    // chat/其他：如果 AI 输出 BUILD_APP 标记，自动创建构建任务
+    const buildMatch = trimmed.match(/BUILD_APP:\s*(.+)/i)
+    if (buildMatch) {
+      const appName = extractAppName(buildMatch[1].trim())
+      await createBuild(appName, buildMatch[1].trim())
     }
     // chat (R1/R2): 直接回复，无需进一步操作
   } catch (e) {
@@ -527,19 +557,18 @@ function extractVersionFromIssue(issue: BuildIssue): string {
 }
 
 function extractAppName(input: string): string {
+  const cleaned = input.toLowerCase().replace(/^\/create\s+/, '').replace(/^\/build\s+/, '')
   // 优先提取中英文应用名（俄罗斯方块、snake、tetris 等）
-  const chineseMatch = input.match(/([一-鿿]+(?:游戏|应用|工具|编辑器|方块|蛇|鸟|棋|牌))/)
+  const chineseMatch = cleaned.match(/([一-鿿]+(?:游戏|应用|工具|编辑器|方块|蛇|鸟|棋|牌|世界|模拟器|平台|管家|系统|大战))/)
   if (chineseMatch) return chineseMatch[1]
 
-  const englishMatch = input.match(/(?:build|create|make|new)\s+([a-z0-9-]+)/i) ||
-                       input.match(/(snake|tetris|todo|calculator|breakout|flappy|2048|pong|paint|chat)/i)
+  const englishMatch = cleaned.match(/(?:build|create|make|new)\s+([a-z0-9-]+)/i) ||
+                       cleaned.match(/(snake|tetris|todo|calculator|breakout|flappy|2048|pong|paint|chat|doodle|pixel)/i)
   if (englishMatch) return englishMatch[1].toLowerCase()
 
-  const cleaned = input.toLowerCase().replace(/[^a-z0-9一-龥]/g, '-')
-  const collapsed = cleaned.replace(/-+/g, '-').replace(/^-|-$/g, '')
-  // 如果是纯中文（全是连字符），返回默认名
-  if (/^-+$/.test(collapsed)) return 'my-app'
-  return collapsed || 'my-app'
+  const slug = cleaned.toLowerCase().replace(/[^a-z0-9一-龥]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+  if (/^-+$/.test(slug)) return 'my-app'
+  return slug || 'my-app'
 }
 
 async function navigateToSession(session: ChatSession) {
@@ -550,10 +579,14 @@ async function navigateToSession(session: ChatSession) {
   await loadSession(session)
 }
 
-async function loadSession(session: ChatSession) {
+async function loadSession(session: ChatSession, autoOpenApp = false) {
   sessionStore.setActiveSession(session)
   await sessionStore.loadMessages(authStore.token!, repo.value, session.issueNumber)
   inputText.value = ''
+  // 从 URL ?session= 恢复时，如果会话关联了应用，自动打开应用页面
+  if (autoOpenApp && session.appLabel) {
+    openAppSession(session)
+  }
 }
 
 function openAppSession(session: ChatSession) {
@@ -596,54 +629,96 @@ function handleNewChat() {
       <nav class="nav">
         <button @click="handleNewChat" class="new-chat-btn">+ 新建对话</button>
       </nav>
-      <div class="sessions-list" v-if="sessionStore.sortedSessions.length">
+      <div class="sessions-list" v-if="sessionStore.sortedSessions.length || sessionSearch">
         <h3>最近对话</h3>
 
-        <!-- 平台会话（mitosis 自举） — 保持独立 -->
-        <template v-if="sessionStore.groupedSessions.platform.length">
-          <div class="session-group-label">🧬 平台</div>
-          <div
-            v-for="session in sessionStore.groupedSessions.platform"
-            :key="session.issueNumber"
-            class="session-item"
-            :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber, closed: session.status === 'closed' }"
-            @click="navigateToSession(session)"
-          >
-            <span class="session-title">{{ session.title }}</span>
-            <span class="session-status">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
+        <!-- 搜索框 -->
+        <div class="sidebar-search">
+          <input
+            v-model="sessionSearch"
+            type="text"
+            placeholder="搜索会话..."
+            class="search-input"
+          />
+        </div>
+
+        <!-- 搜索模式：显示搜索结果 -->
+        <template v-if="sessionSearch.trim()">
+          <div class="search-results" v-if="searchResults.length">
+            <div
+              v-for="session in searchResults"
+              :key="session.issueNumber"
+              class="session-item"
+              :class="{
+                active: sessionStore.activeSession?.issueNumber === session.issueNumber,
+                closed: session.status === 'closed',
+                platform: session.labels?.includes('platform'),
+                app: !!session.appLabel
+              }"
+              @click="navigateToSession(session)"
+            >
+              <span class="session-icon">{{ session.labels?.includes('platform') ? '🧬' : session.appLabel ? '📱' : '💬' }}</span>
+              <span class="session-title">{{ session.title }}</span>
+              <span class="session-status">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
+            </div>
           </div>
+          <div v-else class="no-results">未找到匹配的会话</div>
         </template>
 
-        <!-- 应用会话：按 app name 聚类，每个 app 只显示一个条目 + 「打开」按钮 -->
-        <template v-if="appGroups.length">
-          <div class="session-group-label">📱 我的应用</div>
-          <div
-            v-for="group in appGroups"
-            :key="group.appName"
-            class="session-item app-group"
-            :class="{ active: sessionStore.activeSession?.issueNumber === group.latest.issueNumber }"
-            @click="navigateToSession(group.latest)"
-          >
-            <span class="session-title">{{ group.appName }}</span>
-            <span class="session-count">{{ group.sessions.length }} 次迭代</span>
-            <span class="session-status">{{ sessionStore.getSessionDisplayStatus(group.latest) }}</span>
-            <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
-          </div>
-        </template>
+        <!-- 正常模式：平台 + 应用分组 -->
+        <template v-else>
+          <!-- 最近 24h 快捷跳转（仅显示有近期活动的） -->
+          <template v-if="recentSessions.length">
+            <div class="session-group-label recent-label">🕐 最近</div>
+            <div
+              v-for="session in recentSessions"
+              :key="'recent-' + session.issueNumber"
+              class="session-item recent-item"
+              :class="{
+                active: sessionStore.activeSession?.issueNumber === session.issueNumber,
+                platform: session.labels?.includes('platform'),
+                app: !!session.appLabel
+              }"
+              @click="navigateToSession(session)"
+            >
+              <span class="session-icon">{{ session.labels?.includes('platform') ? '🧬' : session.appLabel ? '📱' : '💬' }}</span>
+              <span class="session-title">{{ session.title }}</span>
+              <span class="session-status">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
+            </div>
+          </template>
 
-        <!-- 其他未分类会话 -->
-        <template v-if="sessionStore.groupedSessions.other.length">
-          <div class="session-group-label">其他</div>
-          <div
-            v-for="session in sessionStore.groupedSessions.other"
-            :key="session.issueNumber"
-            class="session-item"
-            :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber, closed: session.status === 'closed' }"
-            @click="navigateToSession(session)"
-          >
-            <span class="session-title">{{ session.title }}</span>
-            <span class="session-status">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
-          </div>
+          <!-- 平台会话（open only） -->
+          <template v-if="sessionStore.groupedSessions.platform.filter(s => s.status !== 'closed').length">
+            <div class="session-group-label">🧬 平台</div>
+            <div
+              v-for="session in sessionStore.groupedSessions.platform.filter(s => s.status !== 'closed')"
+              :key="session.issueNumber"
+              class="session-item"
+              :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber }"
+              @click="navigateToSession(session)"
+            >
+              <span class="session-title">{{ session.title }}</span>
+              <span class="session-status">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
+            </div>
+          </template>
+
+          <!-- 应用会话：按 app name 聚类，只显示 open -->
+          <template v-if="appGroups.filter(g => g.latest.status !== 'closed').length">
+            <div class="session-group-label">📱 我的应用</div>
+            <div
+              v-for="group in appGroups.filter(g => g.latest.status !== 'closed')"
+              :key="group.appName"
+              class="session-item app-group"
+              :class="{ active: sessionStore.activeSession?.issueNumber === group.latest.issueNumber }"
+              @click="navigateToSession(group.latest)"
+            >
+              <span class="session-icon">📱</span>
+              <span class="session-title">{{ group.appName }}</span>
+              <span class="session-count">{{ group.sessions.length }} 次迭代</span>
+              <span class="session-status">{{ sessionStore.getSessionDisplayStatus(group.latest) }}</span>
+              <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
+            </div>
+          </template>
         </template>
       </div>
     </aside>
