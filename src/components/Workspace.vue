@@ -1207,11 +1207,13 @@ function handleNewChat() {
 }
 
 /* App names in "我的应用" section: single-line ellipsis for clarity */
-.app-name-title {
+.session-item.app-group .app-name-title {
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
   min-width: 0;
+  -webkit-line-clamp: 1 !important;
+  line-clamp: 1 !important;
 }
 
 .session-app-tag {
