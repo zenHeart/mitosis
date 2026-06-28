@@ -18,7 +18,7 @@ export function usePolling() {
       count++
       try {
         const issue = await fetchFn()
-        onUpdate(issue)
+        await onUpdate(issue)
         if (issue.state === 'closed' || count >= maxPolls) {
           stop(issueNumber)
         }

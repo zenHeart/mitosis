@@ -7,7 +7,7 @@ import { chatWithStepFun } from '../composables/useStepFun'
 import { getSystemPrompt } from '../composables/useSystemPrompts'
 import { sanitize } from '../composables/useSanitize'
 import { detectCreateCommand, detectStatusCommand, detectStopCommand, detectStartCommand } from '../composables/useMockGitHub'
-import { createIssue, getIssue, updateIssue } from '../composables/useGitHubAPI'
+import { createIssue, getIssue, updateIssue, getLatestAppVersion } from '../composables/useGitHubAPI'
 import ChatInput from './ChatInput.vue'
 import type { BuildIssue, ChatSession } from '../types/app'
 import { REPO_FULL_NAME, userRepoFullName } from '../config/repo'
@@ -552,12 +552,14 @@ async function createPlatformBuild(originalText: string, description: string) {
   await sessionStore.loadSessions(authStore.token!, repo.value)
 }
 
-function onIssueUpdate(issue: BuildIssue) {
+async function onIssueUpdate(issue: BuildIssue) {
   const previousLabels = new Set(activeIssue.value?.labels.map(label => label.name) || [])
   activeIssue.value = issue
   const labels = new Set(issue.labels.map(label => label.name))
   const appName = extractAppNameFromIssue(issue)
-  const version = extractVersionFromIssue(issue)
+  // 从 apps 目录获取真实最新版本（不依赖 issue 标题）
+  const latestVer = await getLatestAppVersion(authStore.token!, repo.value, appName)
+  const version = latestVer > 0 ? `v${latestVer}` : 'v0'
   const appUrl = `https://mitosis.zenheart.site/apps/${appName}/${version}/`
   const issueUrl = `https://github.com/${repo.value}/issues/${issue.number}`
 
@@ -625,14 +627,6 @@ function extractAppNameFromIssue(issue: BuildIssue): string {
   return titleMatch?.[1]?.toLowerCase() || extractAppName(issue.title)
 }
 
-function extractVersionFromIssue(issue: BuildIssue): string {
-  const bodyMatch = issue.body.match(/版本:\s*(v\d+)/i)
-  if (bodyMatch) return bodyMatch[1].toLowerCase()
-  // 匹配最后一个 vN（避免 v0 → v2 时匹配到旧版本）
-  const matches = [...issue.title.matchAll(/\bv(\d+)\b/gi)]
-  return matches.length > 0 ? `v${matches[matches.length - 1][1]}`.toLowerCase() : 'v0'
-}
-
 function extractAppName(input: string): string {
   const cleaned = input.toLowerCase().replace(/^\/create\s+/, '').replace(/^\/build\s+/, '')
 
@@ -669,19 +663,17 @@ async function loadSession(session: ChatSession, autoOpenApp = false) {
   inputText.value = ''
   // 从 URL ?session= 恢复时，如果会话关联了应用，自动打开应用页面
   if (autoOpenApp && session.appLabel) {
-    openAppSession(session)
+    await openAppSession(session)
   }
 }
 
-function openAppSession(session: ChatSession) {
+async function openAppSession(session: ChatSession) {
   const appName = session.appLabel?.replace('app/', '') || ''
-  // 提取标题中最后一个 vN（避免 v0 → v2 时匹配到旧版本）
-  const matches = session.title.matchAll(/\bv(\d+)\b/gi)
-  const last = [...matches].pop()
-  const version = last ? `v${last[1]}` : 'v0'
-  if (appName) {
-    window.open(`/apps/${appName}/${version}/`, '_blank')
-  }
+  if (!appName) return
+  // 优先从 GitHub apps 目录获取真实最新版本（不依赖 issue 标题）
+  const latestVer = await getLatestAppVersion(authStore.token!, repo.value, appName)
+  const version = latestVer > 0 ? `v${latestVer}` : 'v0'
+  window.open(`/apps/${appName}/${version}/`, '_blank')
 }
 
 function handleNewChat() {

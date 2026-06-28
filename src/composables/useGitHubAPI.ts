@@ -145,6 +145,32 @@ export async function listApps(token: string, repo: string): Promise<AppInfo[]> 
 
 // ── 会话管理 API ──────────────────────────────────────────
 
+/**
+ * 获取单个 app 的最新版本号（从 GitHub contents/apps/{appName} 目录读取）
+ * 不依赖 issue 标题中的版本信息，避免 CI 不更新标题导致版本错误
+ */
+export async function getLatestAppVersion(token: string, repo: string, appName: string): Promise<number> {
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+  }
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  try {
+    const res = await fetchWithTimeout(ghUrl(repo, `/contents/apps/${appName}`), { headers })
+    if (!res.ok) return 0
+    const items = await res.json()
+    if (!Array.isArray(items)) return 0
+    const versionDirs = items.filter((v: { type: string; name?: string }) => v.type === 'dir' && v.name?.startsWith('v'))
+    const versions = versionDirs
+      .map((v: { name?: string }) => Number((v.name || '').replace(/^v/, '')))
+      .filter((v: number) => Number.isInteger(v) && v >= 0)
+    if (versions.length === 0) return 0
+    return versions.sort((a, b) => b - a)[0]
+  } catch {
+    return 0
+  }
+}
+
 /** 列出用户的 chat session（过滤 label=session/chat，只返回 open） */
 export async function listUserIssues(
   token: string,
