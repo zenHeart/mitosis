@@ -1210,8 +1210,8 @@ function handleNewChat() {
 .app-name-title {
   white-space: nowrap;
   text-overflow: ellipsis;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .session-app-tag {
