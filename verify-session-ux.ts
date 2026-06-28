@@ -10,9 +10,167 @@ const BASE_URL = 'http://localhost:5174'
 let passed = 0
 let failed = 0
 
+// In-memory mock store for GitHub API
+interface MockIssue {
+  number: number
+  title: string
+  state: string
+  body: string
+  labels: { name: string }[]
+  created_at: string
+  updated_at: string
+  user: { login: string }
+}
+
+interface MockComment {
+  id: number
+  body: string
+  user: { login: string }
+  created_at: string
+}
+
+let nextIssueNumber = 1
+const mockIssues: MockIssue[] = []
+const mockComments: Map<number, MockComment[]> = new Map()
+const mockSessions: any[] = []
+
+// Mock StepFun API response for triage (returns BUILD_APP marker)
+const MOCK_STEPFUN_RESPONSE = {
+  choices: [
+    {
+      message: {
+        role: 'assistant',
+        content: `好的，我来帮你创建一个应用。
+
+BUILD_APP: test-app`,
+      },
+    },
+  ],
+}
+
 async function main() {
   const browser = await chromium.launch({ headless: true })
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+
+  // Intercept StepFun API calls and return mock triage response
+  await context.route('https://api.stepfun.com/v1/chat/completions', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(MOCK_STEPFUN_RESPONSE),
+    })
+  })
+
+  // Intercept GitHub API calls and return mock responses
+  await context.route('/api/github/**', async (route) => {
+    const url = new URL(route.request().url())
+    const path = url.pathname.replace('/api/github', '')
+    const method = route.request().method()
+
+    // Simulate network delay
+    await new Promise(r => setTimeout(r, 100))
+
+    // GET /repos/{owner}/{repo}/issues
+    if (method === 'GET' && /^\/repos\/[^/]+\/[^/]+\/issues\/?\d*$/.test(path)) {
+      if (/\/issues\/\d+$/.test(path)) {
+        const num = parseInt(path.split('/').pop()!)
+        const issue = mockIssues.find(i => i.number === num)
+        if (!issue) {
+          return route.fulfill({ status: 404, body: JSON.stringify({ message: 'Not Found' }) })
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(issue),
+        })
+      }
+      // List issues - filter by state if query param
+      const state = url.searchParams.get('state') || 'all'
+      let issues = [...mockIssues]
+      if (state === 'open') issues = issues.filter(i => i.state === 'open')
+      if (state === 'closed') issues = issues.filter(i => i.state === 'closed')
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(issues),
+      })
+    }
+
+    // GET /repos/{owner}/{repo}/issues/{number}/comments
+    if (method === 'GET' && /\/issues\/\d+\/comments/.test(path)) {
+      const num = parseInt(path.split('/')[3])
+      const comments = mockComments.get(num) || []
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(comments),
+      })
+    }
+
+    // POST /repos/{owner}/{repo}/issues
+    if (method === 'POST' && /\/issues\/?\d*$/.test(path) && !/\d+\/comments/.test(path)) {
+      const body = await route.request().postDataJSON()
+      const labels = (body.labels || []).map((l: string) => ({ name: l }))
+      const issue: MockIssue = {
+        number: nextIssueNumber++,
+        title: body.title,
+        state: 'open',
+        body: body.body || '',
+        labels,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user: { login: 'zenHeart' },
+      }
+      mockIssues.push(issue)
+      mockComments.set(issue.number, [])
+
+      // Create mock session
+      const appLabel = labels.find((l: { name: string }) => l.name.startsWith('app/'))
+      mockSessions.push({
+        issueNumber: issue.number,
+        title: issue.title,
+        status: 'open',
+        labels: labels.map((l: { name: string }) => l.name),
+        messageCount: 0,
+        createdAt: issue.created_at,
+        updatedAt: issue.updated_at,
+        appLabel: appLabel?.name,
+      })
+
+      return route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(issue),
+      })
+    }
+
+    // POST /repos/{owner}/{repo}/issues/{number}/comments
+    if (method === 'POST' && /\d+\/comments/.test(path)) {
+      const num = parseInt(path.split('/')[3])
+      const body = await route.request().postDataJSON()
+      const comment: MockComment = {
+        id: Date.now(),
+        body: body.body || '',
+        user: { login: 'zenHeart' },
+        created_at: new Date().toISOString(),
+      }
+      if (!mockComments.has(num)) mockComments.set(num, [])
+      mockComments.get(num)!.push(comment)
+
+      // Update issue updated_at
+      const issue = mockIssues.find(i => i.number === num)
+      if (issue) issue.updated_at = comment.created_at
+
+      return route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(comment),
+      })
+    }
+
+    // Default: return 404
+    return route.fulfill({ status: 404, body: JSON.stringify({ message: 'Not Found' }) })
+  })
 
   // Save initial storage state (empty)
   const page = await context.newPage()
