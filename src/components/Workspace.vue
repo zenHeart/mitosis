@@ -800,9 +800,7 @@ function handleNewChat() {
               @keydown.enter="navigateToSession(group.latest)"
             >
               <span class="session-icon">📱</span>
-              <span class="session-title">{{ group.appName }}</span>
-              <span class="session-count">{{ group.sessions.length }} 次迭代</span>
-              <span class="session-status" :class="statusClass(group.latest)">{{ sessionStore.getSessionDisplayStatus(group.latest) }}</span>
+              <span class="session-title app-name-title" :title="group.appName">{{ group.appName }}</span>
               <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
             </div>
           </template>
@@ -1198,13 +1196,22 @@ function handleNewChat() {
 }
 
 .session-title {
-  flex: 1;
+  flex: 1 1 0%;
+  min-width: 0;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   line-clamp: 2;
   line-height: 1.3;
+}
+
+/* App names in "我的应用" section: single-line ellipsis for clarity */
+.app-name-title {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
 }
 
 .session-app-tag {
