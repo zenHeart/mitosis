@@ -1,0 +1,144 @@
+{
+  "version": "1.0.0",
+  "description": "文件 → UX 维度影响映射表。用于增量审查模式：根据变更文件自动确定需要审查的 UX 维度。",
+  "mappings": {
+    "src/components/ChatInput.vue": {
+      "affected_dimensions": [
+        "ux_flow.feedback_timeliness",
+        "ux_flow.path_clarity",
+        "responsive.input_usability",
+        "responsive.touch_targets"
+      ],
+      "severity": "high",
+      "related_components": ["Workspace.vue"],
+      "interactions": ["send_message", "typing", "command_input"]
+    },
+    "src/components/Workspace.vue": {
+      "affected_dimensions": [
+        "ux_flow.path_clarity",
+        "ux_flow.cognitive_load",
+        "responsive.layout_adaptation",
+        "responsive.mobile_nav"
+      ],
+      "severity": "high",
+      "related_components": ["Sidebar.vue", "ChatInput.vue"],
+      "interactions": ["session_switch", "search", "sidebar_toggle"]
+    },
+    "src/components/Sidebar.vue": {
+      "affected_dimensions": [
+        "responsive.mobile_nav",
+        "responsive.layout_adaptation",
+        "ux_flow.path_clarity"
+      ],
+      "severity": "medium",
+      "related_components": ["Workspace.vue"],
+      "interactions": ["session_list", "search"]
+    },
+    "src/components/Gallery.vue": {
+      "affected_dimensions": [
+        "visual_design.visual_hierarchy",
+        "visual_design.readability",
+        "ux_flow.path_clarity"
+      ],
+      "severity": "medium",
+      "related_components": ["AppCard.vue"],
+      "interactions": ["browse", "filter"]
+    },
+    "src/components/Setup.vue": {
+      "affected_dimensions": [
+        "ux_flow.path_clarity",
+        "ux_flow.error_recovery",
+        "ux_flow.consistency"
+      ],
+      "severity": "high",
+      "related_components": [],
+      "interactions": ["setup_flow", "oauth"]
+    },
+    "src/App.vue": {
+      "affected_dimensions": [
+        "ux_flow.path_clarity",
+        "responsive.layout_adaptation",
+        "ux_flow.consistency"
+      ],
+      "severity": "critical",
+      "related_components": ["all"],
+      "triggers_full_audit": true
+    },
+    "src/styles/main.css": {
+      "affected_dimensions": [
+        "visual_design.token_consistency",
+        "visual_design.readability",
+        "visual_design.dark_mode",
+        "visual_design.visual_hierarchy",
+        "responsive.layout_adaptation"
+      ],
+      "severity": "critical",
+      "related_components": ["all"],
+      "triggers_full_audit": true
+    },
+    "src/styles/variables.css": {
+      "affected_dimensions": [
+        "visual_design.token_consistency",
+        "visual_design.dark_mode"
+      ],
+      "severity": "critical",
+      "related_components": ["all"],
+      "triggers_full_audit": true
+    },
+    "src/stores/session.ts": {
+      "affected_dimensions": [
+        "ux_flow.feedback_timeliness",
+        "ux_flow.trust_transparency"
+      ],
+      "severity": "medium",
+      "related_components": ["Workspace.vue", "Sidebar.vue"],
+      "interactions": ["session_persistence", "session_sync"]
+    },
+    "src/composables/useStepFun.ts": {
+      "affected_dimensions": [
+        "ux_flow.feedback_timeliness",
+        "ux_flow.trust_transparency",
+        "ux_flow.error_recovery"
+      ],
+      "severity": "medium",
+      "related_components": ["ChatInput.vue", "Workspace.vue"],
+      "interactions": ["chat", "build_trigger"]
+    }
+  },
+  "default_scoped_dimensions": [
+    "ux_flow.feedback_timeliness",
+    "ux_flow.path_clarity",
+    "visual_design.token_consistency",
+    "responsive.layout_adaptation"
+  ],
+  "critical_files": [
+    "src/App.vue",
+    "src/styles/main.css",
+    "src/styles/variables.css"
+  ],
+  "directory_patterns": {
+    "src/components/": {
+      "default_severity": "medium",
+      "fallback_dimensions": [
+        "ux_flow.path_clarity",
+        "responsive.layout_adaptation"
+      ]
+    },
+    "src/styles/": {
+      "default_severity": "critical",
+      "fallback_dimensions": [
+        "visual_design.token_consistency",
+        "visual_design.readability",
+        "visual_design.dark_mode"
+      ],
+      "triggers_full_audit": true
+    },
+    "src/composables/": {
+      "default_severity": "medium",
+      "fallback_dimensions": [
+        "ux_flow.feedback_timeliness",
+        "ux_flow.trust_transparency"
+      ]
+    }
+  }
+}

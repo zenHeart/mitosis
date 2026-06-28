@@ -15,6 +15,7 @@
 | 7 | [decisions.md](decisions.md) | ADR 决策记录 |
 | 8 | [history.md](history.md) | 已完成里程碑和经验摘要 |
 | 9 | [goals/README.md](goals/README.md) | Agent 运行时入口 |
+| 10 | [.claude/skills/setgoal/review-engine/README.md](../.claude/skills/setgoal/review-engine/README.md) | UX Review Engine 使用指南 |
 
 ## docs/product/ — 产品需求文档
 

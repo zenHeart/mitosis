@@ -1,0 +1,318 @@
+{
+  "version": "1.0.0",
+  "description": "Mitosis UX 评价体系 — 定义审查标准、权重和测量方法。本地和远程共用同一份 Rubric。",
+  "modes": {
+    "incremental": {
+      "description": "增量审查：只审查变更文件影响的维度，30-60s",
+      "default": true
+    },
+    "full": {
+      "description": "全量审查：所有维度 + 回归检测，3-5min",
+      "default": false
+    }
+  },
+  "thresholds": {
+    "pass": 85,
+    "partial": 70,
+    "fail": 0
+  },
+  "weights": {
+    "ux_flow": 0.40,
+    "visual_design": 0.30,
+    "responsive": 0.30
+  },
+  "dimensions": {
+    "ux_flow": {
+      "label": "用户体验",
+      "description": "用户能否以最小摩擦、最流畅的方式完成目标",
+      "weight": 0.40,
+      "sub_dimensions": {
+        "path_clarity": {
+          "label": "路径清晰度",
+          "weight": 0.25,
+          "description": "用户能否在 3 步内完成核心任务，界面导航是否直观",
+          "measurement": "user_can_complete_core_task_in_3_steps",
+          "method": "manual_walkthrough",
+          "scoring": {
+            "100": "核心任务可在 2 步内完成，无需思考",
+            "80": "核心任务可在 3 步内完成，路径明确",
+            "60": "需要 4-5 步，部分路径需要猜测",
+            "40": "需要 5 步以上，或路径不清晰",
+            "0": "无法完成核心任务，或完全迷失"
+          }
+        },
+        "feedback_timeliness": {
+          "label": "反馈即时性",
+          "weight": 0.20,
+          "description": "用户操作后是否有即时的视觉反馈，异步操作是否有进度提示",
+          "measurement": "dom_change_within_100ms_after_action",
+          "method": "playwright_timing",
+          "scoring": {
+            "100": "所有操作 100ms 内有视觉反馈，异步操作有 loading 状态",
+            "80": "主要操作有即时反馈，异步操作有进度指示",
+            "60": "部分操作有反馈，构建中等状态有提示",
+            "40": "多个操作无即时反馈",
+            "0": "完全无反馈，用户不知道系统是否在工作"
+          }
+        },
+        "error_recovery": {
+          "label": "错误可恢复性",
+          "weight": 0.20,
+          "description": "错误信息是否清晰、是否包含恢复步骤",
+          "measurement": "error_message_contains_recovery_steps",
+          "method": "manual_walkthrough",
+          "scoring": {
+            "100": "错误信息清晰，包含具体恢复步骤，有操作按钮",
+            "80": "错误信息清晰，知道哪里出错",
+            "60": "有错误提示，但不知道如何恢复",
+            "40": "错误信息模糊或缺失",
+            "0": "无任何错误提示，或静默失败"
+          }
+        },
+        "cognitive_load": {
+          "label": "认知负荷",
+          "weight": 0.15,
+          "description": "页面信息密度是否合理，用户是否需要记忆过多信息",
+          "measurement": "information_density_reasonable",
+          "method": "manual_walkthrough",
+          "scoring": {
+            "100": "信息密度合理，每个元素都有明确目的",
+            "80": "大部分元素必要，少量冗余",
+            "60": "有一定冗余信息，但不影响使用",
+            "40": "信息过多，用户需要过滤",
+            "0": "信息过载，完全无法聚焦"
+          }
+        },
+        "consistency": {
+          "label": "一致性",
+          "weight": 0.10,
+          "description": "同类操作是否使用相同的组件和交互模式",
+          "measurement": "similar_actions_use_same_components",
+          "method": "code_audit",
+          "scoring": {
+            "100": "所有同类操作使用相同组件，交互模式完全一致",
+            "80": "大部分操作一致，少量例外",
+            "60": "基本一致，但有明显差异",
+            "40": "多处不一致，用户需要适应不同模式",
+            "0": "完全无一致性，每个操作都不同"
+          }
+        },
+        "trust_transparency": {
+          "label": "信任透明度",
+          "weight": 0.10,
+          "description": "系统状态是否可见，用户是否知道系统在做什么",
+          "measurement": "async_operations_have_visible_status",
+          "method": "playwright_visibility",
+          "scoring": {
+            "100": "所有异步操作有明确状态指示，用户可以追踪进度",
+            "80": "主要异步操作有状态提示",
+            "60": "部分异步操作有提示",
+            "40": "少数操作有提示",
+            "0": "无任何状态提示，用户不知道系统状态"
+          }
+        }
+      }
+    },
+    "visual_design": {
+      "label": "界面设计",
+      "description": "整体风格统一性、视觉元素一致性、符合产品调性",
+      "weight": 0.30,
+      "sub_dimensions": {
+        "token_consistency": {
+          "label": "Design Token 一致性",
+          "weight": 0.20,
+          "description": "颜色、间距、字体是否使用统一的 CSS 变量",
+          "measurement": "colors_spacing_use_css_variables",
+          "method": "code_audit",
+          "scoring": {
+            "100": "所有颜色/间距/字体使用 CSS 变量，无硬编码",
+            "80": "主要使用 CSS 变量，少量硬编码",
+            "60": "部分使用 CSS 变量，存在多处硬编码",
+            "40": "大量硬编码，Token 体系不完整",
+            "0": "完全无 Token 体系"
+          }
+        },
+        "visual_hierarchy": {
+          "label": "视觉层级",
+          "weight": 0.20,
+          "description": "主操作是否最突出，信息是否按重要性排列",
+          "measurement": "primary_action_most_visible",
+          "method": "playwright_visual",
+          "scoring": {
+            "100": "主操作按钮最突出，信息层级清晰",
+            "80": "主操作明显，层级基本清晰",
+            "60": "主操作可见，但不够突出",
+            "40": "主操作不明显，层级混乱",
+            "0": "无明确视觉层级"
+          }
+        },
+        "component_completeness": {
+          "label": "组件完成度",
+          "weight": 0.15,
+          "description": "所有按钮/输入是否有 hover/focus/disabled 状态",
+          "measurement": "all_interactive_elements_have_states",
+          "method": "manual_walkthrough",
+          "scoring": {
+            "100": "所有交互元素都有完整的 hover/focus/disabled/active 状态",
+            "80": "主要元素有完整状态",
+            "60": "部分元素缺少状态",
+            "40": "多数元素缺少状态",
+            "0": "无状态反馈"
+          }
+        },
+        "readability": {
+          "label": "可读性",
+          "weight": 0.25,
+          "description": "文字对比度是否满足 WCAG AA 标准",
+          "measurement": "contrast_ratio >= 4.5:1",
+          "method": "playwright_contrast",
+          "scoring": {
+            "100": "所有文字对比度 >= 7:1 (WCAG AAA)",
+            "80": "所有文字对比度 >= 4.5:1 (WCAG AA)",
+            "60": "大部分文字 >= 4.5:1，少量例外",
+            "40": "部分文字对比度不足",
+            "0": "多处文字不可读"
+          }
+        },
+        "micro_interactions": {
+          "label": "微交互质量",
+          "weight": 0.10,
+          "description": "过渡动画是否平滑、是否有意义",
+          "measurement": "transitions_smooth_under_300ms",
+          "method": "playwright_timing",
+          "scoring": {
+            "100": "所有过渡动画平滑（<= 300ms），有明确意义",
+            "80": "主要过渡平滑，少量缺失",
+            "60": "部分过渡平滑",
+            "40": "过渡动画生硬或过长",
+            "0": "无过渡动画，或动画卡顿"
+          }
+        },
+        "dark_mode": {
+          "label": "暗色模式和谐",
+          "weight": 0.10,
+          "description": "暗色模式下所有元素是否可见、是否和谐",
+          "measurement": "all_elements_visible_in_dark_mode",
+          "method": "playwright_visual",
+          "scoring": {
+            "100": "暗色模式下所有元素完美可见，色彩和谐",
+            "80": "所有元素可见，少量不和谐",
+            "60": "大部分元素可见",
+            "40": "部分元素在暗色模式下不可见",
+            "0": "多处元素不可见"
+          }
+        }
+      }
+    },
+    "responsive": {
+      "label": "响应式体验",
+      "description": "PC 和移动端都有良好的交互体验",
+      "weight": 0.30,
+      "sub_dimensions": {
+        "touch_targets": {
+          "label": "触控目标",
+          "weight": 0.25,
+          "description": "移动端所有可交互元素是否足够大",
+          "measurement": "all_interactive_elements >= 44x44px",
+          "method": "playwright_measurement",
+          "scoring": {
+            "100": "所有可交互元素 >= 48x48px",
+            "90": "所有可交互元素 >= 44x44px (WCAG 推荐)",
+            "70": "按钮 >= 44px，链接略小",
+            "50": "部分元素 < 40px",
+            "0": "多处元素 < 36px"
+          }
+        },
+        "layout_adaptation": {
+          "label": "布局适配",
+          "weight": 0.25,
+          "description": "小屏幕下内容是否正确堆叠，无水平溢出",
+          "measurement": "no_horizontal_overflow",
+          "method": "playwright_overflow",
+          "scoring": {
+            "100": "无任何溢出，布局完美适配",
+            "80": "无水平溢出，少量垂直溢出",
+            "60": "有少量水平溢出（< 10px）",
+            "40": "有多处溢出，影响使用",
+            "0": "严重溢出，内容被截断"
+          }
+        },
+        "mobile_nav": {
+          "label": "移动端导航",
+          "weight": 0.20,
+          "description": "汉堡菜单、手势、面包屑是否工作正常",
+          "measurement": "hamburger_menu_works",
+          "method": "manual_walkthrough",
+          "scoring": {
+            "100": "汉堡菜单流畅，手势自然，导航清晰",
+            "80": "汉堡菜单工作正常",
+            "60": "汉堡菜单可用但不够流畅",
+            "40": "导航困难，需要多次点击",
+            "0": "无法导航"
+          }
+        },
+        "input_usability": {
+          "label": "输入可用性",
+          "weight": 0.15,
+          "description": "移动端输入框在键盘弹出后是否仍可见可用",
+          "measurement": "input_visible_after_keyboard_popup",
+          "method": "playwright_visual",
+          "scoring": {
+            "100": "键盘弹出后输入框仍可见，可正常输入",
+            "80": "输入框基本可见",
+            "60": "输入框部分被遮挡",
+            "40": "输入框被键盘遮挡",
+            "0": "完全无法输入"
+          }
+        },
+        "text_readability": {
+          "label": "文字可读性",
+          "weight": 0.15,
+          "description": "移动端最小字体是否足够大",
+          "measurement": "min_font_size >= 14px_on_mobile",
+          "method": "playwright_measurement",
+          "scoring": {
+            "100": "最小字体 >= 16px",
+            "80": "最小字体 >= 14px",
+            "60": "最小字体 >= 12px",
+            "40": "部分文字 < 12px",
+            "0": "多处文字过小无法阅读"
+          }
+        }
+      }
+    }
+  },
+  "verdict_rules": {
+    "pass": {
+      "condition": "overall_score >= 85",
+      "action": "无需改进，流程继续"
+    },
+    "partial": {
+      "condition": "70 <= overall_score < 85",
+      "action": "建议迭代优化，不阻塞流程"
+    },
+    "fail": {
+      "condition": "overall_score < 70",
+      "action": "必须修复关键问题"
+    }
+  },
+  "regression_rules": {
+    "degraded_threshold": 10,
+    "overall_delta_threshold": 5,
+    "action": "分数下降必须报警，即使绝对值仍及格"
+  },
+  "iteration_limits": {
+    "max_iterations": 5,
+    "stop_condition": "overall_score >= 85 或达到最大迭代次数"
+  },
+  "default_scoped_dimensions": [
+    "ux_flow.feedback_timeliness",
+    "ux_flow.path_clarity",
+    "visual_design.readability",
+    "responsive.layout_adaptation",
+    "responsive.touch_targets",
+    "responsive.text_readability"
+  ],
+  "max_issues_per_dimension": 5,
+  "max_issues_total": 10
+}

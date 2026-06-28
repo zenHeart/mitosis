@@ -137,3 +137,39 @@ bash ../../../worker/verify-build.sh
 - 页面可加载。
 - 关键交互有响应。
 - 游戏/工具类应用满足对应 P1 标准。
+
+## UX Review Engine
+
+功能验收通过后，使用 Review Engine 持续打磨体验。详见 [.claude/skills/setgoal/review-engine/README.md](../.claude/skills/setgoal/review-engine/README.md)。
+
+### 本地触发
+
+```
+/ux-polish           # 增量模式（默认）
+/ux-polish full      # 全量模式
+/ux-polish --files ChatInput.vue  # 指定文件增量
+```
+
+### CI 触发
+
+在 PR 中评论：
+```
+/ux-check           # 增量模式
+/ux-check full      # 全量模式
+```
+
+### 审计架构
+
+| 执行模式 | 后端 | 触发方式 |
+|---------|------|---------|
+| 本地 setgoal | Claude subagent | Phase C 自动调用 |
+| 本地手动 | Agent skill | `/ux-polish` |
+| CI PR | Node.js scripts | PR comment `/ux-check` |
+
+**评分标准：** `rubric.json` 唯一真实来源，被本地和远程共同消费。
+
+**审计团队：**
+- `ux-interaction-auditor` — 交互体验（权重 40%）
+- `ux-visual-auditor` — 视觉设计（权重 30%）
+- `ux-responsive-auditor` — 响应式（权重 30%）
+- `ux-lead-auditor` — 首席审计员（协调、去重、报告）

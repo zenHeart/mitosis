@@ -79,6 +79,24 @@ Phase E: 演进                ← 评估是否需要调整目标
 | 适用 | 平台流程验证（端到端） | 生成应用质量（构建产物） |
 | 人工介入 | Stop hook block + 反馈 | draft PR + human review |
 
+## UX Review Engine 集成
+
+| 执行模式 | 后端 | 触发方式 | 适用场景 |
+|---------|------|---------|---------|
+| 本地 setgoal | Claude subagent | Phase C 自动调用 | 功能验收通过后的体验打磨 |
+| 本地手动 | Agent skill | `/ux-polish` | 随时触发增量审查 |
+| CI PR | Node.js scripts | PR comment `/ux-check` | 合并前的自动审查 |
+
+**架构：** 单一 `rubric.json` 被本地（subagent 读取）和远程（scripts 读取）共同消费，确保评分标准一致。
+
+**审计团队：**
+- `ux-interaction-auditor` — 交互体验（权重 40%）
+- `ux-visual-auditor` — 视觉设计（权重 30%）
+- `ux-responsive-auditor` — 响应式（权重 30%）
+- `ux-lead-auditor` — 首席审计员（协调、去重、报告）
+
+**输出位置：** `.claude/skills/setgoal/review-engine/output/report.json`
+
 ## 安全审计
 
 每轮 Phase C 必须调用 `security-audit` skill：
@@ -107,6 +125,32 @@ Skill(skill: "security-audit")
 - `create-trigger.sh` — /create 触发 + CI 安全门控
 - `gfm-render.sh` — GFM 渲染 + DOMPurify XSS 防护
 - `security-mask.sh` — 隐私脱敏验证
+
+## UX Review Engine
+
+功能验收通过后，可执行 UX Review Engine 持续打磨体验：
+
+```bash
+# 增量模式（默认）
+bash .claude/skills/setgoal/review-engine/verifiers/ux-review.sh incremental
+
+# 全量模式
+bash .claude/skills/setgoal/review-engine/verifiers/ux-review.sh full
+
+# 指定文件增量
+bash .claude/skills/setgoal/review-engine/verifiers/ux-review.sh incremental -- ChatInput.vue
+```
+
+**审计架构：**
+- 本地：Lead Auditor 协调 3 个审计专员并行工作（subagent）
+- 远程：纯 JS 脚本直接调用 Playwright（CI 兼容 claude -p --bare）
+- 评分标准：`rubric.json` 唯一真实来源
+
+**触发方式：**
+- 本地：`/ux-polish`（增量）、`/ux-polish full`（全量）
+- 远程：PR 评论 `/ux-check`、`/ux-check full`
+
+**详细文档：** `.claude/skills/setgoal/review-engine/README.md`
 
 **安全审计技能：** `security-audit` — 每轮 Phase C 必须调用，5 步快速扫描
 **添加新 verifier：** 在 `verifiers/` 下创建 `.sh` 脚本，遵循 `verifiers/README.md` 规范。

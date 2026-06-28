@@ -1,0 +1,177 @@
+{
+  "version": "1.0.0",
+  "description": "UX 审查报告统一输出格式。本地（subagents）和远程（scripts）必须输出符合此 schema 的 JSON。",
+  "type": "object",
+  "required": ["mode", "timestamp", "duration_seconds", "trigger", "scores", "overall_score", "verdict", "next_actions"],
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": ["incremental", "full"],
+      "description": "审查模式：incremental（增量）或 full（全量）"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 时间戳"
+    },
+    "duration_seconds": {
+      "type": "number",
+      "description": "审查执行耗时（秒）"
+    },
+    "trigger": {
+      "type": "string",
+      "enum": ["git_push", "manual", "schedule", "pr_comment", "ci_workflow"],
+      "description": "触发来源"
+    },
+    "changed_files": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "增量模式下的变更文件列表",
+      "default": []
+    },
+    "scoped_dimensions": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "本次审查覆盖的维度列表",
+      "default": []
+    },
+    "scores": {
+      "type": "object",
+      "description": "各维度评分详情",
+      "properties": {
+        "ux_flow": {
+          "type": "object",
+          "required": ["score", "weight", "sub_scores", "issues"],
+          "properties": {
+            "score": {"type": "number", "minimum": 0, "maximum": 100},
+            "weight": {"type": "number", "minimum": 0, "maximum": 1},
+            "sub_scores": {
+              "type": "object",
+              "description": "子维度得分，键为 dimension.sub_dimension 格式"
+            },
+            "issues": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["criterion", "severity", "finding", "suggestion"],
+                "properties": {
+                  "criterion": {"type": "string", "description": "Rubric 中的 criterion ID"},
+                  "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+                  "finding": {"type": "string", "description": "具体发现"},
+                  "suggestion": {"type": "string", "description": "可执行的改进建议"},
+                  "location": {
+                    "type": "object",
+                    "description": "问题定位",
+                    "properties": {
+                      "file": {"type": "string"},
+                      "line": {"type": "number"}
+                    }
+                  },
+                  "estimated_effort": {
+                    "type": "string",
+                    "enum": ["trivial", "small", "medium", "large"],
+                    "description": "预估修复工作量"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "visual_design": {
+          "type": "object",
+          "required": ["score", "weight", "sub_scores", "issues"],
+          "properties": {
+            "score": {"type": "number", "minimum": 0, "maximum": 100},
+            "weight": {"type": "number", "minimum": 0, "maximum": 1},
+            "sub_scores": {"type": "object"},
+            "issues": {"type": "array"}
+          }
+        },
+        "responsive": {
+          "type": "object",
+          "required": ["score", "weight", "sub_scores", "issues"],
+          "properties": {
+            "score": {"type": "number", "minimum": 0, "maximum": 100},
+            "weight": {"type": "number", "minimum": 0, "maximum": 1},
+            "sub_scores": {"type": "object"},
+            "issues": {"type": "array"}
+          }
+        }
+      }
+    },
+    "overall_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "加权总分"
+    },
+    "unreviewed_dimensions": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "增量模式下未审查的维度列表",
+      "default": []
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "PARTIAL", "FAIL"],
+      "description": "判定结果"
+    },
+    "regression": {
+      "type": "object",
+      "description": "回归检测结果（仅全量模式）",
+      "properties": {
+        "previous_score": {"type": "number"},
+        "delta": {"type": "number", "description": "分数变化（正数=改进，负数=退化）"},
+        "previous_timestamp": {"type": "string", "format": "date-time"},
+        "degraded_dimensions": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "退化的维度列表"
+        },
+        "improved_dimensions": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "改进的维度列表"
+        }
+      }
+    },
+    "top_issues": {
+      "type": "array",
+      "description": "优先级排序的问题列表（最多 5 个）",
+      "items": {
+        "type": "object",
+        "required": ["rank", "dimension", "severity", "finding", "suggestion"],
+        "properties": {
+          "rank": {"type": "number", "minimum": 1},
+          "dimension": {"type": "string", "description": "所属维度，如 ux_flow.feedback_timeliness"},
+          "auditor": {"type": "string", "description": "审计专员类型"},
+          "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+          "score": {"type": "number"},
+          "finding": {"type": "string"},
+          "suggestion": {"type": "string"},
+          "location": {
+            "type": "object",
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "number"}
+            }
+          },
+          "estimated_effort": {
+            "type": "string",
+            "enum": ["trivial", "small", "medium", "large"]
+          }
+        }
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "优先改进建议列表，按优先级排序"
+    },
+    "recommendation": {
+      "type": "string",
+      "description": "增量模式下的建议（如'建议运行全量审查'）",
+      "default": ""
+    }
+  }
+}

@@ -4,20 +4,42 @@
 
 ```text
 mitosis/
+├── README.md                  # 项目目标、核心架构和文档入口
 ├── CLAUDE.md                  # Claude Code 官方项目入口
-├── .claude/                   # Claude Code 项目共享设置和规则
-│   ├── settings.json
-│   └── rules/
-├── src/                       # Vue 3 + TypeScript 平台源码
+├── AGENT.md                   # Agent 总入口
+├── goal.md                    # 当前唯一活跃目标
+├── .claude/
+│   ├── settings.json          # Claude Code 项目级共享设置
+│   ├── rules/                 # 项目规则（setgoal、security、mermaid 等）
+│   ├── skills/
+│   │   └── setgoal/           # /goal 执行协议 + verifier 脚本 + Review Engine
+│   │       ├── SKILL.md       # 七阶段循环协议
+│   │       ├── verifiers/     # 验证脚本（6 个）
+│   │       └── review-engine/ # UX Review Engine
+│   └── agents/                # 审计专员 Agent 定义（4 个）
+├── .github/workflows/         # GitHub Actions（mitosis.yml + deploy.yml）
+├── docs/                      # 长期核心文档
+│   ├── README.md              # 文档地图
+│   ├── product/               # 产品需求文档
+│   ├── goals/                 # Agent 执行、验收、目标队列
+│   └── retrospectives/        # 深度复盘
+├── worker/                    # OAuth Worker + CI prompt + verifier
+├── apps/                      # Agent 生成的应用（版本化）
+│   └── {app-name}/
+│       └── v{n}/              # Vue + TypeScript + Vite 应用版本
+├── src/                       # Mitosis 平台源码（Vue + TS + Vite）
+│   ├── main.ts
+│   ├── App.vue
 │   ├── components/            # Login, Setup, Workspace, Gallery
 │   ├── composables/           # auth, GitHub API, polling, StepFun
 │   ├── stores/                # Pinia auth state
 │   └── types/                 # Auth/App 类型
-├── worker/                    # Cloudflare Worker + prompt + verifier
-├── apps/                      # Agent 生成应用
-├── docs/                      # 长期核心文档
-├── agent/                     # Agent 执行文档
-└── .github/workflows/         # GitHub Actions
+├── index.html                 # Vite 入口
+├── vite.config.ts             # Vite 配置
+├── tsconfig.json              # TypeScript strict 配置
+├── package.json
+├── .gitignore
+└── LICENSE
 ```
 
 ## 端到端数据流
