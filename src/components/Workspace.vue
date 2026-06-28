@@ -628,9 +628,9 @@ function extractAppNameFromIssue(issue: BuildIssue): string {
 function extractVersionFromIssue(issue: BuildIssue): string {
   const bodyMatch = issue.body.match(/版本:\s*(v\d+)/i)
   if (bodyMatch) return bodyMatch[1].toLowerCase()
-
-  const titleMatch = issue.title.match(/\b(v\d+)\b/i)
-  return titleMatch?.[1]?.toLowerCase() || 'v0'
+  // 匹配最后一个 vN（避免 v0 → v2 时匹配到旧版本）
+  const matches = [...issue.title.matchAll(/\bv(\d+)\b/gi)]
+  return matches.length > 0 ? `v${matches[matches.length - 1][1]}`.toLowerCase() : 'v0'
 }
 
 function extractAppName(input: string): string {
@@ -675,9 +675,10 @@ async function loadSession(session: ChatSession, autoOpenApp = false) {
 
 function openAppSession(session: ChatSession) {
   const appName = session.appLabel?.replace('app/', '') || ''
-  // 从 title 或 body 提取版本，默认 v0
-  const versionMatch = session.title.match(/v(\d+)/i)
-  const version = versionMatch ? `v${versionMatch[1]}` : 'v0'
+  // 提取标题中最后一个 vN（避免 v0 → v2 时匹配到旧版本）
+  const matches = session.title.matchAll(/\bv(\d+)\b/gi)
+  const last = [...matches].pop()
+  const version = last ? `v${last[1]}` : 'v0'
   if (appName) {
     window.open(`/apps/${appName}/${version}/`, '_blank')
   }

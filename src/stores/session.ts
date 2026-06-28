@@ -80,6 +80,12 @@ export const useSessionStore = defineStore('session', {
       }
     },
 
+    async refreshSessions(token: string, repo: string) {
+      // 强制清除缓存，重新从远程加载（用于清理已关闭/无效的会话记录）
+      this._clearCache()
+      return this.loadSessions(token, repo)
+    },
+
     // localStorage 缓存辅助方法
     _CACHE_KEY: 'mitosis_sessions_cache',
     _MESSAGES_CACHE_KEY: 'mitosis_messages_cache',
@@ -107,6 +113,14 @@ export const useSessionStore = defineStore('session', {
         localStorage.setItem(this._CACHE_KEY, JSON.stringify(sessions))
       } catch {
         // ignore quota exceeded
+      }
+    },
+
+    _clearCache(): void {
+      try {
+        localStorage.removeItem(this._CACHE_KEY)
+      } catch {
+        // ignore
       }
     },
 

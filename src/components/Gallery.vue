@@ -525,8 +525,12 @@ onMounted(async () => {
   font-size: 0.85rem;
   color: var(--text-primary);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  line-height: 1.3;
+  word-break: break-word;
 }
 
 .session-status {
