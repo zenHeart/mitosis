@@ -221,11 +221,43 @@ jobs:
             set_status "status:verifying" "🔎 状态：验证中。正在运行 verifier（attempt $ATTEMPT/3），通过前不会创建审查 PR。"
 
             if [ "$IS_PLATFORM" = "true" ]; then
-              # 平台构建验证：typecheck + build
+              # 平台构建验证：typecheck + build + 安全扫描 + 功能检查
               pushd . >/dev/null
               if npm run typecheck > /tmp/mitosis-verify.log 2>&1 && npm run build >> /tmp/mitosis-verify.log 2>&1; then
+                echo "Typecheck + build passed, running security verifier..."
+                # 安全扫描：检查 token/secret 泄露
+                SECURITY_FAILURES=""
+                SECURITY_SUMMARY=""
+
+                # S1: 硬编码密钥检查
+                if rg -i "(ghp_|gho_|github_pat_|sk-|AKIA|password|secret|api_key)\s*[:=]\s*['\"][^'\"]{4,}" src/ .github/ worker/ -g '!*.md' 2>/dev/null; then
+                  SECURITY_FAILURES="${SECURITY_FAILURES}  - S1: 发现硬编码密钥/token\n"
+                fi
+
+                # S2: DOMPurify on* 事件检查
+                if rg "ALLOWED_ATTR" src/ -A 5 2>/dev/null | grep -i "onclick\|onerror\|onload"; then
+                  SECURITY_FAILURES="${SECURITY_FAILURES}  - S2: DOMPurify 白名单包含 on* 事件\n"
+                fi
+
+                # S3: CI Owner 门控检查
+                if ! rg "comment.user.login.*REPO_OWNER" .github/workflows/mitosis.yml >/dev/null 2>&1; then
+                  SECURITY_FAILURES="${SECURITY_FAILURES}  - S3: CI Owner 门控可能被破坏\n"
+                fi
+
+                # S4: localStorage 敏感存储检查
+                if rg "localStorage.*(token|secret|password|api_key)" src/ -i 2>/dev/null | grep -v "// "; then
+                  SECURITY_FAILURES="${SECURITY_FAILURES}  - S4: localStorage 可能存储敏感信息\n"
+                fi
+
+                if [ -n "$SECURITY_FAILURES" ]; then
+                  echo "Security verifier FAILED:"
+                  echo "$SECURITY_FAILURES"
+                  FEEDBACK=$(printf "Security verifier failed. Fix these issues before claiming completion:\n%s" "$SECURITY_FAILURES")
+                  continue
+                fi
+
+                echo "Security verifier PASSED"
                 PASSED=1
-                echo "Verifier passed"
                 break
               fi
               popd >/dev/null
@@ -241,9 +273,45 @@ jobs:
             fi
 
             echo "Verifier failed on attempt $ATTEMPT"
+            echo "=== Verifier output (last 80 lines) ==="
             tail -80 /tmp/mitosis-verify.log
-            VERIFY_SUMMARY=$(tail -60 /tmp/mitosis-verify.log)
-            FEEDBACK=$(printf "Previous verifier failed. Fix these issues before claiming completion:\n%s" "$VERIFY_SUMMARY")
+            echo "=== End verifier output ==="
+
+            # 分类失败原因，提供结构化反馈
+            FAIL_TYPE="unknown"
+            FAIL_DETAILS=""
+
+            if grep -qi "TypeScript\|error TS\|vue-tsc" /tmp/mitosis-verify.log; then
+              FAIL_TYPE="typescript"
+              FAIL_DETAILS=$(grep -E "error TS[0-9]+|TypeScript error" /tmp/mitosis-verify.log | head -5)
+            elif grep -qi "security\|token\|secret\|password" /tmp/mitosis-verify.log; then
+              FAIL_TYPE="security"
+              FAIL_DETAILS=$(grep -i "security\|token\|secret\|password" /tmp/mitosis-verify.log | head -5)
+            elif grep -qi "Module not found\|Cannot find module" /tmp/mitosis-verify.log; then
+              FAIL_TYPE="import"
+              FAIL_DETAILS=$(grep -E "Module not found|Cannot find module" /tmp/mitosis-verify.log | head -5)
+            elif grep -qi "Vite\|build" /tmp/mitosis-verify.log; then
+              FAIL_TYPE="build"
+              FAIL_DETAILS=$(grep -E "error|failed" /tmp/mitosis-verify.log | head -5)
+            fi
+
+            if [ "$IS_PLATFORM" = "true" ]; then
+              if [ "$FAIL_TYPE" = "typescript" ]; then
+                FEEDBACK=$(printf "TypeScript errors detected. Fix these before claiming completion:\n%s" "$FAIL_DETAILS")
+              elif [ "$FAIL_TYPE" = "security" ]; then
+                FEEDBACK=$(printf "Security issues detected. Fix these before claiming completion:\n%s" "$FAIL_DETAILS")
+              elif [ "$FAIL_TYPE" = "import" ]; then
+                FEEDBACK=$(printf "Module import errors detected. Check all import paths are correct:\n%s" "$FAIL_DETAILS")
+              elif [ "$FAIL_TYPE" = "build" ]; then
+                FEEDBACK=$(printf "Build errors detected. Fix these before claiming completion:\n%s" "$FAIL_DETAILS")
+              else
+                VERIFY_SUMMARY=$(tail -60 /tmp/mitosis-verify.log)
+                FEEDBACK=$(printf "Previous verifier failed. Fix these issues before claiming completion:\n%s" "$VERIFY_SUMMARY")
+              fi
+            else
+              VERIFY_SUMMARY=$(tail -60 /tmp/mitosis-verify.log)
+              FEEDBACK=$(printf "Previous verifier failed. Fix these issues before claiming completion:\n%s" "$VERIFY_SUMMARY")
+            fi
           done
 
           if [ "$PASSED" -ne 1 ]; then

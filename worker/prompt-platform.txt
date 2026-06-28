@@ -41,19 +41,122 @@
 | P3 | 功能实现 | Issue 需求被正确实现 |
 | P4 | 无破坏性变更 | 现有功能不受影响 |
 
-## 工作流程
+### 平台 UI 专项标准
 
-1. **读取 Issue** — 完整阅读 Issue #__ISSUE_NUMBER__ 的内容
-2. **列出理解** — 输出你理解的 3-5 个核心功能点
-3. **实现功能** — 修改必要的平台文件
-4. **运行验证** — 执行 npm run typecheck && npm run build
-5. **提交变更** — git add . && git commit -m "feat: platform changes (issue #__ISSUE_NUMBER__)"
-6. **确认完成** — 输出修改了哪些文件
+| # | 标准 | 验证方法 |
+|---|------|---------|
+| P5 | 侧边栏会话分组正确 | 平台/应用/最近关闭 三栏显示正确 |
+| P6 | 应用名称完整显示 | Gallery 中应用名称不被截断（含中文长名称） |
+| P7 | 应用可正常打开 | 点击应用卡片能正确跳转到 /apps/{name}/v{n}/ |
+| P8 | 快捷访问可用 | 侧边栏"快捷访问"区域能显示和跳转常用应用 |
 
-## 禁止事项
+### 安全标准（必须通过）
 
-- 禁止修改 apps/ 目录下的应用文件
-- 禁止添加未在 Issue 中描述的功能
-- 禁止提交调试代码或 console.log
-- 禁止使用 any 类型
-- 禁止破坏现有功能
+| # | 标准 | 验证方法 |
+|---|------|---------|
+| S1 | 无 token/secret 泄露 | rg 扫描 src/ .github/ worker/ 无硬编码密钥 |
+| S2 | DOMPurify 配置正确 | ALLOWED_TAGS + ALLOWED_ATTR 白名单，无 on* 事件 |
+| S3 | CI Owner 门控有效 | .github/workflows/mitosis.yml 中 owner 验证未破坏 |
+| S4 | 无未加密敏感存储 | localStorage 不存储 GitHub token |
+
+## 平台构建常见陷阱（必须避免）
+
+### 陷阱 1：应用名称提取正则优先级
+- 已知完整应用名（tetris-game, snake-game, todo-app 等）必须在通用正则之前匹配
+- 错误：先匹配 `tetris` 导致 `/create tetris-game` 返回 `tetris` 而非 `tetris-game`
+- 正确：先检查已知完整名称列表，再 fallback 到通用模式
+
+### 陷阱 2：侧边栏过滤过度
+- 只显示 open 会话会导致用户无法访问历史会话
+- 必须区分"活跃会话"（open）和"最近关闭"（closed）两个区域
+
+### 陷阱 3：CSS 网格截断
+- Gallery 网格列宽 240px 不足以显示中文应用名
+- 需要增加最小宽度到 280px 或支持 2 行显示
+
+### 陷阱 4：localStorage 作用域
+- Pinia action 中定义的属性会被包装为 getter，访问 `this._KEY` 返回函数而非值
+- 使用字面量字符串 `'mitosis_messages_cache'` 而非 `this._MESSAGES_CACHE_KEY`
+
+## 构建验证流程（必须严格按序执行）
+
+### Step 1：读取并理解 Issue
+读取 Issue #__ISSUE_NUMBER__ 完整内容，列出 3-5 个核心功能点。
+
+### Step 2：实现功能
+修改必要的平台文件。每次修改前先 Read 确认文件当前内容。
+
+### Step 3：安全自检（关键步骤，不能跳过）
+在提交前必须检查：
+```bash
+# 检查是否有硬编码 token/secret
+rg -i "(ghp_|gho_|github_pat_|sk-|AKIA|password|secret|api_key)\s*[:=]\s*['\"][^'\"]{4,}" src/ .github/ worker/ -g '!*.md' || echo "SECURITY_SCAN: PASS"
+
+# 检查 DOMPurify 配置
+rg "ALLOWED_ATTR" src/ -A 5 | grep -i "onclick\|onerror\|onload" && echo "FAIL: on* in whitelist" || echo "DOMPURIFY: PASS"
+
+# 检查 CI owner 门控
+rg "comment.user.login.*REPO_OWNER" .github/workflows/ && echo "CI_OWNER_GATE: PASS" || echo "FAIL: CI owner gate missing"
+```
+
+### Step 4：类型检查
+npm run typecheck
+- 如果有类型错误：修正 TypeScript 代码后重试
+- 必须 0 errors 才能继续
+
+### Step 5：构建
+npm run build
+- 如果有错误：仔细阅读错误信息，修正后重试
+- 必须 0 errors, 0 warnings 才能继续
+
+### Step 6：功能自检（关键步骤，不能跳过）
+
+**你必须验证以下功能点：**
+- [ ] 修改的功能按 Issue 需求正常工作
+- [ ] 现有功能未受影响（特别是 Gallery、Workspace、侧边栏）
+- [ ] 浏览器控制台无新的 console.error
+
+**验证方法：**
+```bash
+# 启动预览服务器
+npx vite preview --port 4173 &
+```
+
+### Step 7：自检报告（必须输出）
+
+在完成所有步骤后，**必须**输出以下自检报告：
+
+```
+## 平台构建自检报告
+
+### 修改文件清单
+- src/components/X.vue: ✅/❌ — 修改内容描述
+- src/stores/Y.ts: ✅/❌ — 修改内容描述
+
+### 构建结果
+- npm run typecheck: 0 errors / N errors
+- npm run build: 0 errors, 0 warnings / 有错误
+
+### 安全自检
+- S1 无 token/secret 泄露: ✅/❌
+- S2 DOMPurify 配置正确: ✅/❌
+- S3 CI Owner 门控有效: ✅/❌
+- S4 无未加密敏感存储: ✅/❌
+
+### 功能验证
+- [ ] Issue 需求实现: ✅/❌
+- [ ] 无破坏性变更: ✅/❌
+- [ ] 控制台无新错误: ✅/❌
+
+### 质量评级
+- 通过标准: P1 / P2 / P3 / F
+- 未通过项: ____
+```
+
+## 注意事项
+- Issue #__ISSUE_NUMBER__ 的完整需求描述是你必须实现的**唯一权威规格**
+- 在创建/修改每个文件前先用 Read 工具检查目标文件当前内容
+- 如果构建失败超过 3 次仍未解决，输出错误详情和已尝试的方案后停止
+- 不要使用 console.log / console.error 作为调试手段——直接阅读代码逻辑
+- **质量标准是强制的** — 未通过 P1 标准的变更不会被合入
+- **安全自检是强制的** — 发现安全问题时必须修复，不能跳过

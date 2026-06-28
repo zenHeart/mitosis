@@ -50,6 +50,35 @@ const platformSessions = computed<ChatSession[]>(() => {
   return sessionStore.groupedSessions.platform.filter(s => s.status !== 'closed')
 })
 
+// 最近关闭的会话（最多 5 条）
+const recentClosedSessions = computed<ChatSession[]>(() => {
+  return sessionStore.sortedSessions
+    .filter(s => s.status === 'closed')
+    .slice(0, 5)
+})
+
+// 快捷访问：最近有更新的应用（排除当前活跃应用）
+const quickAccessApps = computed<AppGroup[]>(() => {
+  const activeApp = sessionStore.activeSession?.appLabel?.replace('app/', '')
+  const appSessions = sessionStore.groupedSessions.app
+    .filter(s => s.appLabel?.replace('app/', '') !== activeApp)
+  const groups = new Map<string, ChatSession[]>()
+  for (const s of appSessions) {
+    const name = s.appLabel?.replace('app/', '') || s.title.replace(/^build:\s*/i, '').split(' ')[0] || 'unknown'
+    const existing = groups.get(name) || []
+    existing.push(s)
+    groups.set(name, existing)
+  }
+  return Array.from(groups.entries())
+    .map(([appName, sessions]) => ({
+      appName,
+      sessions,
+      latest: sessions.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0],
+    }))
+    .sort((a, b) => new Date(b.latest.updatedAt).getTime() - new Date(a.latest.updatedAt).getTime())
+    .slice(0, 5)
+})
+
 // 应用会话聚类（open only）
 const clusteredAppGroups = computed<AppGroup[]>(() => {
   const appSessions = sessionStore.groupedSessions.app.filter(s => s.status !== 'closed')
@@ -85,6 +114,22 @@ function getSessionIcon(session: ChatSession): string {
   if (session.labels?.includes('platform')) return '🧬'
   if (session.appLabel) return '📱'
   return '💬'
+}
+
+// 相对时间格式化
+function relativeTime(dateStr: string): string {
+  const now = Date.now()
+  const then = new Date(dateStr).getTime()
+  if (Number.isNaN(then)) return ''
+  const diffMs = now - then
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1) return '刚刚'
+  if (diffMin < 60) return `${diffMin} 分钟前`
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 24) return `${diffHr} 小时前`
+  const diffDay = Math.floor(diffHr / 24)
+  if (diffDay < 30) return `${diffDay} 天前`
+  return new Date(dateStr).toLocaleDateString()
 }
 
 // 状态样式类
@@ -590,14 +635,21 @@ function extractVersionFromIssue(issue: BuildIssue): string {
 
 function extractAppName(input: string): string {
   const cleaned = input.toLowerCase().replace(/^\/create\s+/, '').replace(/^\/build\s+/, '')
-  // 优先提取中英文应用名（俄罗斯方块、snake、tetris 等）
+
+  // 1. 优先检查完整应用名（避免部分匹配：tetris → tetris-game 的问题）
+  const knownFullNames = ['tetris-game', 'snake-game', 'todo-app', 'calculator', 'breakout', 'flappy-bird', '2048', 'pong', 'paint', 'chat-app', 'doodle', 'pixel-art', 'my-app']
+  const exactMatch = knownFullNames.find(name => cleaned === name || cleaned.startsWith(name + ' ') || cleaned.startsWith(name + '-'))
+  if (exactMatch) return exactMatch
+
+  // 2. 优先提取中文应用名（俄罗斯方块、snake、tetris 等）
   const chineseMatch = cleaned.match(/([一-鿿]+(?:游戏|应用|工具|编辑器|方块|蛇|鸟|棋|牌|世界|模拟器|平台|管家|系统|大战))/)
   if (chineseMatch) return chineseMatch[1]
 
-  const englishMatch = cleaned.match(/(?:build|create|make|new)\s+([a-z0-9-]+)/i) ||
-                       cleaned.match(/(snake|tetris|todo|calculator|breakout|flappy|2048|pong|paint|chat|doodle|pixel)/i)
-  if (englishMatch) return englishMatch[1].toLowerCase()
+  // 3. 已知英文应用名精确匹配（在通用正则之前）
+  const knownEnglishMatch = cleaned.match(/(snake-game|tetris-game|todo-app|breakout|flappy-bird|flappy|paint|chat-app|doodle|pixel-art|2048|pong)/i)
+  if (knownEnglishMatch) return knownEnglishMatch[1].toLowerCase()
 
+  // 4. 通用英文 slug 提取
   const slug = cleaned.toLowerCase().replace(/[^a-z0-9一-龥]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
   if (/^-+$/.test(slug)) return 'my-app'
   return slug || 'my-app'
@@ -702,8 +754,27 @@ function handleNewChat() {
           <div v-else class="no-results">未找到匹配的会话</div>
         </template>
 
-        <!-- 正常模式：平台 + 应用分组 -->
+        <!-- 正常模式：快捷访问 + 平台 + 应用分组 + 最近关闭 -->
         <template v-else>
+          <!-- 快捷访问（最近使用的应用） -->
+          <template v-if="quickAccessApps.length">
+            <div class="session-group-label">⭐ 快捷访问</div>
+            <div
+              v-for="group in quickAccessApps"
+              :key="'qa-' + group.appName"
+              class="session-item app-group quick-access-item"
+              tabindex="0"
+              role="button"
+              @click="navigateToSession(group.latest)"
+              @keydown.enter="navigateToSession(group.latest)"
+            >
+              <span class="session-icon">📱</span>
+              <span class="session-title">{{ group.appName }}</span>
+              <span class="session-time">{{ relativeTime(group.latest.updatedAt) }}</span>
+              <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
+            </div>
+          </template>
+
           <!-- 平台会话（open only） -->
           <template v-if="platformSessions.length">
             <div class="session-group-label">🧬 平台</div>
@@ -740,6 +811,26 @@ function handleNewChat() {
               <span class="session-count">{{ group.sessions.length }} 次迭代</span>
               <span class="session-status" :class="statusClass(group.latest)">{{ sessionStore.getSessionDisplayStatus(group.latest) }}</span>
               <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
+            </div>
+          </template>
+
+          <!-- 最近关闭的会话 -->
+          <template v-if="recentClosedSessions.length">
+            <div class="session-group-label closed-group-label">📋 最近关闭</div>
+            <div
+              v-for="session in recentClosedSessions"
+              :key="'closed-' + session.issueNumber"
+              class="session-item closed-session-item"
+              tabindex="0"
+              role="button"
+              :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber }"
+              @click="navigateToSession(session)"
+              @keydown.enter="navigateToSession(session)"
+            >
+              <span class="session-icon">{{ getSessionIcon(session) }}</span>
+              <span class="session-title">{{ session.title }}</span>
+              <span class="session-time">{{ relativeTime(session.updatedAt) }}</span>
+              <span class="session-status" :class="statusClass(session)">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
             </div>
           </template>
         </template>
@@ -1000,6 +1091,36 @@ function handleNewChat() {
   color: var(--text-secondary);
   padding: 0.35rem 0.5rem 0.1rem;
   letter-spacing: 0.03em;
+}
+
+.closed-group-label {
+  color: var(--text-secondary);
+  opacity: 0.7;
+  border-top: 1px solid var(--border);
+  margin-top: 0.3rem;
+  padding-top: 0.5rem;
+}
+
+.session-time {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.closed-session-item {
+  opacity: 0.6;
+  font-size: 0.78rem;
+}
+
+.quick-access-item {
+  background: rgba(var(--accent-rgb, 100, 180, 255), 0.05);
+  border-radius: 6px;
+}
+
+.quick-access-item:hover {
+  background: rgba(var(--accent-rgb, 100, 180, 255), 0.12);
 }
 
 .session-count {
