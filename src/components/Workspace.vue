@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useSessionStore } from '../stores/session'
 import { usePolling } from '../composables/usePolling'
@@ -19,6 +19,7 @@ const { start, stopAll } = usePolling()
 const inputText = ref('')
 const building = ref(false)
 const activeIssue = ref<BuildIssue | null>(null)
+const buildProgress = ref<{ step: number; label: string; issueNumber?: number } | null>(null)
 const thinking = ref(false)
 const stepToken = ref('')
 const clarifying = ref(false)
@@ -91,6 +92,7 @@ function statusClass(session: ChatSession): string {
   const status = sessionStore.getSessionDisplayStatus(session)
   if (status === '进行中') return 'status-active'
   if (status === '等待审查') return 'status-review'
+  if (status === '构建中') return 'status-building-pulse'
   if (status === '构建失败' || status === '已停止') return 'status-error'
   return 'status-closed'
 }
@@ -214,6 +216,13 @@ onMounted(async () => {
     await sessionStore.loadSessions(authStore.token, repo.value)
   }
 })
+
+// 移动端侧边栏打开时锁定背景滚动
+watch(sidebarOpen, (open) => {
+  if (typeof document !== 'undefined') {
+    document.body.style.overflow = open ? 'hidden' : ''
+  }
+}, { flush: 'post' })
 
 function getConversationHistory() {
   return sessionStore.messages
@@ -409,6 +418,7 @@ async function createBuild(appName: string, description: string, basedOn?: strin
 
   building.value = true
   activeIssue.value = null
+  buildProgress.value = { step: 0, label: '分析需求...' }
   const version = basedOn ? 'v1' : 'v0'
   // scenario 优先于 basedOn 推断标签
   const effectiveScenario = scenario || (basedOn ? 'app_iterate' : 'app_create')
@@ -501,11 +511,13 @@ function onIssueUpdate(issue: BuildIssue) {
   const appName = extractAppNameFromIssue(issue)
   const version = extractVersionFromIssue(issue)
   const appUrl = `https://mitosis.zenheart.site/apps/${appName}/${version}/`
+  const issueUrl = `https://github.com/${repo.value}/issues/${issue.number}`
 
   if (labels.has('status:review')) {
+    buildProgress.value = { step: 3, label: '等待审查', issueNumber: issue.number }
     sessionStore.addMessage({
       role: 'system',
-      content: `✅ ${appName} ${version} 已通过自动验证，等待人工审查。\n合入 master 后访问: ${appUrl}`,
+      content: `✅ ${appName} ${version} 已通过自动验证，等待人工审查。\n[前往 GitHub 审查](${issueUrl})\n合入 master 后访问: ${appUrl}`,
       createdAt: new Date().toISOString(),
     })
     building.value = false
@@ -514,9 +526,10 @@ function onIssueUpdate(issue: BuildIssue) {
   }
 
   if (labels.has('status:failed')) {
+    buildProgress.value = { step: -1, label: '构建失败', issueNumber: issue.number }
     sessionStore.addMessage({
       role: 'system',
-      content: `❌ ${appName} ${version} 自动验证失败，请查看 Issue #${issue.number} 和 Actions 日志。`,
+      content: `❌ ${appName} ${version} 自动验证失败，请查看 [Issue #${issue.number}](${issueUrl}) 和 Actions 日志。`,
       createdAt: new Date().toISOString(),
     })
     building.value = false
@@ -525,24 +538,27 @@ function onIssueUpdate(issue: BuildIssue) {
   }
 
   if (labels.has('status:verifying') && !previousLabels.has('status:verifying')) {
+    buildProgress.value = { step: 2, label: '验证中', issueNumber: issue.number }
     sessionStore.addMessage({
       role: 'system',
-      content: `🔎 正在验证 ${appName} ${version}... (Issue #${issue.number})`,
+      content: `🔎 正在验证 ${appName} ${version}... ([Issue #${issue.number}](${issueUrl}))`,
       createdAt: new Date().toISOString(),
     })
     return
   }
 
   if (labels.has('status:building') && !previousLabels.has('status:building')) {
+    buildProgress.value = { step: 1, label: '构建中', issueNumber: issue.number }
     sessionStore.addMessage({
       role: 'system',
-      content: `🔨 正在构建 ${appName} ${version}... (Issue #${issue.number})`,
+      content: `🔨 正在构建 ${appName} ${version}... ([Issue #${issue.number}](${issueUrl}))`,
       createdAt: new Date().toISOString(),
     })
     return
   }
 
   if (issue.state === 'closed') {
+    buildProgress.value = { step: 4, label: '已完成', issueNumber: issue.number }
     sessionStore.addMessage({
       role: 'system',
       content: `Issue #${issue.number} 已关闭。应用版本路径: ${appUrl}`,
@@ -616,6 +632,7 @@ function handleNewChat() {
   stopAll()
   sessionStore.setActiveSession(null)
   activeIssue.value = null
+  buildProgress.value = null
   building.value = false
   clarifying.value = false
   clarifyingMsg.value = ''
@@ -647,11 +664,13 @@ function handleNewChat() {
 
         <!-- 搜索框 -->
         <div class="sidebar-search">
+          <span class="search-icon" aria-hidden="true">🔍</span>
           <input
             v-model="sessionSearch"
             type="text"
-            placeholder="搜索会话..."
+            placeholder="搜索标题或应用名..."
             class="search-input"
+            aria-label="搜索会话"
           />
         </div>
 
@@ -662,11 +681,14 @@ function handleNewChat() {
               v-for="session in searchResults"
               :key="session.issueNumber"
               class="session-item"
+              tabindex="0"
+              role="button"
               :class="{
                 active: sessionStore.activeSession?.issueNumber === session.issueNumber,
                 closed: session.status === 'closed'
               }"
               @click="navigateToSession(session)"
+              @keydown.enter="navigateToSession(session)"
             >
               <span class="session-icon">{{ getSessionIcon(session) }}</span>
               <span class="session-title">{{ session.title }}</span>
@@ -685,8 +707,11 @@ function handleNewChat() {
               v-for="session in platformSessions"
               :key="session.issueNumber"
               class="session-item"
+              tabindex="0"
+              role="button"
               :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber }"
               @click="navigateToSession(session)"
+              @keydown.enter="navigateToSession(session)"
             >
               <span class="session-title">{{ session.title }}</span>
               <span class="session-status" :class="statusClass(session)">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
@@ -700,8 +725,11 @@ function handleNewChat() {
               v-for="group in clusteredAppGroups"
               :key="group.appName"
               class="session-item app-group"
+              tabindex="0"
+              role="button"
               :class="{ active: sessionStore.activeSession?.issueNumber === group.latest.issueNumber }"
               @click="navigateToSession(group.latest)"
+              @keydown.enter="navigateToSession(group.latest)"
             >
               <span class="session-icon">📱</span>
               <span class="session-title">{{ group.appName }}</span>
@@ -714,7 +742,7 @@ function handleNewChat() {
       </div>
     </aside>
     <main class="chat-area">
-      <div class="messages">
+      <div class="messages" role="log" aria-live="polite" aria-label="对话消息">
         <!-- 有活跃会话且没有消息时显示会话标题 -->
         <div v-if="displayMessages.length === 0 && sessionStore.activeSession" class="welcome session-welcome">
           <h3>{{ sessionStore.activeSession.title }}</h3>
@@ -757,6 +785,31 @@ function handleNewChat() {
           <div class="typing-indicator">
             <span></span><span></span><span></span>
           </div>
+        </div>
+        <!-- 构建进度指示器 -->
+        <div v-if="buildProgress" class="build-progress">
+          <div class="build-progress-steps">
+            <div class="build-step" :class="{ active: buildProgress.step >= 0, done: buildProgress.step > 0 }">
+              <span class="step-icon">📋</span>
+              <span class="step-label">分析</span>
+            </div>
+            <div class="build-step-line" :class="{ active: buildProgress.step >= 1 }"></div>
+            <div class="build-step" :class="{ active: buildProgress.step >= 1, done: buildProgress.step > 1 }">
+              <span class="step-icon">🔨</span>
+              <span class="step-label">构建</span>
+            </div>
+            <div class="build-step-line" :class="{ active: buildProgress.step >= 2 }"></div>
+            <div class="build-step" :class="{ active: buildProgress.step >= 2, done: buildProgress.step > 3 }">
+              <span class="step-icon">🔎</span>
+              <span class="step-label">验证</span>
+            </div>
+            <div class="build-step-line" :class="{ active: buildProgress.step >= 3 }"></div>
+            <div class="build-step" :class="{ active: buildProgress.step >= 3 }">
+              <span class="step-icon">✅</span>
+              <span class="step-label">审查</span>
+            </div>
+          </div>
+          <p class="build-progress-status">{{ buildProgress.label }}</p>
         </div>
       </div>
       <!-- 活跃会话的应用导航栏 -->
@@ -868,6 +921,42 @@ function handleNewChat() {
   padding: 0 0.25rem;
 }
 
+.sidebar-search {
+  position: relative;
+  margin-bottom: 0.75rem;
+}
+
+.search-icon {
+  position: absolute;
+  left: 0.6rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.8rem;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.4rem 0.6rem 0.4rem 1.75rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: var(--accent);
+}
+
+.search-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
 .session-item {
   padding: 0.45rem 0.5rem;
   border-radius: 6px;
@@ -968,6 +1057,15 @@ function handleNewChat() {
 .session-item.active {
   background: var(--bg-tertiary);
   color: var(--accent);
+}
+
+.session-item:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.session-item:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .session-title {
@@ -1135,9 +1233,35 @@ function handleNewChat() {
 
 .message.user {
   align-self: flex-end;
-  background: var(--accent);
+  background: linear-gradient(135deg, #58a6ff, #79c0ff);
   color: #fff;
   border-bottom-right-radius: 4px;
+}
+
+/* 连续同角色消息：微妙区分 */
+.message.user + .message.user,
+.message.system + .message.system {
+  margin-top: -0.25rem;
+}
+
+.message.user + .message.user {
+  background: linear-gradient(135deg, #4790e8, #68afef);
+}
+
+.message.system + .message.system {
+  background: #1a1f26;
+  border-color: #3a3f46;
+}
+
+/* 移动端消息宽度限制 */
+@media (max-width: 640px) {
+  .message {
+    max-width: min(85vw, 400px);
+  }
+
+  .build-progress {
+    max-width: min(85vw, 400px);
+  }
 }
 
 .message.system {
@@ -1153,8 +1277,14 @@ function handleNewChat() {
 
 .message-time {
   font-size: 0.7rem;
-  opacity: 0.6;
+  opacity: 0.7;
   text-align: right;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.message.system .message-time {
+  color: var(--text-secondary);
+  opacity: 0.6;
 }
 
 .typing-indicator {
@@ -1177,6 +1307,112 @@ function handleNewChat() {
 @keyframes bounce {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
   40% { transform: scale(1); opacity: 1; }
+}
+
+/* ── Build Progress Indicator ── */
+.build-progress {
+  align-self: flex-start;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  max-width: 420px;
+  width: 100%;
+}
+
+.build-progress-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 0.75rem;
+}
+
+.build-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  opacity: 0.35;
+  transition: opacity 0.3s;
+}
+
+.build-step.active {
+  opacity: 1;
+}
+
+.build-step.done {
+  opacity: 0.7;
+}
+
+.step-icon {
+  font-size: 1.1rem;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border);
+  transition: all 0.3s;
+}
+
+.build-step.active .step-icon {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+  animation: stepPulse 2s infinite;
+}
+
+.build-step.done .step-icon {
+  border-color: var(--success);
+  background: rgba(63, 185, 80, 0.1);
+}
+
+.build-step-line {
+  width: 2rem;
+  height: 2px;
+  background: var(--border);
+  margin: 0 0.25rem;
+  margin-bottom: 1.25rem;
+  transition: background 0.3s;
+}
+
+.build-step-line.active {
+  background: var(--accent);
+}
+
+.step-label {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.build-step.active .step-label {
+  color: var(--accent);
+}
+
+.build-progress-status {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+@keyframes stepPulse {
+  0%, 100% { box-shadow: 0 0 4px var(--accent-glow); }
+  50% { box-shadow: 0 0 12px var(--accent-glow), 0 0 20px var(--accent-glow); }
+}
+
+/* ── Sidebar status pulse for building ── */
+.status-building-pulse {
+  animation: statusPulse 1.5s infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .read-only-banner {
@@ -1252,6 +1488,7 @@ function handleNewChat() {
 
   .input-area {
     padding: 0.75rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
   }
 
   .examples button {

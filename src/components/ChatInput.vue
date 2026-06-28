@@ -18,6 +18,14 @@ const inputText = computed({
   set: (val: string) => emit('update:modelValue', val),
 })
 
+const sendTitle = computed(() => {
+  if (!props.isOwner) return '仅仓库所有者可使用'
+  if (props.thinking) return 'AI 思考中...'
+  if (props.building) return '构建中，请稍候...'
+  if (!props.modelValue.trim()) return '请输入内容'
+  return '发送'
+})
+
 function handleSend() {
   if (!props.isOwner || props.thinking || props.building) return
   emit('send')
@@ -34,13 +42,14 @@ function handleSend() {
         :placeholder="thinking ? 'AI 思考中...' : '描述你想构建的应用...'"
         :disabled="thinking || building"
         rows="1"
+        aria-label="输入消息"
         @keydown.enter.exact.prevent="handleSend"
       />
       <button
         @click="handleSend"
         class="send-btn"
         :disabled="!inputText.trim() || thinking || building"
-        title="发送"
+        :title="sendTitle"
       >
         <span v-if="thinking" class="spinner"></span>
         <span v-else>▲</span>

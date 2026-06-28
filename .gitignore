@@ -69,3 +69,4 @@ apps/.gitkeep
 dist/
 playwright-report/
 test-results/
+_docs
