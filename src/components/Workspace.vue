@@ -1207,8 +1207,12 @@ function handleNewChat() {
 .session-title {
   flex: 1;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  line-height: 1.3;
+  word-break: break-word;
 }
 
 .session-app-tag {
