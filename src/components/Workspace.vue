@@ -43,8 +43,15 @@ interface AppGroup {
   sessions: ChatSession[]
   latest: ChatSession
 }
-const appGroups = computed<AppGroup[]>(() => {
-  const appSessions = sessionStore.groupedSessions.app
+
+// 平台会话（open only）
+const platformSessions = computed<ChatSession[]>(() => {
+  return sessionStore.groupedSessions.platform.filter(s => s.status !== 'closed')
+})
+
+// 应用会话聚类（open only）
+const clusteredAppGroups = computed<AppGroup[]>(() => {
+  const appSessions = sessionStore.groupedSessions.app.filter(s => s.status !== 'closed')
   const groups = new Map<string, ChatSession[]>()
   for (const s of appSessions) {
     const name = s.appLabel?.replace('app/', '') || s.title.replace(/^build:\s*/i, '').split(' ')[0] || 'unknown'
@@ -61,16 +68,6 @@ const appGroups = computed<AppGroup[]>(() => {
     .sort((a, b) => new Date(b.latest.updatedAt).getTime() - new Date(a.latest.updatedAt).getTime())
 })
 
-// 最近 24 小时的会话（快捷跳转区）
-const recentSessions = computed<ChatSession[]>(() => {
-  const dayMs = 86400000
-  const now = Date.now()
-  return sessionStore.sortedSessions.filter(s => {
-    const updated = new Date(s.updatedAt).getTime()
-    return now - updated < dayMs && s.status !== 'closed'
-  })
-})
-
 // 搜索过滤：同时搜索标题和 appLabel
 const searchResults = computed<ChatSession[]>(() => {
   const q = sessionSearch.value.trim().toLowerCase()
@@ -81,6 +78,22 @@ const searchResults = computed<ChatSession[]>(() => {
     return title.includes(q) || app.includes(q)
   })
 })
+
+// 会话图标
+function getSessionIcon(session: ChatSession): string {
+  if (session.labels?.includes('platform')) return '🧬'
+  if (session.appLabel) return '📱'
+  return '💬'
+}
+
+// 状态样式类
+function statusClass(session: ChatSession): string {
+  const status = sessionStore.getSessionDisplayStatus(session)
+  if (status === '进行中') return 'status-active'
+  if (status === '等待审查') return 'status-review'
+  if (status === '构建失败' || status === '已停止') return 'status-error'
+  return 'status-closed'
+}
 
 // ─── 分流协议 ───────────────────────────────────────────
 type TriageAction = 'chat' | 'build' | 'platform' | 'clarify'
@@ -630,7 +643,7 @@ function handleNewChat() {
         <button @click="handleNewChat" class="new-chat-btn">+ 新建对话</button>
       </nav>
       <div class="sessions-list" v-if="sessionStore.sortedSessions.length || sessionSearch">
-        <h3>最近对话</h3>
+        <h3>会话</h3>
 
         <!-- 搜索框 -->
         <div class="sidebar-search">
@@ -642,7 +655,7 @@ function handleNewChat() {
           />
         </div>
 
-        <!-- 搜索模式：显示搜索结果 -->
+        <!-- 搜索模式：显示搜索结果（带图标） -->
         <template v-if="sessionSearch.trim()">
           <div class="search-results" v-if="searchResults.length">
             <div
@@ -651,15 +664,13 @@ function handleNewChat() {
               class="session-item"
               :class="{
                 active: sessionStore.activeSession?.issueNumber === session.issueNumber,
-                closed: session.status === 'closed',
-                platform: session.labels?.includes('platform'),
-                app: !!session.appLabel
+                closed: session.status === 'closed'
               }"
               @click="navigateToSession(session)"
             >
-              <span class="session-icon">{{ session.labels?.includes('platform') ? '🧬' : session.appLabel ? '📱' : '💬' }}</span>
+              <span class="session-icon">{{ getSessionIcon(session) }}</span>
               <span class="session-title">{{ session.title }}</span>
-              <span class="session-status">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
+              <span class="session-status" :class="statusClass(session)">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
             </div>
           </div>
           <div v-else class="no-results">未找到匹配的会话</div>
@@ -667,46 +678,26 @@ function handleNewChat() {
 
         <!-- 正常模式：平台 + 应用分组 -->
         <template v-else>
-          <!-- 最近 24h 快捷跳转（仅显示有近期活动的） -->
-          <template v-if="recentSessions.length">
-            <div class="session-group-label recent-label">🕐 最近</div>
-            <div
-              v-for="session in recentSessions"
-              :key="'recent-' + session.issueNumber"
-              class="session-item recent-item"
-              :class="{
-                active: sessionStore.activeSession?.issueNumber === session.issueNumber,
-                platform: session.labels?.includes('platform'),
-                app: !!session.appLabel
-              }"
-              @click="navigateToSession(session)"
-            >
-              <span class="session-icon">{{ session.labels?.includes('platform') ? '🧬' : session.appLabel ? '📱' : '💬' }}</span>
-              <span class="session-title">{{ session.title }}</span>
-              <span class="session-status">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
-            </div>
-          </template>
-
           <!-- 平台会话（open only） -->
-          <template v-if="sessionStore.groupedSessions.platform.filter(s => s.status !== 'closed').length">
+          <template v-if="platformSessions.length">
             <div class="session-group-label">🧬 平台</div>
             <div
-              v-for="session in sessionStore.groupedSessions.platform.filter(s => s.status !== 'closed')"
+              v-for="session in platformSessions"
               :key="session.issueNumber"
               class="session-item"
               :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber }"
               @click="navigateToSession(session)"
             >
               <span class="session-title">{{ session.title }}</span>
-              <span class="session-status">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
+              <span class="session-status" :class="statusClass(session)">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
             </div>
           </template>
 
           <!-- 应用会话：按 app name 聚类，只显示 open -->
-          <template v-if="appGroups.filter(g => g.latest.status !== 'closed').length">
+          <template v-if="clusteredAppGroups.length">
             <div class="session-group-label">📱 我的应用</div>
             <div
-              v-for="group in appGroups.filter(g => g.latest.status !== 'closed')"
+              v-for="group in clusteredAppGroups"
               :key="group.appName"
               class="session-item app-group"
               :class="{ active: sessionStore.activeSession?.issueNumber === group.latest.issueNumber }"
@@ -715,7 +706,7 @@ function handleNewChat() {
               <span class="session-icon">📱</span>
               <span class="session-title">{{ group.appName }}</span>
               <span class="session-count">{{ group.sessions.length }} 次迭代</span>
-              <span class="session-status">{{ sessionStore.getSessionDisplayStatus(group.latest) }}</span>
+              <span class="session-status" :class="statusClass(group.latest)">{{ sessionStore.getSessionDisplayStatus(group.latest) }}</span>
               <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
             </div>
           </template>
@@ -920,6 +911,29 @@ function handleNewChat() {
   font-size: 0.7rem;
   flex-shrink: 0;
   color: var(--text-secondary);
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+}
+
+.status-active {
+  color: var(--success);
+  background: rgba(63, 185, 80, 0.1);
+}
+
+.status-review {
+  color: #d29922;
+  background: rgba(210, 153, 34, 0.1);
+}
+
+.status-error {
+  color: var(--error);
+  background: rgba(248, 81, 73, 0.1);
+}
+
+.status-closed {
+  color: var(--text-secondary);
+  opacity: 0.6;
 }
 
 .session-open-btn {
@@ -942,6 +956,13 @@ function handleNewChat() {
 
 .session-item:hover {
   background: var(--bg-tertiary);
+}
+
+.session-icon {
+  font-size: 0.9rem;
+  width: 1.5rem;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 .session-item.active {
