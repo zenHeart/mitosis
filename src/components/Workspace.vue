@@ -852,6 +852,17 @@ function handleNewChat() {
 .sidebar-header h2 {
   font-size: 1.1rem;
   margin-bottom: 0.75rem;
+  background: linear-gradient(135deg, #58a6ff, #00e5ff, #7c3aed);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: brandShift 8s ease-in-out infinite;
+  background-size: 200% 200%;
+}
+
+@keyframes brandShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }
 
 .user-info {
@@ -1170,6 +1181,12 @@ function handleNewChat() {
   background:
     radial-gradient(ellipse at 50% 30%, rgba(88, 166, 255, 0.04) 0%, transparent 60%),
     var(--bg-primary);
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .welcome {
@@ -1321,6 +1338,18 @@ function handleNewChat() {
   padding: 1rem 1.25rem;
   max-width: 420px;
   width: 100%;
+  animation: buildSlideIn 0.4s ease-out;
+}
+
+@keyframes buildSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .build-progress-steps {
