@@ -184,9 +184,11 @@ function triageMessage(text: string): TriageResult {
     /(?:build|create.*app|make.*app|new app)/i.test(lower) ||
     /^(?:俄罗斯方块|贪吃蛇|snake|tetris|todo|计算器|calculator|俄罗斯|打砖块|breakout|flappy|2048).*$/i.test(text.trim())
 
-  // 简单微调关键词（R2：直接回复，不创建 Issue）
+  // 简单微调 + 优化/改进关键词（R2：直接回复，不创建 Issue）
   const isSimpleTweak =
-    /(?:改.*颜色|改.*字体|改.*大小|调.*大|调.*小|加.*文字|改.*样式|换个.*图标|加.*按钮|改.*背景|字体|颜色|间距|圆角|阴影)/.test(text)
+    /(?:改|优化|改进|调整|调).{0,8}(?:颜色|字体|大小|样式|图标|按钮|背景|间距|圆角|阴影|体验|布局|交互|触控|移动端|动画|性能|速度|响应)/.test(text) ||
+    /(?:改|优化|改进).{0,8}(?:俄罗斯方块|贪吃蛇|snake|tetris|todo|计算器|calculator|打砖块|breakout|flappy|2048|画板|棋盘)/.test(text) ||
+    /(?:字体|颜色|间距|圆角|阴影)/.test(text)
 
   // "继续迭代"关键词
   const isContinue = /(?:继续|上次|迭代|在.*基础上|基于.*继续)/.test(text)
@@ -635,15 +637,30 @@ function extractAppName(input: string): string {
   const exactMatch = knownFullNames.find(name => cleaned === name || cleaned.startsWith(name + ' ') || cleaned.startsWith(name + '-'))
   if (exactMatch) return exactMatch
 
-  // 2. 优先提取中文应用名（俄罗斯方块、snake、tetris 等）
+  // 2. 中文应用名别名映射（已知应用的中文名 → slug，优先于通用正则）
+  const chineseAliases: Record<string, string> = {
+    '俄罗斯方块': 'tetris-game',
+    '贪吃蛇': 'snake-game',
+    '打砖块': 'breakout',
+    'flappy鸟': 'flappy-bird',
+    'flappy': 'flappy-bird',
+    '2048': '2048',
+    '画板': 'paint',
+    '聊天': 'chat-app',
+    '涂鸦': 'doodle',
+  }
+  const aliasMatch = Object.keys(chineseAliases).find(name => cleaned.includes(name))
+  if (aliasMatch) return chineseAliases[aliasMatch]
+
+  // 3. 通用中文名提取（返回原始中文，供后续处理）
   const chineseMatch = cleaned.match(/([一-鿿]+(?:游戏|应用|工具|编辑器|方块|蛇|鸟|棋|牌|世界|模拟器|平台|管家|系统|大战))/)
   if (chineseMatch) return chineseMatch[1]
 
-  // 3. 已知英文应用名精确匹配（在通用正则之前）
+  // 4. 已知英文应用名精确匹配（在通用正则之前）
   const knownEnglishMatch = cleaned.match(/(snake-game|tetris-game|todo-app|breakout|flappy-bird|flappy|paint|chat-app|doodle|pixel-art|2048|pong)/i)
   if (knownEnglishMatch) return knownEnglishMatch[1].toLowerCase()
 
-  // 4. 通用英文 slug 提取
+  // 5. 通用英文 slug 提取
   const slug = cleaned.toLowerCase().replace(/[^a-z0-9一-龥]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
   if (/^-+$/.test(slug)) return 'my-app'
   return slug || 'my-app'

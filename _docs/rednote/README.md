@@ -42,16 +42,49 @@
 
 ---
 
-## 配图 Prompt（供 Step Image API 使用）
+## 配图 Prompt（海报设计专家版 v3）
 
-### 主图 Prompt
-```
-Minimalist tech illustration for "Migratory Bird AI Lab" creativity contest. Central visual: a stylized bird carrying a glowing DNA helix made of code brackets { } and semicolons, flying over a branching tree structure representing a git repository. Three numbered circular badges (1, 2, 3) float beside the bird in a clean vertical step flow. Color palette: deep purple (#6B46C1), electric cyan (#00E5FF), warm coral (#FF6B6B) on a soft dark gradient background. Flat design, no photorealism, clean lines, suitable as a Xiaohongshu post cover. No text overlays.
-```
+### 设计理念
 
-### 备选 Prompt（代码/技术向）
+小红书封面 = 信息图 + 情感共鸣。必须满足：
+- **3秒法则**：用户刷到后 3 秒内理解「这是什么」
+- **文字留白**：上方 1/3 和底部留出安全区给平台文字叠加
+- **色彩锚点**：StepFun 品牌色（紫 #6B46C1 + 青 #00E5FF）作为视觉记忆点
+- **情绪曲线**：从上到下 好奇 → 震撼 → 行动欲
+
+### Prompt v3
 ```
-Abstract generative art representing AI self-bootstrapping: concentric DNA helix spirals transforming into circuit board patterns, with floating code symbols and GitHub branch icons. Monochromatic with purple and cyan accents, dark background, minimalist tech aesthetic, clean composition for social media post.
+A Xiaohongshu-style event poster cover for "Migratory Bird AI Creation Lab" (候鸟AI创造局). Design from a professional poster designer perspective.
+
+COMPOSITION (rule of thirds):
+- TOP 1/3: Large elegant Chinese calligraphy text "候鸟AI创造局" as the hero visual, rendered as glowing neon-light brush strokes in purple-to-cyan gradient, floating against dark background
+- CENTER: A stylized bird silhouette (migratory bird/phoenix) mid-flight, wings spread upward, body formed by flowing code syntax brackets { } and semicolons ; in white/gold, flying through a vertical glowing portal/tunnel effect
+- BOTTOM 1/3: Clean negative space for platform text overlay, with subtle particle effects
+
+COLOR PALETTE (precise, not muddy):
+- Background: Deep indigo (#1a1a2e) to dark purple (#16213e) gradient
+- Primary accent: Electric cyan (#00E5FF) for the bird and code particles
+- Secondary accent: Warm amber/gold (#f59e0b) for the calligraphy text glow
+- Tertiary: Soft purple (#8b5cf6) for atmospheric depth
+
+VISUAL EFFECTS:
+- Dynamic motion blur on the bird wings suggesting speed and upward momentum
+- Code fragments (const, async, function, return) floating upward like fireflies in cyan
+- Subtle lens flare / bloom effect on the text
+- Three small glowing dots arranged vertically on the right side (representing the 3-step process) — minimal, not intrusive
+- Cinematic lighting: rim light on the bird silhouette
+
+STYLE REFERENCES:
+- Blend of Chinese ink art aesthetics with cyberpunk neon lighting
+- Apple event keynote slides — clean, dramatic, premium feel
+- Awwwards Site of the Day quality illustration
+- NO anime eyes, NO cartoon characters, NO emojis
+- NO text other than the main title (let the poster speak visually first)
+
+TECHNICAL:
+- 1024x1024px, portrait aspect ratio
+- High contrast for mobile screen visibility
+- Ensure the center composition leaves safe zones for Xiaohongshu UI overlay
 ```
 
 ---
@@ -59,8 +92,9 @@ Abstract generative art representing AI self-bootstrapping: concentric DNA helix
 ## 发布清单
 
 - [ ] 确认笔记文案符合小红书规范（无敏感词、无外部链接违规）
-- [ ] 配图通过 Step API 生成（使用上方 prompt）
+- [ ] 配图通过 Step API 生成（使用上方 v3 prompt）
 - [ ] 标题以「候鸟AI创造局｜」开头
 - [ ] 话题带 #候鸟AI创造局
 - [ ] 必须 @阶跃星辰开放平台
 - [ ] 附上 demo 链接（mitosis.zenheart.site 或 GitHub 仓库）
+- [ ] 图片保存至 `_docs/rednote/cover-v3.png`
