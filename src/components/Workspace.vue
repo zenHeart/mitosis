@@ -1199,21 +1199,26 @@ function handleNewChat() {
   flex: 1 1 0%;
   min-width: 0;
   overflow: hidden;
+  line-height: 1.3;
+}
+
+/* Chat session titles: 2-line clamp (specific contexts only) */
+.quick-access-item .session-title,
+.session-item:not(.app-group):not(.closed-session-item) .session-title,
+.closed-session-item .session-title {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   line-clamp: 2;
-  line-height: 1.3;
 }
 
-/* App names in "我的应用" section: single-line ellipsis for clarity */
+/* App names in "我的应用" section: single-line ellipsis */
 .session-item.app-group .app-name-title {
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
   min-width: 0;
-  -webkit-line-clamp: 1 !important;
-  line-clamp: 1 !important;
+  display: block;
 }
 
 .session-app-tag {
