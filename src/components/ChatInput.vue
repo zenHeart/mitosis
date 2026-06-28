@@ -117,26 +117,31 @@ function handleSend() {
 }
 
 .send-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
   background: var(--accent);
   border: none;
   color: #fff;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, transform 0.1s;
   flex-shrink: 0;
 }
 
 .send-btn:hover:not(:disabled) {
   opacity: 0.85;
+  transform: translateY(-1px);
+}
+
+.send-btn:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .send-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 

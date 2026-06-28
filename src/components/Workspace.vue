@@ -698,7 +698,10 @@ function handleNewChat() {
     <button class="sidebar-toggle-mobile" @click="sidebarOpen = !sidebarOpen">☰</button>
     <aside class="sidebar" :class="{ open: sidebarOpen }">
       <div class="sidebar-header">
-        <h2>🧬 Mitosis</h2>
+        <div class="sidebar-header-left">
+          <h2>🧬 Mitosis</h2>
+          <button class="sidebar-close-mobile" @click="sidebarOpen = false" title="关闭菜单">✕</button>
+        </div>
         <div class="user-info">
           <img v-if="authStore.user?.avatar_url" :src="authStore.user.avatar_url" class="avatar" />
           <span class="username">{{ authStore.user?.login }}</span>
@@ -935,15 +938,45 @@ function handleNewChat() {
   border-bottom: 1px solid var(--border);
 }
 
+.sidebar-header-left {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
 .sidebar-header h2 {
   font-size: 1.1rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0;
   background: linear-gradient(135deg, #58a6ff, #00e5ff, #7c3aed);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
   animation: brandShift 8s ease-in-out infinite;
   background-size: 200% 200%;
+}
+
+.sidebar-close-mobile {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  line-height: 1;
+  min-width: 32px;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, background 0.2s;
+}
+
+.sidebar-close-mobile:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
 }
 
 @keyframes brandShift {
@@ -976,13 +1009,20 @@ function handleNewChat() {
   background: none;
   border: none;
   color: var(--text-secondary);
-  font-size: 1rem;
-  padding: 0.25rem;
-  transition: color 0.2s;
+  font-size: 1.1rem;
+  padding: 0.4rem;
+  min-width: 36px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: color 0.2s, background 0.2s;
 }
 
 .logout-btn:hover {
   color: var(--error);
+  background: rgba(248, 81, 73, 0.1);
 }
 
 .nav {
@@ -1035,12 +1075,13 @@ function handleNewChat() {
 
 .search-input {
   width: 100%;
-  padding: 0.4rem 0.6rem 0.4rem 1.75rem;
+  padding: 0.5rem 0.75rem 0.5rem 1.75rem;
+  min-height: 36px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-primary);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   outline: none;
   transition: border-color 0.2s;
 }
@@ -1644,6 +1685,10 @@ function handleNewChat() {
     cursor: pointer;
   }
 
+  .sidebar-close-mobile {
+    display: flex;
+  }
+
   .chat-area {
     width: 100%;
   }
@@ -1683,7 +1728,8 @@ function handleNewChat() {
   .session-item,
   .new-chat-btn,
   .logout-btn,
-  .session-open-btn {
+  .session-open-btn,
+  .sidebar-close-mobile {
     min-height: 44px;
   }
 
