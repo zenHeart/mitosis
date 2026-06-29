@@ -257,6 +257,12 @@ rg -q "ACTOR.*REPO_OWNER|comment.user.login.*owner" .github/workflows/mitosis.ym
 | C8.2 | 无 `REAL_TOKEN` + 无外网 + 无真实 CI runner | 配置 `E2E_GH_TOKEN` secret 后触发 `golden-path.yml` |
 | C8.3 / V1-V9 | 无外网访问 `mitosis.zenheart.site` | Owner 在真实浏览器/设备执行后回填 |
 
+**Subagent 评测系统阻塞（3 轮连续失败）：**
+- ❌ `mvp-verifier` + `ux-lead-auditor` 均失败：`claude-sonnet-4-6` 模型不可用（404）
+- 已尝试：3 轮 dispatch，均返回 `model_not_found`；`model: "sonnet"` 参数未生效
+- 根因：子代理系统级模型配置问题，非代码问题
+- 解锁条件：系统管理员配置有效子代理模型
+
 **CI 基础设施已就绪：**
 - ✅ `.github/workflows/mitosis.yml` — owner gate + dedup + verifier 逻辑完整
 - ✅ `.github/workflows/golden-path.yml` — 支持 `REAL_TOKEN` + `REAL_LOGIN` + 每日巡检
