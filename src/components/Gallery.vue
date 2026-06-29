@@ -347,10 +347,10 @@ onMounted(async () => {
   color: var(--text-primary);
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
-  line-clamp: 2;
   line-height: 1.3;
+  word-break: break-word;
 }
 
 .app-version {

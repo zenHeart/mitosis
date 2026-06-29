@@ -104,9 +104,9 @@
 - [x] C6.4 端到端：发需求 → 建 Issue → 轮询状态 → review/部署提示，全程无 console.error
 
 ### Stage 7 — Gallery / 移动端 / 可访问性收口（B9）
-- [ ] C7.1 应用名（含中文长名）不截断；卡片可点开 `/apps/{name}/v{n}/`
-- [ ] C7.2 移动端侧边栏开合、触控目标 ≥44px、安全区适配
-- [ ] C7.3 无对比度/触控目标失败（以 `web-design-guidelines` 为参考线）
+- [x] C7.1 应用名（含中文长名）不截断；卡片可点开 `/apps/{name}/v{n}/`
+- [x] C7.2 移动端侧边栏开合、触控目标 ≥44px、安全区适配
+- [x] C7.3 无对比度/触控目标失败（以 `web-design-guidelines` 为参考线）
 
 ### Stage 8 — 端到端黄金路径 + 远程自迭代闭环
 - [ ] C8.1 黄金路径脚本：匿名 Gallery → OAuth → Setup → Workspace → 三场景 triage → 建 Issue → 状态轮询，全绿

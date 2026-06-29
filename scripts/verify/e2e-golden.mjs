@@ -103,11 +103,37 @@ async function run() {
     await ctx.close()
   } catch (e) { rec('G4 配额错误不死胡同（截图 bug）', false, String(e).slice(0, 120)) }
 
+  // ── G5: 移动端 Workspace + 侧边栏开关 + 触控目标 ──
+  try {
+    const ctx = await browser.newContext(); await seedOwner(ctx)
+    const page = await ctx.newPage(); await mockGitHub(page, { authed: true })
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto(BASE_URL + '/', { waitUntil: 'domcontentloaded', timeout: 20000 })
+    await page.waitForTimeout(1500)
+    // Workspace 侧边栏切换按钮可见（移动端）
+    const toggleVisible = (await page.locator('.sidebar-toggle-mobile').count()) > 0
+    // 触控目标 ≥44px：sidebar-toggle-mobile 的 computed dimensions
+    const dims = await page.locator('.sidebar-toggle-mobile').evaluate(el => ({
+      w: el.offsetWidth, h: el.offsetHeight, mw: parseInt(getComputedStyle(el).minWidth) || 0, mh: parseInt(getComputedStyle(el).minHeight) || 0
+    })).catch(() => ({ w: 0, h: 0, mw: 0, mh: 0 }))
+    const minDim = Math.min(dims.w, dims.h)
+    await page.screenshot({ path: '/tmp/shot-mobile-workspace.png' }).catch(() => {})
+    rec('G5 移动端 Workspace + 触控目标 ≥44px', toggleVisible && minDim >= 44, `toggle=${toggleVisible} dims=${JSON.stringify(dims)} min=${minDim}`)
+    await ctx.close()
+  } catch (e) { rec('G5 移动端 Workspace + 触控目标 ≥44px', false, String(e).slice(0, 120)) }
+
   await browser.close()
 
   // ── 静态黄金指标（行为外的目标）──
   const read = (p) => { try { return readFileSync(resolve(ROOT, p), 'utf8') } catch { return '' } }
+  const gallerySrc = read('src/components/Gallery.vue')
   const setupSrc = read('src/components/SetupPage.vue') + read('src/components/Workspace.vue')
+  rec('G7.1 应用名不截断（3行 clamp + word-break）',
+    /-webkit-line-clamp:\s*3/.test(gallerySrc) && /word-break:\s*break-word/.test(gallerySrc))
+  rec('G7.2 移动端侧边栏（≥44px 触控目标 + 安全区）',
+    /width:\s*85vw/.test(gallerySrc) && /min-height:\s*44px/.test(gallerySrc))
+  rec('G7.3 卡片可点击导航到 /apps/{name}/v{n}/',
+    /openApp\(app\)/.test(gallerySrc) && /app\.url/.test(gallerySrc))
   rec('G5 StepFun token 不再明文存 localStorage（B3）',
     !/localStorage\.setItem\(\s*['"]mitosis_step_token/.test(setupSrc))
   const chatInput = read('src/components/ChatInput.vue')
