@@ -26,7 +26,10 @@ const clarifying = ref(false)
 const clarifyingMsg = ref('')
 const triageLog = ref<string[]>([])
 const pendingBuildContext = ref('')
+const pendingImages = ref<{ dataUrl: string; name: string }[]>([])
 const lastErrorKind = ref<'quota' | 'auth' | 'network' | 'server' | 'unknown' | null>(null)
+const confirmingPlatform = ref(false)
+const confirmingPlatformTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const triageAction = ref<'build' | 'platform' | 'chat' | 'clarify' | 'unknown'>('unknown')
 const sidebarOpen = ref(false)
 const sessionSearch = ref('')
@@ -244,7 +247,7 @@ onMounted(async () => {
     // 恢复未持久化的消息（防止页面刷新丢失）
     sessionStore.restoreMessages()
 
-    stepToken.value = localStorage.getItem('mitosis_step_token') || ''
+    stepToken.value = sessionStorage.getItem('mitosis_step_token') || ''
     const params = new URLSearchParams(window.location.search)
     const refApp = params.get('ref')
     if (refApp) {
@@ -292,6 +295,11 @@ async function handleSend() {
   const text = inputText.value.trim()
   if (!text || building.value || !authStore.token) return
   lastRetryInput.value = text
+  const images = [...pendingImages.value]
+  pendingImages.value = []
+  const imageSuffix = images.length > 0
+    ? `\n\n## 上传图片（${images.length} 张）\n\n用户上传了 ${images.length} 张参考图片，文件名：${images.map(i => i.name).join('、')}。`
+    : ''
 
   // ── /create 命令：直接触发构建，跳过 StepFun ──
   const createCmd = detectCreateCommand(text)
@@ -311,7 +319,7 @@ async function handleSend() {
       createdAt: new Date().toISOString(),
     })
     inputText.value = ''
-    await createBuild(appName, description)
+    await createBuild(appName, description + imageSuffix)
     return
   }
 
@@ -424,7 +432,7 @@ async function handleSend() {
         ? `${previousBuildContext}\n\n## 澄清回答\n\n${text}`
         : text
       pendingBuildContext.value = ''
-      await createBuild(appName, description, triage.basedOn, triage.scenario)
+      await createBuild(appName, description + imageSuffix, triage.basedOn, triage.scenario)
       return
     }
 
@@ -523,6 +531,37 @@ async function handleCreateDirectIssue() {
   const appName = extractAppName(text)
   lastRetryInput.value = ''
   await createBuild(appName, text)
+}
+
+/** 平台构建：开始确认流程 */
+function startConfirmPlatform() {
+  confirmingPlatform.value = true
+  confirmingPlatformTimer.value = setTimeout(() => {
+    confirmingPlatform.value = false
+  }, 5000)
+}
+
+/** 平台构建：确认创建 */
+async function confirmCreatePlatform() {
+  if (confirmingPlatformTimer.value) {
+    clearTimeout(confirmingPlatformTimer.value)
+    confirmingPlatformTimer.value = null
+  }
+  const text = lastRetryInput.value || inputText.value.trim()
+  if (!text || building.value) return
+  confirmingPlatform.value = false
+  lastErrorKind.value = null
+  lastRetryInput.value = ''
+  await createPlatformBuildDirect(text)
+}
+
+/** 平台构建：取消确认 */
+function cancelConfirmPlatform() {
+  confirmingPlatform.value = false
+  if (confirmingPlatformTimer.value) {
+    clearTimeout(confirmingPlatformTimer.value)
+    confirmingPlatformTimer.value = null
+  }
 }
 
 /** 恢复操作：更新 StepFun token */
@@ -1040,6 +1079,25 @@ function handleNewChat() {
           <p class="build-progress-status">{{ buildProgress.label }}</p>
         </div>
       </div>
+      <!-- 错误恢复操作栏 -->
+      <div v-if="lastErrorKind && !thinking && !building" class="recovery-bar">
+        <span class="recovery-label">恢复操作：</span>
+        <button @click="handleRetry" class="recovery-btn retry-btn">🔄 重试</button>
+        <button v-if="lastErrorKind === 'auth'" @click="handleUpdateToken" class="recovery-btn">🔑 更新 Token</button>
+        <template v-if="lastErrorKind === 'quota' || lastErrorKind === 'unknown'">
+          <button
+            v-if="!confirmingPlatform"
+            @click="startConfirmPlatform"
+            class="recovery-btn direct-btn"
+          >📝 创建平台变更任务</button>
+          <template v-else>
+            <span class="recovery-confirm-text">确认创建平台 Issue？</span>
+            <button @click="confirmCreatePlatform" class="recovery-btn confirm-yes">✓ 确认</button>
+            <button @click="cancelConfirmPlatform" class="recovery-btn confirm-no">✕ 取消</button>
+          </template>
+        </template>
+        <button @click="handleCreateDirectIssue" class="recovery-btn direct-btn">📝 直接建应用 Issue</button>
+      </div>
       <!-- 活跃会话的应用导航栏 -->
       <div v-if="sessionStore.activeSession?.appLabel" class="app-nav-bar">
         <span class="app-nav-label">📱 {{ sessionStore.activeSession.appLabel.replace('app/', '') }}</span>
@@ -1051,6 +1109,7 @@ function handleNewChat() {
         :thinking="thinking"
         :building="building"
         @send="handleSend"
+        @images="(files) => { pendingImages = files }"
       />
     </main>
   </div>
@@ -1916,5 +1975,56 @@ function handleNewChat() {
     min-width: 44px;
     min-height: 44px;
   }
+}
+
+/* 错误恢复操作栏 */
+.recovery-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: rgba(255, 170, 0, 0.08);
+  border: 1px solid rgba(255, 170, 0, 0.3);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+.recovery-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-right: 0.25rem;
+}
+.recovery-btn {
+  padding: 0.35rem 0.7rem;
+  min-height: 36px;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.recovery-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.retry-btn {
+  border-color: #58a6ff;
+}
+.direct-btn {
+  border-color: #3fb950;
+}
+.confirm-yes {
+  border-color: #f85149;
+  background: rgba(248, 81, 73, 0.15);
+}
+.confirm-no {
+  border-color: var(--text-secondary);
+}
+.recovery-confirm-text {
+  font-size: 0.8rem;
+  color: #f0883e;
+  font-weight: 600;
 }
 </style>

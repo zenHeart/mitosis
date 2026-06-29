@@ -77,25 +77,25 @@
 - [x] C1.4 网络/5xx 错误自动重试 1 次（指数退避），仍失败再降级
 
 ### Stage 2 — Token 安全（B3）
-- [ ] C2.1 StepFun token 不再以明文存 `localStorage`：改为 `sessionStorage` 或仅内存 + 每会话重新输入（择一，文件内注明取舍）
-- [ ] C2.2 `SetupPage` 不渲染 token 原文进 DOM（用「复制到剪贴板」按钮替代明文展示）
-- [ ] C2.3 安全扫描通过：`scripts/verify/main-pipeline.sh` 校验无 token 明文存储/渲染模式
-- [ ] C2.4 （文档）记录 Worker 代理 StepFun 作为 post-MVP 强化项，不阻塞本目标
+- [x] C2.1 StepFun token 不再以明文存 `localStorage`：改为 `sessionStorage`（与 GitHub token 一致，刷新不丢、关 Tab 清除）
+- [x] C2.2 `SetupPage` 不渲染 token 原文进 DOM（用「复制到剪贴板」按钮替代明文展示）
+- [x] C2.3 安全扫描通过：`scripts/verify/main-pipeline.sh` 校验无 token 明文存储/渲染模式
+- [x] C2.4 （文档）记录 Worker 代理 StepFun 作为 post-MVP 强化项，不阻塞本目标
 
 ### Stage 3 — platform 直连兜底（B2）
-- [ ] C3.1 `platform` 意图在 LLM 不可用时，提供「直接创建平台 Issue」路径（类比 `createBuild`），不依赖 `BUILD_PLATFORM:` 标记
-- [ ] C3.2 UI 给出明确确认（避免误触发平台构建）：一条系统消息 + 一个「创建平台变更任务」按钮/命令
-- [ ] C3.3 截图复现场景「优化 mitosis 支持发送渲染图片」走到底：要么建出 platform Issue，要么明确澄清，**不死胡同**
+- [x] C3.1 `platform` 意图在 LLM 不可用时，提供「直接创建平台 Issue」路径（类比 `createBuild`），不依赖 `BUILD_PLATFORM:` 标记
+- [x] C3.2 UI 给出明确确认（避免误触发平台构建）：一条系统消息 + 一个「创建平台变更任务」按钮/命令
+- [x] C3.3 截图复现场景「优化 mitosis 支持发送渲染图片」走到底：要么建出 platform Issue，要么明确澄清，**不死胡同**
 
 ### Stage 4 — 错误恢复 UX（B4）
-- [ ] C4.1 Workspace 内可更新 StepFun token（无需回 Setup）
-- [ ] C4.2 失败的系统消息内嵌可操作出口：`重试` / `更新 token` / `直接建 Issue`
-- [ ] C4.3 所有 catch 分支不再直接抛原始 `e.message`，统一经错误格式化函数
+- [x] C4.1 Workspace 内可更新 StepFun token（无需回 Setup）
+- [x] C4.2 失败的系统消息内嵌可操作出口：`重试` / `更新 token` / `直接建 Issue`
+- [x] C4.3 所有 catch 分支不再直接抛原始 `e.message`，统一经错误格式化函数
 
 ### Stage 5 — 发送渲染图片（B5）
-- [ ] C5.1 `ChatInput` 支持选择/粘贴图片，前端预览
-- [ ] C5.2 图片随需求进入构建上下文（写入 Issue body，或明确「当前版本以文字描述为准」的优雅降级）
-- [ ] C5.3 图片渲染经过 sanitize；不引入 XSS 向量；不超出 Issue 体积限制时优雅提示
+- [x] C5.1 `ChatInput` 支持选择/粘贴图片，前端预览
+- [x] C5.2 图片随需求进入构建上下文（写入 Issue body，或明确「当前版本以文字描述为准」的优雅降级）
+- [x] C5.3 图片渲染经过 sanitize；不引入 XSS 向量；不超出 Issue 体积限制时优雅提示
 
 ### Stage 6 — Owner 闭环打磨（B8）
 - [ ] C6.1 `buildProgress` 持久化（按 issueNumber），刷新可恢复

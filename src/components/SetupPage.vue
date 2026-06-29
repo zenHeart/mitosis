@@ -18,6 +18,7 @@ const stepToken = ref('')
 const submitting = ref(false)
 const error = ref('')
 const verified = ref(false)
+const copied = ref(false)
 const isRepoOwner = ref<boolean | null>(null)
 const checkingRepo = ref(true)
 const repoOwner = computed(() => authStore.user?.login || props.userName || 'zenHeart')
@@ -63,7 +64,7 @@ async function handleSubmit() {
 
     verified.value = true
     if (typeof window !== 'undefined') {
-      localStorage.setItem('mitosis_step_token', stepToken.value)
+      sessionStorage.setItem('mitosis_step_token', stepToken.value)
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : '验证失败'
@@ -74,6 +75,18 @@ async function handleSubmit() {
 
 function handleConfirm() {
   emit('complete')
+}
+
+async function copyToken() {
+  if (!stepToken.value) return
+  try {
+    await navigator.clipboard.writeText(stepToken.value)
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 2000)
+  } catch {
+    // clipboard API 不可用时降级为选中输入框
+    error.value = '无法自动复制，请手动选中 Token 复制'
+  }
 }
 </script>
 
@@ -195,7 +208,9 @@ function handleConfirm() {
               <p>点击 <strong>"New repository secret"</strong>，添加：</p>
               <div class="secret-item">
                 <span class="secret-key">STEP_TOKEN</span>
-                <span class="secret-val">{{ stepToken }}</span>
+                <button class="copy-btn" @click="copyToken" :title="copied ? '已复制到剪贴板' : '点击复制 Token'">
+                  {{ copied ? '✅ 已复制' : '📋 复制 Token' }}
+                </button>
               </div>
             </div>
           </div>

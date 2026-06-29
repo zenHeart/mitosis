@@ -34,7 +34,7 @@ async function seedOwner(ctx) {
     sessionStorage.setItem('mitosis_token', real ? tok : 'test_token_direct')
     sessionStorage.setItem('mitosis_user', JSON.stringify(u))
     localStorage.setItem('mitosis_setup_complete', 'true')
-    if (!real) localStorage.setItem('mitosis_step_token', 'sk-dummy-quota-test')
+    if (!real) sessionStorage.setItem('mitosis_step_token', 'sk-dummy-quota-test')
   }, [OWNER, REAL, process.env.REAL_TOKEN || ''])
 }
 async function mockGitHub(page, { authed }) {

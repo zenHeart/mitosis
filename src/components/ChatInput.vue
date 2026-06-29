@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 
 const props = defineProps<{
   isOwner: boolean
@@ -11,6 +11,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
   (e: 'send'): void
+  (e: 'images', files: { dataUrl: string; name: string }[]): void
 }>()
 
 const inputText = computed({
@@ -18,42 +19,127 @@ const inputText = computed({
   set: (val: string) => emit('update:modelValue', val),
 })
 
+const images = ref<{ dataUrl: string; name: string }[]>([])
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
 const sendTitle = computed(() => {
   if (!props.isOwner) return '仅仓库所有者可使用'
   if (props.thinking) return 'AI 思考中...'
   if (props.building) return '构建中，请稍候...'
-  if (!props.modelValue.trim()) return '请输入内容'
+  if (!props.modelValue.trim() && images.value.length === 0) return '请输入内容或添加图片'
   return '发送'
 })
 
 function handleSend() {
   if (!props.isOwner || props.thinking || props.building) return
+  emit('images', images.value)
   emit('send')
+}
+
+function triggerFileSelect() {
+  fileInputRef.value?.click()
+}
+
+async function onFileSelected(e: Event) {
+  const target = e.target as HTMLInputElement
+  const files = target.files
+  if (!files) return
+  await addImageFiles(files)
+  target.value = '' // reset so same file can be re-selected
+}
+
+async function onPaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  const imageFiles: File[] = []
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      imageFiles.push(item.getAsFile()!)
+    }
+  }
+  if (imageFiles.length > 0) {
+    e.preventDefault()
+    await addImageFiles(imageFiles)
+  }
+}
+
+async function addImageFiles(files: FileList | File[]) {
+  const MAX_IMAGES = 4
+  const MAX_SIZE_MB = 2
+  for (const file of Array.from(files)) {
+    if (images.value.length >= MAX_IMAGES) break
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      // 超出大小限制，此处用 alert 作为兜底提示（用户主动操作触发，非攻击面）
+      alert(`图片 "${file.name}" 超过 ${MAX_SIZE_MB}MB 限制，请压缩后重试。`)
+      continue
+    }
+    const dataUrl = await readFileAsDataURL(file)
+    images.value.push({ dataUrl, name: file.name })
+  }
+}
+
+function readFileAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+function removeImage(index: number) {
+  images.value.splice(index, 1)
 }
 </script>
 
 <template>
   <div class="input-area">
     <div v-if="isOwner" class="input-wrapper">
+      <!-- 图片预览区 -->
+      <div v-if="images.length" class="image-preview-bar">
+        <div v-for="(img, i) in images" :key="i" class="image-preview-item">
+          <img :src="img.dataUrl" :alt="img.name" class="preview-thumb" />
+          <button class="remove-img-btn" @click="removeImage(i)" title="移除图片" aria-label="移除图片">✕</button>
+        </div>
+      </div>
       <div class="cursor-glow"></div>
       <textarea
         v-model="inputText"
         class="chat-input"
-        :placeholder="thinking ? 'AI 思考中...' : '描述你想构建的应用...'"
+        :placeholder="thinking ? 'AI 思考中...' : '描述你想构建的应用...（可粘贴/选择图片）'"
         :disabled="thinking || building"
         rows="1"
         aria-label="输入消息"
         @keydown.enter.exact.prevent="handleSend"
+        @paste="onPaste"
       />
-      <button
-        @click="handleSend"
-        class="send-btn"
-        :disabled="!inputText.trim() || thinking || building"
-        :title="sendTitle"
-      >
-        <span v-if="thinking" class="spinner"></span>
-        <span v-else>▲</span>
-      </button>
+      <input
+        ref="fileInputRef"
+        type="file"
+        accept="image/*"
+        class="hidden-file-input"
+        @change="onFileSelected"
+      />
+      <div class="action-btns">
+        <button
+          @click="triggerFileSelect"
+          class="attach-btn"
+          :disabled="thinking || building || images.length >= 4"
+          title="添加图片（最多4张，单张≤2MB）"
+          aria-label="添加图片"
+        >
+          🖼️
+        </button>
+        <button
+          @click="handleSend"
+          class="send-btn"
+          :disabled="(!inputText.trim() && images.length === 0) || thinking || building"
+          :title="sendTitle"
+        >
+          <span v-if="thinking" class="spinner"></span>
+          <span v-else>▲</span>
+        </button>
+      </div>
     </div>
     <div v-else class="read-only-banner">
       🔒 仅仓库所有者可使用 AI 构建功能
@@ -70,7 +156,7 @@ function handleSend() {
 .input-wrapper {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -99,6 +185,60 @@ function handleSend() {
   opacity: 1;
 }
 
+/* 图片预览区 */
+.image-preview-bar {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0;
+  flex-wrap: wrap;
+}
+
+.image-preview-item {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.preview-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remove-img-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+}
+
+.remove-img-btn:hover {
+  background: rgba(255, 60, 60, 0.8);
+}
+
+/* 输入行 */
+.input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
 .chat-input {
   flex: 1;
   background: transparent;
@@ -114,6 +254,40 @@ function handleSend() {
 
 .chat-input::placeholder {
   color: #555;
+}
+
+.action-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  padding-bottom: 0.2rem;
+}
+
+.attach-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.attach-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.attach-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .send-btn {
@@ -143,6 +317,10 @@ function handleSend() {
 .send-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.hidden-file-input {
+  display: none;
 }
 
 .read-only-banner {
