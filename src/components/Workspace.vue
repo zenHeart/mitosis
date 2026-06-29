@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useSessionStore } from '../stores/session'
 import { usePolling } from '../composables/usePolling'
-import { chatWithStepFun } from '../composables/useStepFun'
+import { chatWithStepFun, formatStepFunError } from '../composables/useStepFun'
 import { getSystemPrompt } from '../composables/useSystemPrompts'
 import { sanitize } from '../composables/useSanitize'
 import { detectCreateCommand, detectStatusCommand, detectStopCommand, detectStartCommand } from '../composables/useMockGitHub'
@@ -26,6 +26,8 @@ const clarifying = ref(false)
 const clarifyingMsg = ref('')
 const triageLog = ref<string[]>([])
 const pendingBuildContext = ref('')
+const lastErrorKind = ref<'quota' | 'auth' | 'network' | 'server' | 'unknown' | null>(null)
+const triageAction = ref<'build' | 'platform' | 'chat' | 'clarify' | 'unknown'>('unknown')
 const sidebarOpen = ref(false)
 const sessionSearch = ref('')
 
@@ -289,6 +291,7 @@ async function handleSend() {
   if (sessionStore.activeSession?.status === 'closed') return
   const text = inputText.value.trim()
   if (!text || building.value || !authStore.token) return
+  lastRetryInput.value = text
 
   // ── /create 命令：直接触发构建，跳过 StepFun ──
   const createCmd = detectCreateCommand(text)
@@ -428,6 +431,7 @@ async function handleSend() {
     // R4/R5 platform + R1/R2 chat：调用 StepFun 生成回复
     const history = getConversationHistory()
     const systemPrompt = getSystemPrompt(triage, authStore.user?.login)
+    triageAction.value = triage.action
 
     const response = await chatWithStepFun(stepToken.value, history, { system: systemPrompt })
     const trimmed = response.trim()
@@ -453,9 +457,46 @@ async function handleSend() {
     }
     // chat (R1/R2): 直接回复，无需进一步操作
   } catch (e) {
+    const formatted = formatStepFunError(e)
+    lastErrorKind.value = formatted.kind
+
+    // LLM 失败时：platform/build 自动降级为直连创建，chat 给出可读提示
+    let fallbackContent: string
+    if (triageAction.value === 'platform') {
+      // platform 降级：自动创建平台 Issue
+      try {
+        const issue = await createPlatformBuildDirect(text)
+        if (issue) {
+          fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n⚠️ AI 暂时无法回复，但已为你直接创建了平台构建任务 #${issue.number}。\nCI 将自动构建。\n查看: https://github.com/${repo.value}/issues/${issue.number}`
+          lastErrorKind.value = null
+        } else {
+          fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n💡 ${formatted.suggestion}`
+        }
+      } catch {
+        fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n💡 ${formatted.suggestion}`
+      }
+    } else if (triageAction.value === 'build') {
+      // build 降级：自动创建构建 Issue
+      try {
+        const appName = extractAppName(text)
+        const issue = await createBuild(appName, text)
+        if (issue) {
+          fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n⚠️ AI 暂时无法回复，但已为你直接创建了构建任务 #${issue.number}。\nCI 将自动构建。`
+          lastErrorKind.value = null
+        } else {
+          fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n💡 ${formatted.suggestion}`
+        }
+      } catch {
+        fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n💡 ${formatted.suggestion}`
+      }
+    } else {
+      // chat 降级：不阻断，提示用户可直接建任务
+      fallbackContent = `⚠️ 我暂时无法生成回复（${formatted.detail}），但你可以直接让我建任务。\n\n试试说：\n- 「帮我做一个 todo 应用」\n- 「优化 tetris-game 的计分系统」\n- 「优化 Mitosis 平台本身」\n\n💡 ${formatted.suggestion}`
+    }
+
     sessionStore.addMessage({
       role: 'system',
-      content: `❌ 请求失败: ${e instanceof Error ? e.message : '未知错误'}`,
+      content: fallbackContent,
       createdAt: new Date().toISOString(),
     })
   } finally {
@@ -463,14 +504,43 @@ async function handleSend() {
   }
 }
 
-async function createBuild(appName: string, description: string, basedOn?: string, scenario?: 'platform' | 'app_create' | 'app_iterate') {
-  if (building.value || !authStore.token || !isOwner.value) return
+/** 恢复操作：重试最后一条消息 */
+const lastRetryInput = ref('')
+async function handleRetry() {
+  const text = lastRetryInput.value || inputText.value.trim()
+  if (!text) return
+  lastErrorKind.value = null
+  inputText.value = text
+  lastRetryInput.value = ''
+  await handleSend()
+}
+
+/** 恢复操作：直接创建构建 Issue（绕过 LLM） */
+async function handleCreateDirectIssue() {
+  const text = lastRetryInput.value || inputText.value.trim()
+  if (!text || building.value) return
+  lastErrorKind.value = null
+  const appName = extractAppName(text)
+  lastRetryInput.value = ''
+  await createBuild(appName, text)
+}
+
+/** 恢复操作：更新 StepFun token */
+function handleUpdateToken() {
+  lastErrorKind.value = null
+  // 导航到 Setup 页面（如果路由支持）
+  if (typeof window !== 'undefined') {
+    window.location.hash = '#setup'
+  }
+}
+
+async function createBuild(appName: string, description: string, basedOn?: string, scenario?: 'platform' | 'app_create' | 'app_iterate'): Promise<BuildIssue | null> {
+  if (building.value || !authStore.token || !isOwner.value) return null
 
   building.value = true
   activeIssue.value = null
   buildProgress.value = { step: 0, label: '分析需求...' }
   const version = basedOn ? 'v1' : 'v0'
-  // scenario 优先于 basedOn 推断标签
   const effectiveScenario = scenario || (basedOn ? 'app_iterate' : 'app_create')
   const labels = effectiveScenario === 'app_iterate' ? [`app/${appName}`, 'update'] : [`app/${appName}`]
   const basedOnLine = basedOn ? `\n- 基于: ${basedOn}` : ''
@@ -487,6 +557,9 @@ async function createBuild(appName: string, description: string, basedOn?: strin
     })
 
     start(issue.number, () => getIssue(token, repo.value, issue.number), onIssueUpdate)
+    // 刷新会话列表
+    await sessionStore.loadSessions(authStore.token!, repo.value)
+    return issue
   } catch (e) {
     const err = e instanceof Error ? e : new Error('未知错误')
     const statusMatch = err.message.match(/(\d{3})/)
@@ -506,9 +579,8 @@ async function createBuild(appName: string, description: string, basedOn?: strin
       createdAt: new Date().toISOString(),
     })
     building.value = false
+    return null
   }
-  // 刷新会话列表（新创建的 Issue 需要重新加载）
-  await sessionStore.loadSessions(authStore.token!, repo.value)
 }
 
 // 平台变更直接构建（模型判断可执行时触发）
@@ -531,6 +603,7 @@ async function createPlatformBuild(originalText: string, description: string) {
     })
 
     start(issue.number, () => getIssue(token, repo.value, issue.number), onIssueUpdate)
+    await sessionStore.loadSessions(authStore.token!, repo.value)
   } catch (e) {
     const err = e instanceof Error ? e : new Error('未知错误')
     const statusMatch = err.message.match(/(\d{3})/)
@@ -550,8 +623,50 @@ async function createPlatformBuild(originalText: string, description: string) {
     })
     building.value = false
   }
-  // 刷新会话列表
-  await sessionStore.loadSessions(authStore.token!, repo.value)
+}
+
+// 平台变更直接构建（不依赖 LLM，兜底路径）
+async function createPlatformBuildDirect(originalText: string): Promise<BuildIssue | null> {
+  if (building.value || !authStore.token || !isOwner.value) return null
+
+  building.value = true
+  activeIssue.value = null
+  const title = `platform: ${originalText.slice(0, 60)}${originalText.length > 60 ? '…' : ''}`
+  const body = `## 需求描述\n\n${originalText}\n\n## 构建信息\n\n- 触发方式: Web 界面（LLM 不可用，直连兜底）`
+
+  try {
+    const token = authStore.token!
+    const issue = await createIssue(token, repo.value, title, body, ['platform'])
+
+    sessionStore.addMessage({
+      role: 'system',
+      content: `🔨 已直接创建平台构建任务 #${issue.number}，CI 将自动构建。\n查看: https://github.com/${repo.value}/issues/${issue.number}`,
+      createdAt: new Date().toISOString(),
+    })
+
+    start(issue.number, () => getIssue(token, repo.value, issue.number), onIssueUpdate)
+    await sessionStore.loadSessions(authStore.token!, repo.value)
+    return issue
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error('未知错误')
+    const statusMatch = err.message.match(/(\d{3})/)
+    const status = statusMatch?.[1]
+    const repoFull = repo.value
+    const encodedBody = encodeURIComponent(`## 需求描述\n\n${originalText}\n\n## 构建信息\n\n- 触发方式: Web 界面（LLM 不可用，直连兜底）`)
+    const fallbackUrl = `https://github.com/${repoFull}/issues/new?title=${encodeURIComponent(title)}&body=${encodedBody}&labels=platform`
+
+    const fallbackMsg = status === '403'
+      ? `⚠️ 当前 Token 无仓库写入权限（403），无法自动创建平台构建任务。\n\n请点击下方链接手动创建：\n[在 GitHub 上创建 Issue](${fallbackUrl})`
+      : `❌ 创建平台构建失败: ${err.message}`
+
+    sessionStore.addMessage({
+      role: 'system',
+      content: fallbackMsg,
+      createdAt: new Date().toISOString(),
+    })
+    building.value = false
+    return null
+  }
 }
 
 async function onIssueUpdate(issue: BuildIssue) {
@@ -886,6 +1001,13 @@ function handleNewChat() {
         >
           <div class="message-content" v-html="sanitize(msg.text)"></div>
           <div class="message-time">{{ msg.time }}</div>
+        </div>
+        <!-- 错误恢复操作栏 -->
+        <div v-if="lastErrorKind && !thinking && !building" class="recovery-bar">
+          <span class="recovery-label">恢复操作：</span>
+          <button @click="handleRetry" class="recovery-btn retry-btn">🔄 重试</button>
+          <button v-if="lastErrorKind === 'auth'" @click="handleUpdateToken" class="recovery-btn">🔑 更新 Token</button>
+          <button @click="handleCreateDirectIssue" class="recovery-btn direct-btn">📝 直接建 Issue</button>
         </div>
         <div v-if="thinking" class="message system">
           <div class="typing-indicator">
@@ -1487,6 +1609,45 @@ function handleNewChat() {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
+}
+
+/* 错误恢复操作栏 */
+.recovery-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: rgba(255, 170, 0, 0.08);
+  border: 1px solid rgba(255, 170, 0, 0.3);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+.recovery-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-right: 0.25rem;
+}
+.recovery-btn {
+  padding: 0.35rem 0.7rem;
+  min-height: 36px;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.recovery-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.retry-btn {
+  border-color: #58a6ff;
+}
+.direct-btn {
+  border-color: #3fb950;
 }
 
 .message-content {

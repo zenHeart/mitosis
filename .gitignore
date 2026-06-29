@@ -2,7 +2,7 @@
 .claude/.goal-verdict
 .claude/verification-report.txt
 .claude/settings.local.json
-settings.local.json
+*.local.json
 .env.local
 
 # Dependencies

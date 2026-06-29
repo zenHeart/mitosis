@@ -1,0 +1,38 @@
+name: Golden Path (remote E2E)
+
+# 远程黄金路径验证：在 GitHub runner 上（有外网 + 可注入 secret）用真实 Chromium
+# 驱动已部署站点，验证 MVP 黄金指标。本地沙箱无外网，故远程验证放在 CI。
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 目标站点
+        default: https://mitosis.zenheart.site
+        required: false
+  schedule:
+    - cron: '0 18 * * *' # 每日巡检
+
+jobs:
+  golden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run golden-path against deployed site
+        env:
+          BASE_URL: ${{ github.event.inputs.base_url || 'https://mitosis.zenheart.site' }}
+          # 真实登录态（可选）：在仓库 Secrets 配置 E2E_GH_TOKEN（read:user repo）后启用
+          REAL_TOKEN: ${{ secrets.E2E_GH_TOKEN }}
+          REAL_LOGIN: ${{ github.repository_owner }}
+        run: node scripts/verify/e2e-golden.mjs
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-screenshots
+          path: /tmp/shot-*.png
+          if-no-files-found: ignore

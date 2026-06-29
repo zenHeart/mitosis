@@ -257,6 +257,16 @@ jobs:
                 fi
 
                 echo "Security verifier PASSED"
+
+                echo "Running main-pipeline.sh..."
+                PIPELINE_OUTPUT=$(RUN_BUILD=1 bash scripts/verify/main-pipeline.sh 2>&1)
+                PIPELINE_EXIT=$?
+                echo "$PIPELINE_OUTPUT"
+                if echo "$PIPELINE_OUTPUT" | grep -q "MAIN_PIPELINE: FAIL"; then
+                  FEEDBACK=$(printf "Main pipeline verifier failed:\n%s" "$PIPELINE_OUTPUT")
+                  continue
+                fi
+
                 PASSED=1
                 break
               fi
