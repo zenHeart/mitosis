@@ -110,8 +110,10 @@
 
 ### Stage 8 — 端到端黄金路径 + 远程自迭代闭环
 - [x] C8.1 黄金路径脚本：匿名 Gallery → OAuth → Setup → Workspace → 三场景 triage → 建 Issue → 状态轮询，全绿
-- [ ] C8.2 远程演练：发一条引用本 backlog 的 `platform` Issue，CI 上 StepFun agent 完成一个 criteria 并产出 draft PR，verifier PASS
-- [ ] C8.3 本文件「需人工协助的实时验证清单」（第 7 节）全部勾选
+- [SKIP] C8.2 远程演练：发一条引用本 backlog 的 `platform` Issue，CI 上 StepFun agent 完成一个 criteria 并产出 draft PR，verifier PASS
+  > 阻塞原因：需要 `REAL_TOKEN`（GitHub token with repo scope）+ 外网 + 真实 CI runner。沙箱无有效 GitHub token、无外网访问。CI 基础设施已就绪（`mitosis.yml` + `golden-path.yml`），配置 `E2E_GH_TOKEN` secret 后可在 GitHub 上触发验证。
+- [SKIP] C8.3 本文件「需人工协助的实时验证清单」（第 7 节）全部勾选
+  > 阻塞原因：需要真实浏览器访问 `https://mitosis.zenheart.site`，沙箱无外网。Playwright 本地测试（localhost:5173）全部通过，但线上 OAuth/部署应用验证需 Owner 在真实设备执行。
 
 ---
 
@@ -243,6 +245,27 @@ rg -q "ACTOR.*REPO_OWNER|comment.user.login.*owner" .github/workflows/mitosis.ym
 - [ ] V7 刷新页面 → 构建进度/会话消息不丢、不串
 - [ ] V8 移动端（≤640px）→ 侧边栏开合正常，触控目标够大，无横向溢出
 - [ ] V9 远程：发一条 `platform` Issue 触发 CI → StepFun agent 跑通 → 产出 draft PR → verifier PASS
+
+---
+
+## 7. 阻塞项汇总（需外部资源解锁）
+
+> 以下项目因沙箱环境限制无法完成，已在对应项标记 `[SKIP]` 并记录根因。
+
+| 项 | 阻塞原因 | 解锁条件 |
+|----|----------|----------|
+| C8.2 | 无 `REAL_TOKEN` + 无外网 + 无真实 CI runner | 配置 `E2E_GH_TOKEN` secret 后触发 `golden-path.yml` |
+| C8.3 / V1-V9 | 无外网访问 `mitosis.zenheart.site` | Owner 在真实浏览器/设备执行后回填 |
+
+**CI 基础设施已就绪：**
+- ✅ `.github/workflows/mitosis.yml` — owner gate + dedup + verifier 逻辑完整
+- ✅ `.github/workflows/golden-path.yml` — 支持 `REAL_TOKEN` + `REAL_LOGIN` + 每日巡检
+- ✅ `scripts/verify/e2e-golden.mjs` — 9 项检查，GOLDEN: PASS (localhost)
+
+**Subagent 评测阻塞：**
+- ❌ `mvp-verifier` + `ux-lead-auditor` 均失败：`claude-sonnet-4-6` 模型不可用（404）
+- 根因：系统级模型配置问题，非代码问题
+- 解锁条件：系统管理员配置有效子代理模型（`claude-sonnet-4-5` / `claude-opus-4` / `claude-fable-5`）
 
 ---
 
