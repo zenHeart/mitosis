@@ -125,9 +125,13 @@ export const useSessionStore = defineStore('session', {
     },
 
     // ── 消息持久化（pre-issue 创建期间，防止刷新丢失） ──
+    _messagesKey(issueNumber?: number): string {
+      return issueNumber ? `mitosis_messages_${issueNumber}` : 'mitosis_messages_pre'
+    },
+
     _persistMessage(message: Message): void {
       try {
-        const key = 'mitosis_messages_cache' // Pinia action properties become getters; use literal
+        const key = this._messagesKey(this.activeSession?.issueNumber)
         const existing: Message[] = (() => {
           try {
             const raw = localStorage.getItem(key)
@@ -143,9 +147,10 @@ export const useSessionStore = defineStore('session', {
       }
     },
 
-    restoreMessages(): Message[] {
+    restoreMessages(issueNumber?: number): Message[] {
       try {
-        const raw = localStorage.getItem('mitosis_messages_cache')
+        const key = this._messagesKey(issueNumber)
+        const raw = localStorage.getItem(key)
         if (!raw) return []
         const parsed = JSON.parse(raw)
         if (!Array.isArray(parsed)) return []
@@ -156,10 +161,11 @@ export const useSessionStore = defineStore('session', {
       }
     },
 
-    clearMessages(): void {
+    clearMessages(issueNumber?: number): void {
       this.messages = []
       try {
-        localStorage.removeItem('mitosis_messages_cache')
+        const key = this._messagesKey(issueNumber)
+        localStorage.removeItem(key)
       } catch {
         // ignore
       }
@@ -230,6 +236,9 @@ export const useSessionStore = defineStore('session', {
       this.activeSession = session
       if (!session) {
         this.messages = []
+      } else {
+        // 恢复该会话的本地消息缓存
+        this.restoreMessages(session.issueNumber)
       }
     },
 

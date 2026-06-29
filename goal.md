@@ -98,10 +98,10 @@
 - [x] C5.3 图片渲染经过 sanitize；不引入 XSS 向量；不超出 Issue 体积限制时优雅提示
 
 ### Stage 6 — Owner 闭环打磨（B8）
-- [ ] C6.1 `buildProgress` 持久化（按 issueNumber），刷新可恢复
-- [ ] C6.2 消息缓存按 `session/issueNumber` 隔离，切会话不串
-- [ ] C6.3 侧边栏状态与 Issue label 实时一致（building/verifying/review/failed/closed）
-- [ ] C6.4 端到端：发需求 → 建 Issue → 轮询状态 → review/部署提示，全程无 console.error
+- [x] C6.1 `buildProgress` 持久化（按 issueNumber），刷新可恢复
+- [x] C6.2 消息缓存按 `session/issueNumber` 隔离，切会话不串
+- [x] C6.3 侧边栏状态与 Issue label 实时一致（building/verifying/review/failed/closed）
+- [x] C6.4 端到端：发需求 → 建 Issue → 轮询状态 → review/部署提示，全程无 console.error
 
 ### Stage 7 — Gallery / 移动端 / 可访问性收口（B9）
 - [ ] C7.1 应用名（含中文长名）不截断；卡片可点开 `/apps/{name}/v{n}/`

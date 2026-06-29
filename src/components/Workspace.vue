@@ -34,6 +34,14 @@ const triageAction = ref<'build' | 'platform' | 'chat' | 'clarify' | 'unknown'>(
 const sidebarOpen = ref(false)
 const sessionSearch = ref('')
 
+// 恢复持久化的构建进度
+onMounted(() => {
+  const restored = restoreBuildProgress()
+  if (restored) {
+    buildProgress.value = restored
+  }
+})
+
 // Map store messages to template shape
 const displayMessages = computed(() =>
   sessionStore.messages.map(m => ({
@@ -147,6 +155,36 @@ function statusClass(session: ChatSession): string {
   return 'status-closed'
 }
 
+// ─── 构建进度持久化 ───────────────────────────────────────
+const BP_STORAGE_PREFIX = 'mitosis_build_progress_'
+
+function persistBuildProgress(progress: { step: number; label: string; issueNumber?: number } | null) {
+  if (typeof window === 'undefined') return
+  if (progress?.issueNumber) {
+    sessionStorage.setItem(`${BP_STORAGE_PREFIX}${progress.issueNumber}`, JSON.stringify(progress))
+  }
+}
+
+function clearBuildProgress(issueNumber?: number) {
+  if (typeof window === 'undefined') return
+  if (issueNumber) {
+    sessionStorage.removeItem(`${BP_STORAGE_PREFIX}${issueNumber}`)
+  }
+}
+
+function restoreBuildProgress(): { step: number; label: string; issueNumber: number } | null {
+  if (typeof window === 'undefined') return null
+  const active = sessionStore.activeSession
+  if (!active?.issueNumber) return null
+  const raw = sessionStorage.getItem(`${BP_STORAGE_PREFIX}${active.issueNumber}`)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
 // ─── 分流协议 ───────────────────────────────────────────
 type TriageAction = 'chat' | 'build' | 'platform' | 'clarify'
 
@@ -245,7 +283,7 @@ const isOwner = computed(() => !!authStore.user?.login && authStore.setupComplet
 onMounted(async () => {
   if (typeof window !== 'undefined') {
     // 恢复未持久化的消息（防止页面刷新丢失）
-    sessionStore.restoreMessages()
+    sessionStore.restoreMessages(sessionStore.activeSession?.issueNumber)
 
     stepToken.value = sessionStorage.getItem('mitosis_step_token') || ''
     const params = new URLSearchParams(window.location.search)
@@ -579,6 +617,7 @@ async function createBuild(appName: string, description: string, basedOn?: strin
   building.value = true
   activeIssue.value = null
   buildProgress.value = { step: 0, label: '分析需求...' }
+  persistBuildProgress(buildProgress.value)
   const version = basedOn ? 'v1' : 'v0'
   const effectiveScenario = scenario || (basedOn ? 'app_iterate' : 'app_create')
   const labels = effectiveScenario === 'app_iterate' ? [`app/${appName}`, 'update'] : [`app/${appName}`]
@@ -711,6 +750,13 @@ async function createPlatformBuildDirect(originalText: string): Promise<BuildIss
 async function onIssueUpdate(issue: BuildIssue) {
   const previousLabels = new Set(activeIssue.value?.labels.map(label => label.name) || [])
   activeIssue.value = issue
+  // 同步更新 session store 中的 labels，使侧边栏状态实时一致（C6.3）
+  const session = sessionStore.sessions.find(s => s.issueNumber === issue.number)
+  if (session) {
+    session.labels = issue.labels.map(l => l.name)
+    session.updatedAt = new Date().toISOString()
+    sessionStore._writeCache(sessionStore.sessions)
+  }
   const labels = new Set(issue.labels.map(label => label.name))
   const appName = extractAppNameFromIssue(issue)
   // 从 apps 目录获取真实最新版本（不依赖 issue 标题）
@@ -721,6 +767,7 @@ async function onIssueUpdate(issue: BuildIssue) {
 
   if (labels.has('status:review')) {
     buildProgress.value = { step: 3, label: '等待审查', issueNumber: issue.number }
+    persistBuildProgress(buildProgress.value)
     sessionStore.addMessage({
       role: 'system',
       content: `✅ ${appName} ${version} 已通过自动验证，等待人工审查。\n[前往 GitHub 审查](${issueUrl})\n合入 master 后访问: ${appUrl}`,
@@ -733,6 +780,7 @@ async function onIssueUpdate(issue: BuildIssue) {
 
   if (labels.has('status:failed')) {
     buildProgress.value = { step: -1, label: '构建失败', issueNumber: issue.number }
+    persistBuildProgress(buildProgress.value)
     sessionStore.addMessage({
       role: 'system',
       content: `❌ ${appName} ${version} 自动验证失败，请查看 [Issue #${issue.number}](${issueUrl}) 和 Actions 日志。`,
@@ -745,6 +793,7 @@ async function onIssueUpdate(issue: BuildIssue) {
 
   if (labels.has('status:verifying') && !previousLabels.has('status:verifying')) {
     buildProgress.value = { step: 2, label: '验证中', issueNumber: issue.number }
+    persistBuildProgress(buildProgress.value)
     sessionStore.addMessage({
       role: 'system',
       content: `🔎 正在验证 ${appName} ${version}... ([Issue #${issue.number}](${issueUrl}))`,
@@ -755,6 +804,7 @@ async function onIssueUpdate(issue: BuildIssue) {
 
   if (labels.has('status:building') && !previousLabels.has('status:building')) {
     buildProgress.value = { step: 1, label: '构建中', issueNumber: issue.number }
+    persistBuildProgress(buildProgress.value)
     sessionStore.addMessage({
       role: 'system',
       content: `🔨 正在构建 ${appName} ${version}... ([Issue #${issue.number}](${issueUrl}))`,
@@ -765,6 +815,7 @@ async function onIssueUpdate(issue: BuildIssue) {
 
   if (issue.state === 'closed') {
     buildProgress.value = { step: 4, label: '已完成', issueNumber: issue.number }
+    persistBuildProgress(buildProgress.value)
     sessionStore.addMessage({
       role: 'system',
       content: `Issue #${issue.number} 已关闭。应用版本路径: ${appUrl}`,
@@ -849,10 +900,12 @@ async function openAppSession(session: ChatSession) {
 
 function handleNewChat() {
   stopAll()
+  const prevIssueNumber = activeIssue.value?.number
   sessionStore.setActiveSession(null)
-  sessionStore.clearMessages()
+  sessionStore.clearMessages(prevIssueNumber)
   activeIssue.value = null
   buildProgress.value = null
+  if (prevIssueNumber) clearBuildProgress(prevIssueNumber)
   building.value = false
   clarifying.value = false
   clarifyingMsg.value = ''
