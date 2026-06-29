@@ -109,7 +109,7 @@
 - [x] C7.3 无对比度/触控目标失败（以 `web-design-guidelines` 为参考线）
 
 ### Stage 8 — 端到端黄金路径 + 远程自迭代闭环
-- [ ] C8.1 黄金路径脚本：匿名 Gallery → OAuth → Setup → Workspace → 三场景 triage → 建 Issue → 状态轮询，全绿
+- [x] C8.1 黄金路径脚本：匿名 Gallery → OAuth → Setup → Workspace → 三场景 triage → 建 Issue → 状态轮询，全绿
 - [ ] C8.2 远程演练：发一条引用本 backlog 的 `platform` Issue，CI 上 StepFun agent 完成一个 criteria 并产出 draft PR，verifier PASS
 - [ ] C8.3 本文件「需人工协助的实时验证清单」（第 7 节）全部勾选
 
