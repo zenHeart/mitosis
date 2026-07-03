@@ -399,6 +399,18 @@ jobs:
         run: |
           git config user.name "mitosis-bot"
           git config user.email "mitosis@users.noreply.github.com"
+
+          # 诊断：确保在 git 仓库中（agent loop 可能影响工作目录）
+          echo "::debug::PWD=$(pwd)"
+          echo "::debug::git_dir=$(ls -la .git 2>&1 || echo 'NO .git')"
+          if [ ! -d ".git" ]; then
+            echo "::warning::.git not found in $(pwd), attempting git init"
+            git init
+            git remote remove origin 2>/dev/null || true
+            git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+            git fetch origin master
+            git reset --hard origin/master
+          fi
           if [ "$IS_PLATFORM" = "true" ]; then
             BRANCH="mitosis-platform-issue-$ISSUE_NUMBER-run-${{ github.run_attempt }}"
           else
