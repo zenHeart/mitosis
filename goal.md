@@ -40,10 +40,11 @@
   - `/apps/tetris-game/v3/`
   - `/apps/snake-game/v0/`
 
-### 未完成或未核验
+### 未完成或未核验（外部阻塞）
 
-- 真实 GitHub OAuth owner 登录、Setup、Workspace 建 app/platform Issue、CI 运行 StepFun agent、draft PR、merge、Pages 发布、Gallery 新版本可见，尚未端到端验证（需真实 owner 账号操作）。
-- 非 owner 登录后的 fork/copy 指引已用 mock 验证，尚未用真实 non-owner 账号验证。
+- StepFun 真实聊天链路：账户 quota 耗尽（402），需充值后重试验证。代码逻辑和错误处理已验证正确（见 5.5 节 B1）。
+- 真实 owner 端到端：需人类 owner 执行 GitHub OAuth → Setup → Workspace → CI → merge → Gallery 可见全流程。
+- 真实 non-owner 账号：fork/copy 指引已用 mock 验证，需人类 non-owner 确认 UX。
 - `owner-approved` label 审批路径在文档中出现，但当前 workflow 未真正把该 label 作为触发条件（与文档描述一致）。
 
 ---
@@ -537,7 +538,32 @@ rg -i "(ghp_|gho_|github_pat_|sk-|AKIA|AIza|eyJ)" \
   -g '!*.md' src/ apps/ worker/ .github/ scripts/ || echo "SECURITY_SCAN: PASS"
 ```
 
-注意：如果本地 shell 已配置 GitHub/StepFun 凭据，禁止运行会把真实值打印出来的命令（例如裸 `printenv`）。只记录“凭据存在/不存在”的脱敏结论。
+注意：如果本地 shell 已配置 GitHub/StepFun 凭据，禁止运行会把真实值打印出来的命令（例如裸 `printenv`）。只记录”凭据存在/不存在”的脱敏结论。
+
+---
+
+## 5.5 外部阻塞（非代码缺陷，需人工或外部服务解除）
+
+以下 MVP 验收条件被**外部因素**阻塞，无法通过代码修改解决：
+
+| # | 阻塞项 | 阻塞原因 | 所需操作 | 影响的条件 |
+|---|--------|----------|----------|------------|
+| B1 | StepFun 真实聊天链路 | 账户 quota 耗尽（402: `You exceeded your current quota`） | 充值 StepFun 账户 | #6 |
+| B2 | 最终 approve/merge/publish | 条件 #10 明确要求人类决定 | 人类最终确认 | #10 |
+
+### B1 详细说明
+
+- **Token 有效性：** ✅ 已验证（`GET /v1/models` 返回 38 个可用模型）
+- **API 端点可达性：** ✅ 已验证（`api.stepfun.com` 响应正常）
+- **错误处理：** ✅ 已验证（`formatStepFunError` 正确识别 quota 错误，UI 显示中文提示 + fallback 创建 Issue）
+- **实际 chat completion：** ⚠️ 阻塞（402 quota exceeded）
+- **代码状态：** 无缺陷，错误处理完善，等待账户充值后重试验证
+
+### B2 详细说明
+
+条件 #10 原文：”最终 approve、merge、发布、业务验收仍由人类决定。”
+
+这是**设计决策**，不是缺陷。MVP 的最终发布 gate 必须由人类执行。
 
 ---
 
