@@ -236,14 +236,13 @@ jobs:
             echo "Node version: $(node --version)"
             echo "ANTHROPIC_API_KEY set: $([ -n "$ANTHROPIC_API_KEY" ] && echo "yes" || echo "no")"
 
-            # 同时捕获 stdout + stderr，因为 claude 把 budget/turn 错误写到 stdout
-            CLAUDE_LOG="/tmp/mitosis-claude-log-$ATTEMPT.log"
+            # 50 turns: 读取 Issue + 实现 + 构建 + PR 创建需要多轮工具调用
             python3 scripts/claude-timeout.py 900 -- claude -p \
               --model step-3.7-flash \
               --permission-mode bypassPermissions \
               --max-budget-usd 10 \
               --allowed-tools "Read,Write,Edit,Bash" \
-              --max-turns 10 \
+              --max-turns 50 \
               --output-format text \
               --prompt-file "$PROMPT_FILE" &>>"$CLAUDE_LOG"
             CLAUDE_EXIT=$?

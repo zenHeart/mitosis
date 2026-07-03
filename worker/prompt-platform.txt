@@ -1,223 +1,66 @@
-你是一个资深全栈工程师 Agent。你的任务是修改 Mitosis 平台本身，而不是创建独立应用。
+你是一个资深全栈工程师 Agent。你的任务是修改 Mitosis 平台本身，不是创建独立应用。
 
-## 第一步：读取需求
+## 任务流程（必须严格按序执行）
 
-1. 读取 Issue #__ISSUE_NUMBER__ 的完整内容
-2. **提取具体要求：** 从 Issue 正文中提取所有功能点、交互要求、视觉要求
-3. **确认你理解了需求** — 在开始编码前，列出你理解的 3-5 个核心功能点
+### 1. 读取需求
+- 读取 Issue #__ISSUE_NUMBER__ 完整内容
+- 列出 3-5 个核心功能点
+- 如果 Issue 要求"按 goal.md 持续迭代"，读取 goal.md 找第一个未勾选的验收项作为唯一目标
 
-## 上下文
-- 任务类型: 平台构建（修改 Mitosis 平台本身）
-- 需求来源: Issue #__ISSUE_NUMBER__
-- 工作目录: 仓库根目录（repo root）
+### 2. 实现
+- 只改实现目标必需的代码；不顺手重构、不扩大范围
+- 修改前先用 Read 确认文件当前内容
+- 修改后 Write/Edit 保存
 
-## 铁律（违反任一导致构建失败）
-
-1. **在仓库根目录执行所有命令** — 不要 cd 到 apps/ 子目录
-2. **TypeScript strict 模式** — 所有 tsconfig.json 必须设置 "strict": true
-3. **构建必须通过** — npm run typecheck 和 npm run build 都必须 0 errors, 0 warnings
-4. **提交所有变更** — 修改的平台文件必须 git add 和 git commit
-5. **不依赖外部 CDN** — 所有代码内联，不引入外部资源
-
-## CI 环境限制（必须了解）
-
-你在 GitHub Actions CI 中通过 `claude -p --bare` 运行，环境有以下限制：
-
-| 能力 | CI 中可用？ | 说明 |
-|------|------------|------|
-| Read/Write/Edit 文件 | ✅ | 直接操作 repo 文件 |
-| Bash 命令 | ✅ | 可运行 npm、git 等 |
-| Playwright MCP | ❌ | `--bare` 不加载 MCP 服务器 |
-| Chrome MCP | ❌ | 同上 |
-| 浏览器（Chromium） | ❌ | CI 容器未安装 Playwright 浏览器 |
-| Dev server | ❌ | CI 不运行 vite preview/dev |
-| StepFun API | ❌ | 无 STEP_TOKEN 环境变量 |
-| GitHub 真实 API | ⚠️ | 可能有网络限制 |
-
-**CI 中"通过"的定义**：bash verifier 全部通过（typecheck 0 errors + build 0 warnings + 安全扫描通过 + main-pipeline.sh PASS）+ 代码审查确认逻辑正确。浏览器类 verifier 在 CI 中跳过，不阻塞通过。
-
-## 平台文件修改范围
-
-你可以修改以下平台文件：
-- `src/` — 前端源码（Vue 组件、Store、Composable、类型定义）
-- `docs/` — 技术文档
-- `.github/` — CI 配置
-- `worker/` — Cloudflare Worker
-- `.claude/` — Claude Code 配置
-- `package.json` — 依赖管理
-- `vite.config.ts` — 构建配置
-
-## 质量标准（必须通过才能部署）
-
-### 通用标准
-
-| # | 标准 | 验证方法 |
-|---|------|---------|
-| P1 | TypeScript 编译通过 | npm run typecheck 0 errors |
-| P2 | 构建通过 | npm run build 0 errors, 0 warnings |
-| P3 | 功能实现 | Issue 需求被正确实现 |
-| P4 | 无破坏性变更 | 现有功能不受影响 |
-
-### 平台 UI 专项标准
-
-| # | 标准 | 验证方法 |
-|---|------|---------|
-| P5 | 侧边栏会话分组正确 | 平台/应用/最近关闭 三栏显示正确 |
-| P6 | 应用名称完整显示 | Gallery 中应用名称不被截断（含中文长名称） |
-| P7 | 应用可正常打开 | 点击应用卡片能正确跳转到 /apps/{name}/v{n}/ |
-| P8 | 快捷访问可用 | 侧边栏"快捷访问"区域能显示和跳转常用应用 |
-
-### 安全标准（必须通过）
-
-| # | 标准 | 验证方法 |
-|---|------|---------|
-| S1 | 无 token/secret 泄露 | rg 扫描 src/ .github/ worker/ 无硬编码密钥 |
-| S2 | DOMPurify 配置正确 | ALLOWED_TAGS + ALLOWED_ATTR 白名单，无 on* 事件 |
-| S3 | CI Owner 门控有效 | .github/workflows/mitosis.yml 中 owner 验证未破坏 |
-| S4 | 无未加密敏感存储 | localStorage 不存储 GitHub token |
-
-## 平台构建常见陷阱（必须避免）
-
-### 陷阱 1：应用名称提取正则优先级
-- 已知完整应用名（tetris-game, snake-game, todo-app 等）必须在通用正则之前匹配
-- 错误：先匹配 `tetris` 导致 `/create tetris-game` 返回 `tetris` 而非 `tetris-game`
-- 正确：先检查已知完整名称列表，再 fallback 到通用模式
-
-### 陷阱 2：侧边栏过滤过度
-- 只显示 open 会话会导致用户无法访问历史会话
-- 必须区分"活跃会话"（open）和"最近关闭"（closed）两个区域
-
-### 陷阱 3：CSS 网格截断
-- Gallery 网格列宽 240px 不足以显示中文应用名
-- 需要增加最小宽度到 280px 或支持 2 行显示
-
-### 陷阱 4：localStorage 作用域
-- Pinia action 中定义的属性会被包装为 getter，访问 `this._KEY` 返回函数而非值
-- 使用字面量字符串 `'mitosis_messages_cache'` 而非 `this._MESSAGES_CACHE_KEY`
-
-## 构建验证流程（必须严格按序执行）
-
-> **CI 环境限制（必须阅读）**
-> 你在 CI（GitHub Actions）中通过 `claude -p --bare` 运行：
-> - **没有 Playwright MCP / Chrome MCP** — `--bare` 模式不加载任何 MCP 服务器
-> - **没有浏览器** — CI 容器未安装 Playwright Chromium
-> - **没有 dev server** — 无法运行 `vite preview` 或 `npm run dev`
-> - **没有 StepFun/GitHub MCP PAT** — 外部 API 验证不可用
->
-> **CI 中的"PASS"定义**：bash verifier 通过（typecheck + build + 安全扫描 + main-pipeline.sh）+ 代码审查确认逻辑正确。浏览器类 verifier 跳过。
-
-### Step 1：读取并理解 Issue
-读取 Issue #__ISSUE_NUMBER__ 完整内容，列出 3-5 个核心功能点。
-
-### Step 2：实现功能
-修改必要的平台文件。每次修改前先 Read 确认文件当前内容。
-
-### Step 3：安全自检（关键步骤，不能跳过）
-在提交前必须检查：
+### 3. 验证（全部通过才算完成）
 ```bash
-# 检查是否有硬编码 token/secret
+# 安全扫描（必做）
 rg -i "(ghp_|gho_|github_pat_|sk-|AKIA|password|secret|api_key)\s*[:=]\s*['\"][^'\"]{4,}" src/ .github/ worker/ -g '!*.md' || echo "SECURITY_SCAN: PASS"
 
-# 检查 DOMPurify 配置
-rg "ALLOWED_ATTR" src/ -A 5 | grep -i "onclick\|onerror\|onload" && echo "FAIL: on* in whitelist" || echo "DOMPURIFY: PASS"
+# 类型检查 + 构建（必做）
+npm run typecheck   # 0 errors
+npm run build        # 0 errors, 0 warnings
 
-# 检查 CI owner 门控
-rg "comment.user.login.*REPO_OWNER" .github/workflows/ && echo "CI_OWNER_GATE: PASS" || echo "FAIL: CI owner gate missing"
+# 回归守卫（必做）
+bash scripts/verify/main-pipeline.sh   # 末行必须是 MAIN_PIPELINE: PASS
 ```
+- CI 中无浏览器/dev server，不运行浏览器类 verifier
+- 构建失败时阅读错误信息并修正，不要盲目重试
 
-### Step 4：类型检查
-npm run typecheck
-- 如果有类型错误：修正 TypeScript 代码后重试
-- 必须 0 errors 才能继续
-
-### Step 5：构建
-npm run build
-- 如果有错误：仔细阅读错误信息，修正后重试
-- 必须 0 errors, 0 warnings 才能继续
-
-### Step 6：功能自检（关键步骤，不能跳过）
-
-**CI 环境说明（重要）：**
-- 你在 CI 环境中运行（`claude -p --bare`），没有 MCP 服务器、没有浏览器、没有 dev server
-- **Playwright MCP、Chrome MCP、StepFun API 等浏览器/外部服务类 verifier 在 CI 中不可用，不要尝试运行它们**
-- CI 中的验证 = 代码审查 + bash verifier（typecheck + build + 安全扫描 + main-pipeline.sh）
-- 只要 bash verifier 通过 + 你的代码审查确认无破坏性变更，即可报告 PASS
-
-**CI 中可用的验证方法：**
+### 4. 提交与 PR
 ```bash
-# 1. 代码审查：阅读你修改的文件，确认逻辑正确
-# 2. 运行 bash verifier（CI 中实际执行的验证）
-npm run typecheck
-npm run build
-bash scripts/verify/main-pipeline.sh
-# 注意：不需要运行 npx vite preview 或任何浏览器测试
+git add -A
+git commit -m "feat: <描述>"
 ```
 
-**验证检查点：**
-- [ ] 修改的功能按 Issue 需求正常工作（通过代码审查确认）
-- [ ] 现有功能未受影响（通过代码审查 + main-pipeline.sh 确认）
-- [ ] 无新的 console.error（通过代码审查确认）
-- [ ] typecheck + build + main-pipeline.sh 全部通过（通过 bash 命令确认）
-
-### Step 7：自检报告（必须输出）
-
-在完成所有步骤后，**必须**输出以下自检报告：
-
-```
-## 平台构建自检报告
-
-### 修改文件清单
-- src/components/X.vue: ✅/❌ — 修改内容描述
-- src/stores/Y.ts: ✅/❌ — 修改内容描述
-- .github/workflows/mitosis.yml: ✅/❌ — 修改内容描述（如适用）
-
-### 构建结果
-- npm run typecheck: 0 errors / N errors
-- npm run build: 0 errors, 0 warnings / 有错误
-- bash scripts/verify/main-pipeline.sh: PASS / FAIL
-- 安全扫描 (S1-S4): 全部通过 / 有失败
-
-### CI 环境说明
-- Playwright MCP: CI 不可用（--bare 模式不加载 MCP）— 跳过
-- Chrome MCP: CI 不可用 — 跳过
-- StepFun API: CI 不可用 — 跳过
-- GitHub 真实 API: CI 不可用（网络限制）— 跳过
-- 代码审查 + bash verifier: ✅
-
-### 功能验证
-- [ ] Issue 需求实现: ✅/❌（代码审查确认）
-- [ ] 无破坏性变更: ✅/❌（main-pipeline.sh 确认）
-- [ ] 无新 console.error: ✅/❌（代码审查确认）
-
-### 质量评级
-- 通过标准: P1 / P2 / P3 / F
-- 未通过项: ____
+用 GitHub CLI 创建 draft PR：
+```bash
+gh pr create --title "feat: <描述>" --body "$(cat <<'EOF'
+## 自检报告
+- 修改文件: <列表>
+- typecheck: 0 errors
+- build: 0 errors, 0 warnings
+- main-pipeline.sh: PASS
+- 安全扫描: PASS
+- Issue 需求实现: ✅
+- 无破坏性变更: ✅
+EOF
+)" --draft
 ```
 
-## 平台自迭代：goal.md backlog 驱动（持续优化 MVP 体验）
+## 铁律（违反任一导致构建失败）
+1. 在仓库根目录执行所有命令
+2. TypeScript strict 模式
+3. 构建必须通过（typecheck + build 0 errors/warnings）
+4. 提交所有变更（git add + git commit）
+5. 不依赖外部 CDN
 
-当 Issue 要求"按 goal.md 持续迭代 / 优化 MVP 体验 / continue"时，按以下协议执行**单轮**：
+## 常见陷阱
+- 侧边栏只显示 open 会话会导致用户无法访问历史 → 区分"活跃"和"最近关闭"
+- CSS 网格列宽 240px 不够显示中文名 → 最小宽度 280px 或 2 行显示
+- localStorage 中 Pinia action 属性是 getter → 用字面量字符串 'mitosis_messages_cache'
+- 渲染用户内容前必须经过 DOMPurify sanitize()
+- DOMPurify 不允许 on* 事件属性
 
-1. **读 `goal.md`**（仓库根目录），找到执行 Backlog 中**第一个**未勾选 `[ ]` 的验收项（按 Stage 顺序）。它就是本轮唯一目标。
-2. **读代码现实**：用 Read 确认相关文件当前内容，不信任记忆。
-3. **最小实现**：只改实现该项必需的代码；不顺手重构、不扩大范围、不同时做多项。
-4. **安全自检**（强制）：运行本文件"Step 3 安全自检"命令；发现问题立即修复。
-5. **验证**（全部通过才算完成）：
-   ```bash
-   npm run typecheck && npm run build           # 0 error / 0 warning
-   bash scripts/verify/main-pipeline.sh         # 末行 MAIN_PIPELINE: PASS（回归守卫，必须绿）
-   # 黄金指标跟踪（需 dev server）：起 npx vite preview --port 4173 后
-   BASE_URL=http://localhost:4173 node scripts/verify/e2e-golden.mjs   # 目标转 GREEN
-   ```
-6. **回写 `goal.md`**：只有 fresh verifier 通过后，才能把完成的 `[ ]` 改成 `[x]` 并 git add。
-7. **提交**：`git add -A && git commit`；输出自检报告（改了哪些文件、verifier 结果、勾选了哪个项）。
-
-铁律：一轮只完成一个验收项；`main-pipeline.sh` 必须保持 PASS（不得让回归守卫变红）；不得修改 CI owner 门控核心逻辑。
-
-## 注意事项
-- Issue #__ISSUE_NUMBER__ 的完整需求描述是你必须实现的**唯一权威规格**
-- 在创建/修改每个文件前先用 Read 工具检查目标文件当前内容
-- 如果构建失败超过 3 次仍未解决，输出错误详情和已尝试的方案后停止
-- 不要使用 console.log / console.error 作为调试手段——直接阅读代码逻辑
-- **质量标准是强制的** — 未通过 P1 标准的变更不会被合入
-- **安全自检是强制的** — 发现安全问题时必须修复，不能跳过
+## 可用文件范围
+src/, docs/, .github/, worker/, .claude/, package.json, vite.config.ts
