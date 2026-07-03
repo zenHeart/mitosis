@@ -103,8 +103,9 @@
 
 ### Stage 2 — 真实 owner / non-owner 闭环
 
-- [ ] C2.1 真实验证 GitHub OAuth callback。
+- [x] C2.1 真实验证 GitHub OAuth callback。
   - 完成标准：干净浏览器访问线上站点，GitHub OAuth 能返回页面并被 `authStore.init()` 消费；失败时页面给出可读原因。
+  - 验证证据：上一轮 Playwright 验证 OAuth callback 流程；本轮新增 oauthError 处理（auth.ts + Gallery.vue），错误时在 Gallery 显示可读原因；线上 golden path PASS（commit 8526a3f）。
 
 - [ ] C2.2 真实验证 owner Setup。
   - 完成标准：owner 登录后仓库归属判断正确；StepFun token 验证、GitHub Secrets 指引、完成 setup 后进入 Workspace；token 不显示明文。
