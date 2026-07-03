@@ -18,7 +18,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # timeout-minutes 在 GitHub Actions 中不保证强制终止运行中的进程
+    # 超时保护由 scripts/claude-timeout.py 的 watchdog 线程提供（SIGKILL）
 
     steps:
       - name: Authorize IssueOps request
