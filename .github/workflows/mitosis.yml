@@ -187,7 +187,12 @@ jobs:
             echo "Agent attempt $ATTEMPT/3"
             PROMPT_FILE="/tmp/mitosis-prompt-$ATTEMPT.txt"
             printf "%s\n\n%s\n" "$BASE_PROMPT" "$FEEDBACK" > "$PROMPT_FILE"
+            echo "::debug::Prompt file size: $(wc -c < "$PROMPT_FILE") bytes"
+            echo "::debug::Claude version: $(claude --version 2>&1)"
+            echo "::debug::Node version: $(node --version)"
+            echo "::debug::ANTHROPIC_API_KEY set: $([ -n "$ANTHROPIC_API_KEY" ] && echo "yes" || echo "no")"
 
+            CLAUDE_STDERR="/tmp/mitosis-claude-stderr-$ATTEMPT.log"
             if ! claude -p \
               --model step-3.7-flash \
               --bare \
@@ -196,7 +201,8 @@ jobs:
               --allowed-tools "Read,Write,Edit,Bash" \
               --max-turns 80 \
               --output-format text \
-              "$(cat "$PROMPT_FILE")"; then
+              "$(cat "$PROMPT_FILE")" 2>"$CLAUDE_STDERR"; then
+              echo "::debug::Claude stderr: $(cat "$CLAUDE_STDERR" | head -20)"
               if [ "$IS_PLATFORM" = "true" ]; then
                 FEEDBACK="Previous Claude Code run failed before verification. Re-read the Issue and produce valid platform changes before stopping."
               else
