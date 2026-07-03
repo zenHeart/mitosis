@@ -77,27 +77,15 @@ jobs:
             echo "$REASON"
           fi
 
-          # ── 去重检查：如果 issue 已有 status:building label 且有其他活跃 CI run，跳过 ──
+          # ── 清理残留的 status:building 标签（被取消的 run 可能遗留）──
           RESOLVED_ISSUE_NUMBER="${INPUT_ISSUE_NUMBER:-$ISSUE_NUMBER}"
           if [ "$AUTHORIZED" = "true" ] && [ -n "$RESOLVED_ISSUE_NUMBER" ]; then
             BUILDING_LABELS=$(gh issue view "$RESOLVED_ISSUE_NUMBER" --repo "${{ github.repository }}" --json labels --jq '.labels[].name' 2>/dev/null || true)
-            echo "::debug::Issue labels: $BUILDING_LABELS"
             if echo "$BUILDING_LABELS" | grep -q '^status:building$'; then
-              # 检查是否有 OTHER（非当前）活跃的 CI run
-              CURRENT_RUN_ID="${{ github.run_id }}"
-              OTHER_ACTIVE_RUNS=$(gh run list --repo "${{ github.repository }}" --status in_progress --limit 5 --json databaseId --jq ".[] | select(.databaseId != $CURRENT_RUN_ID) | .databaseId" 2>/dev/null || true)
-              if [ -n "$OTHER_ACTIVE_RUNS" ]; then
-                echo "dedup_skip=true" >> "$GITHUB_OUTPUT"
-                echo "reason=Build already in progress (status:building label + active CI run #$OTHER_ACTIVE_RUNS). Skipping duplicate /create."
-              else
-                # status:building 是残留标签（之前 run 被取消），清理并继续
-                echo "::debug::Stale status:building label (no other active CI run). Removing label."
-                gh issue edit "$RESOLVED_ISSUE_NUMBER" --repo "${{ github.repository }}" --remove-label "status:building" >/dev/null 2>&1 || true
-                echo "dedup_skip=false" >> "$GITHUB_OUTPUT"
-              fi
-            else
-              echo "dedup_skip=false" >> "$GITHUB_OUTPUT"
+              echo "::debug::Removing stale status:building label from previous cancelled run."
+              gh issue edit "$RESOLVED_ISSUE_NUMBER" --repo "${{ github.repository }}" --remove-label "status:building" >/dev/null 2>&1 || true
             fi
+            echo "dedup_skip=false" >> "$GITHUB_OUTPUT"
           else
             echo "dedup_skip=false" >> "$GITHUB_OUTPUT"
           fi
