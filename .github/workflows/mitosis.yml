@@ -31,9 +31,7 @@ jobs:
           REPO_OWNER: ${{ github.repository_owner }}
           ACTOR: ${{ github.actor }}
           ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
-          ISSUE_NUMBER: ${{ steps.auth.outputs.issue_number }}
-          COMMENT_BODY: ${{ github.event.comment.body }}
-          LABEL_NAME: ${{ github.event.label.name }}
+          EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
           INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
         run: |
           AUTHORIZED=false
@@ -67,12 +65,12 @@ jobs:
           # 确定 ISSUE_NUMBER：workflow_dispatch 用 input，issue_comment 用 event
           if [ -n "$INPUT_ISSUE_NUMBER" ]; then
             echo "issue_number=$INPUT_ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
-          elif [ -n "$ISSUE_NUMBER" ]; then
-            echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+          elif [ -n "$EVENT_ISSUE_NUMBER" ]; then
+            echo "issue_number=$EVENT_ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
           fi
 
-          if [ "$NEEDS_APPROVAL" = "true" ] && [ -n "$ISSUE_NUMBER" ]; then
-            gh issue comment "$ISSUE_NUMBER" \
+          if [ "$NEEDS_APPROVAL" = "true" ] && [ -n "$EVENT_ISSUE_NUMBER" ]; then
+            gh issue comment "$EVENT_ISSUE_NUMBER" \
               --repo "${{ github.repository }}" \
               --body "🔒 Mitosis did not run the Agent Loop. External issues or comments require repository owner approval. In the current workflow, the repository owner must comment \`/create\` on an issue that has an \`app/{name}\` or \`platform\` label."
           else
@@ -80,7 +78,7 @@ jobs:
           fi
 
           # ── 清理残留的 status:building 标签（被取消的 run 可能遗留）──
-          RESOLVED_ISSUE_NUMBER="${INPUT_ISSUE_NUMBER:-$ISSUE_NUMBER}"
+          RESOLVED_ISSUE_NUMBER="${INPUT_ISSUE_NUMBER:-$EVENT_ISSUE_NUMBER}"
           if [ "$AUTHORIZED" = "true" ] && [ -n "$RESOLVED_ISSUE_NUMBER" ]; then
             BUILDING_LABELS=$(gh issue view "$RESOLVED_ISSUE_NUMBER" --repo "${{ github.repository }}" --json labels --jq '.labels[].name' 2>/dev/null || true)
             if echo "$BUILDING_LABELS" | grep -q '^status:building$'; then
