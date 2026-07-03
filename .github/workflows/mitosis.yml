@@ -216,15 +216,16 @@ jobs:
             echo "::debug::ANTHROPIC_API_KEY set: $([ -n "$ANTHROPIC_API_KEY" ] && echo "yes" || echo "no")"
 
             CLAUDE_STDERR="/tmp/mitosis-claude-stderr-$ATTEMPT.log"
-            if ! claude -p \
+            if ! timeout 600 claude -p \
               --model step-3.7-flash \
               --bare \
               --permission-mode bypassPermissions \
               --max-budget-usd 5 \
               --allowed-tools "Read,Write,Edit,Bash" \
-              --max-turns 80 \
+              --max-turns 60 \
               --output-format text \
               "$(cat "$PROMPT_FILE")" 2>"$CLAUDE_STDERR"; then
+              echo "::debug::Claude exit code: $?"
               echo "::debug::Claude stderr: $(cat "$CLAUDE_STDERR" | head -20)"
               if [ "$IS_PLATFORM" = "true" ]; then
                 FEEDBACK="Previous Claude Code run failed before verification. Re-read the Issue and produce valid platform changes before stopping."
