@@ -4,6 +4,11 @@ on:
   issue_comment:
     types: [created]
   workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to build for (required for manual trigger)'
+        required: true
+        type: number
 
 permissions:
   contents: write
@@ -24,15 +29,25 @@ jobs:
           REPO_OWNER: ${{ github.repository_owner }}
           ACTOR: ${{ github.actor }}
           ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_NUMBER: ${{ steps.auth.outputs.issue_number }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           LABEL_NAME: ${{ github.event.label.name }}
+          INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
         run: |
           AUTHORIZED=false
           NEEDS_APPROVAL=false
           REASON=""
 
-          if [ "$EVENT_NAME" = "issue_comment" ] && ! echo "$COMMENT_BODY" | grep -qi '/create'; then
+          # workflow_dispatch 手动触发：仅允许仓库 owner
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$ACTOR" = "$REPO_OWNER" ]; then
+              AUTHORIZED=true
+              REASON="Repository owner triggered manual workflow_dispatch."
+            else
+              NEEDS_APPROVAL=true
+              REASON="Manual workflow_dispatch requires repository owner."
+            fi
+          elif [ "$EVENT_NAME" = "issue_comment" ] && ! echo "$COMMENT_BODY" | grep -qi '/create'; then
             REASON="Comment does not contain /create."
           elif [ "$ACTOR" = "$REPO_OWNER" ] && echo "$COMMENT_BODY" | grep -qi '/create'; then
             AUTHORIZED=true
@@ -47,6 +62,13 @@ jobs:
           echo "reason=$REASON" >> "$GITHUB_OUTPUT"
           echo "::debug::Final authorize: AUTHORIZED=$AUTHORIZED NEEDS_APPROVAL=$NEEDS_APPROVAL REASON=$REASON"
 
+          # 确定 ISSUE_NUMBER：workflow_dispatch 用 input，issue_comment 用 event
+          if [ -n "$INPUT_ISSUE_NUMBER" ]; then
+            echo "issue_number=$INPUT_ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+          elif [ -n "$ISSUE_NUMBER" ]; then
+            echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+          fi
+
           if [ "$NEEDS_APPROVAL" = "true" ] && [ -n "$ISSUE_NUMBER" ]; then
             gh issue comment "$ISSUE_NUMBER" \
               --repo "${{ github.repository }}" \
@@ -56,8 +78,9 @@ jobs:
           fi
 
           # ── 去重检查：如果 issue 已有 status:building label，跳过 ──
-          if [ "$AUTHORIZED" = "true" ] && [ -n "$ISSUE_NUMBER" ]; then
-            BUILDING_LABELS=$(gh issue view "$ISSUE_NUMBER" --repo "${{ github.repository }}" --json labels --jq '.labels[].name' 2>/dev/null || true)
+          RESOLVED_ISSUE_NUMBER="${INPUT_ISSUE_NUMBER:-$ISSUE_NUMBER}"
+          if [ "$AUTHORIZED" = "true" ] && [ -n "$RESOLVED_ISSUE_NUMBER" ]; then
+            BUILDING_LABELS=$(gh issue view "$RESOLVED_ISSUE_NUMBER" --repo "${{ github.repository }}" --json labels --jq '.labels[].name' 2>/dev/null || true)
             echo "::debug::Issue labels: $BUILDING_LABELS"
             if echo "$BUILDING_LABELS" | grep -q '^status:building$'; then
               echo "dedup_skip=true" >> "$GITHUB_OUTPUT"
@@ -91,7 +114,7 @@ jobs:
         id: parse
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_NUMBER: ${{ steps.auth.outputs.issue_number }}
         run: |
           # 使用 gh CLI 获取 label 名称列表（可靠）
           LABEL_NAMES=$(gh issue view "$ISSUE_NUMBER" --repo "${{ github.repository }}" --json labels --jq '.labels[].name' 2>/dev/null || true)
@@ -132,7 +155,7 @@ jobs:
           ANTHROPIC_BASE_URL: https://api.stepfun.com/step_plan
           APP_NAME: ${{ steps.parse.outputs.app_name }}
           NEXT_VERSION: ${{ steps.parse.outputs.version }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_NUMBER: ${{ steps.auth.outputs.issue_number }}
           IS_PLATFORM: ${{ steps.parse.outputs.is_platform }}
         run: |
           ensure_label() {
@@ -167,13 +190,13 @@ jobs:
             BASE_PROMPT=$(sed \
               -e "s/__APP_NAME__/platform/g" \
               -e "s/__NEXT_VERSION__/root/g" \
-              -e "s/__ISSUE_NUMBER__/${{ github.event.issue.number }}/g" \
+              -e "s/__ISSUE_NUMBER__/${{ steps.auth.outputs.issue_number }}/g" \
               worker/prompt-platform.txt)
           else
             BASE_PROMPT=$(sed \
               -e "s/__APP_NAME__/${{ steps.parse.outputs.app_name }}/g" \
               -e "s/__NEXT_VERSION__/${{ steps.parse.outputs.version }}/g" \
-              -e "s/__ISSUE_NUMBER__/${{ github.event.issue.number }}/g" \
+              -e "s/__ISSUE_NUMBER__/${{ steps.auth.outputs.issue_number }}/g" \
               worker/prompt.txt)
           fi
 
@@ -358,7 +381,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APP_NAME: ${{ steps.parse.outputs.app_name }}
           NEXT_VERSION: ${{ steps.parse.outputs.version }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_NUMBER: ${{ steps.auth.outputs.issue_number }}
           IS_PLATFORM: ${{ steps.parse.outputs.is_platform }}
         run: |
           git config user.name "mitosis-bot"
@@ -448,7 +471,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APP_NAME: ${{ steps.parse.outputs.app_name }}
           NEXT_VERSION: ${{ steps.parse.outputs.version }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_NUMBER: ${{ steps.auth.outputs.issue_number }}
           PR_URL: ${{ steps.review_pr.outputs.pr_url }}
           IS_PLATFORM: ${{ steps.parse.outputs.is_platform }}
           FALLBACK_NOTE: ${{ steps.review_pr.outputs.fallback_note }}
