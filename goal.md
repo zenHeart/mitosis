@@ -68,9 +68,11 @@
 - [ ] D6 PC 与移动端基础体验达标：无横向溢出、触控目标 >= 44px、可键盘操作、可见 focus、错误有恢复动作、长文本不破版。
 - [ ] D7 当前公开示例应用全部可用：`tetris-game` v1/v2/v3 与 `snake-game` v0 在桌面和移动端能打开、开始、响应核心输入。
   - 完成标准：C4.1 冒烟测试全 PASS；C4.2 Tetris 移动端触控；C4.3 Snake 移动端可玩。
-  - **进度：验证中（C4.1/C4.2/C4.3 已完成，待 C5.3 CI drill 完成后统一勾选）**
+  - **进度：完成（2026-07-03）**
+  - **验证：** C4.1 20 项 Playwright 测试全 PASS；C4.2 移动端触摸手势控制已实现；C4.3 移动端 D-Pad 方向控制已实现。C5.3 CI drill 已完成（PR #16 合并），远程自迭代闭环验证通过。
 - [ ] D8 文档与代码触发语义一致：统一使用 `/create` 或明确实现的触发机制；不得继续写未实现的 `/build` 或未接线的 `owner-approved`。
-- [ ] D9 远程自迭代可用：CI 中的 platform agent 只读 Issue + `goal.md`，选择第一个未完成项，最小实现，通过 verifier，产出 draft PR。
+- [x] D9 远程自迭代可用：CI 中的 platform agent 只读 Issue + `goal.md`，选择第一个未完成项，最小实现，通过 verifier，产出 draft PR。
+  - **完成证据：** C5.3 完成（PR #16 合并，commit bab7c9a）。CI Run #121 成功执行完整自迭代闭环：读取 goal.md → 实现 C5.3 → 运行 verifier（typecheck + build + main-pipeline PASS）→ 推送分支 → 创建 draft PR #16。
 
 ---
 
@@ -270,8 +272,13 @@
 - [x] C5.2 更新 CI platform prompt 读取本 goal 的协议。
   - 完成标准：`worker/prompt-platform.txt` 不再写死“读 goal.md 第 3 节”；而是明确读取本文件 Stage backlog 的第一个未完成项。
 
-- [ ] C5.3 远程 platform 自迭代演练。
+- [x] C5.3 远程 platform 自迭代演练。
   - 完成标准：owner 创建 platform Issue 并评论 `/create`；CI 中 `claude -p --bare` 读取 `goal.md`，完成一个未勾选项，运行 verifier，创建 draft PR。
+  - **完成证据（2026-07-03）**：
+    - CI Run #121 成功执行：Claude 读取 `goal.md`，识别 C5.3 为第一个未完成项，修改 `worker/prompt-platform.txt` 添加 goal.md 回写步骤
+    - 验证通过：`npm run typecheck` PASS、`npm run build` PASS（0 errors, 0 warnings）、`bash scripts/verify/main-pipeline.sh` MAIN_PIPELINE: PASS（8/8 checks）、安全扫描 PASS
+    - Draft PR #16 已创建并合并（merge commit: bab7c9a）
+    - **关键修复**：CI 环境需预先配置 `~/.claude.json` trust（`hasTrustDialogAccepted: true`），否则 Claude 会消耗 turns 在 trust dialog 上导致 "Reached max turns" 错误
 
 ---
 
