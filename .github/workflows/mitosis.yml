@@ -222,11 +222,8 @@ jobs:
             echo "::debug::Node version: $(node --version)"
             echo "::debug::ANTHROPIC_API_KEY set: $([ -n "$ANTHROPIC_API_KEY" ] && echo "yes" || echo "no")"
 
-            CLAUDE_STDERR="/tmp/mitosis-claude-stderr-$ATTEMPT.log"
-            CLAUDE_EXIT=0
-            # Python watchdog: 独立进程组 + 后台线程超时 kill
-            # 不依赖 timeout/setsid（它们无法杀掉 claude 子进程）
-            # 移除了 --bare 以允许正常加载 hooks（但不用 --bare 也可能导致问题）
+            # 同时捕获 stdout + stderr，因为 claude 把 budget/turn 错误写到 stdout
+            CLAUDE_LOG="/tmp/mitosis-claude-log-$ATTEMPT.log"
             if ! python3 scripts/claude-timeout.py 900 -- claude -p \
               --model step-3.7-flash \
               --permission-mode bypassPermissions \
@@ -234,15 +231,15 @@ jobs:
               --allowed-tools "Read,Write,Edit,Bash" \
               --max-turns 10 \
               --output-format text \
-              "$(cat "$PROMPT_FILE")" 2>>"$CLAUDE_STDERR"; then
+              "$(cat "$PROMPT_FILE")" &>>"$CLAUDE_LOG"; then
               CLAUDE_EXIT=$?
             fi
             echo "::debug::Claude exit code: $CLAUDE_EXIT"
-            echo "::debug::Claude stderr: $(cat "$CLAUDE_STDERR" | head -20)"
+            echo "::debug::Claude log (last 5 lines): $(tail -5 "$CLAUDE_LOG" 2>/dev/null || echo 'empty')"
 
             # claude -p 在 --max-budget-usd / --max-turns 超出时仍 exit 0
-            # 必须检查 stderr 才能识别这种"表面成功"的情况
-            if [ "$CLAUDE_EXIT" -eq 0 ] && grep -qiE "budget limit exceeded|reached max turns|max turns exceeded|budget.*exceeded" "$CLAUDE_STDERR" 2>/dev/null; then
+            # 错误写到 stdout，所以检查合并日志
+            if [ "$CLAUDE_EXIT" -eq 0 ] && grep -qiE "budget limit exceeded|reached max turns|max turns exceeded|budget.*exceeded" "$CLAUDE_LOG" 2>/dev/null; then
               echo "::warning::Claude reached budget/turn limit but exited 0 — treating as failure"
               CLAUDE_EXIT=1
             fi
