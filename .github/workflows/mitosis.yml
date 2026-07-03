@@ -237,14 +237,16 @@ jobs:
             echo "ANTHROPIC_API_KEY set: $([ -n "$ANTHROPIC_API_KEY" ] && echo "yes" || echo "no")"
 
             # 50 turns: 读取 Issue + 实现 + 构建 + PR 创建需要多轮工具调用
-            python3 scripts/claude-timeout.py 900 -- claude -p \
+            CLAUDE_LOG="/tmp/mitosis-claude-$ATTEMPT.log"
+            rm -f "$CLAUDE_LOG"
+            timeout 900s python3 scripts/claude-timeout.py 900 -- claude -p \
               --model step-3.7-flash \
               --permission-mode bypassPermissions \
               --max-budget-usd 10 \
               --allowed-tools "Read,Write,Edit,Bash" \
               --max-turns 50 \
               --output-format text \
-              --prompt-file "$PROMPT_FILE" &>>"$CLAUDE_LOG"
+              --prompt-file "$PROMPT_FILE" >>"$CLAUDE_LOG" 2>&1
             CLAUDE_EXIT=$?
             echo "Claude exit code: $CLAUDE_EXIT"
             echo "Claude log size: $(wc -c < "$CLAUDE_LOG" 2>/dev/null || echo '0') bytes"
