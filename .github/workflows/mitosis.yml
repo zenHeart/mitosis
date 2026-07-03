@@ -210,6 +210,20 @@ jobs:
           # Save the original commit before the agent loop starts
           ORIGINAL_SHA=$(git rev-parse HEAD)
 
+          # 预先信任 CI 工作区，防止 claude 消耗 turns 在 trust dialog 上
+          # .claude/settings.json 有 29 个 permissions.allow，但未信任的工作区会忽略它们
+          mkdir -p "$HOME/.claude"
+          cat > "$HOME/.claude.json" << 'CLAUDE_JSON'
+          {
+            "projects": {
+              "/home/runner/work/mitosis/mitosis": {
+                "hasTrustDialogAccepted": true
+              }
+            }
+          }
+          CLAUDE_JSON
+          echo "Claude trust configured: $(cat "$HOME/.claude.json")"
+
           FEEDBACK=""
           PASSED=0
 
