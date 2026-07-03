@@ -108,6 +108,17 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+// 监听 OAuth 错误（处理 authStore.init() 在组件挂载后才完成的情况）
+watch(
+  () => authStore.oauthError,
+  (newError) => {
+    if (newError) {
+      error.value = newError
+      authStore.oauthError = null
+    }
+  }
+)
 </script>
 
 <template>
