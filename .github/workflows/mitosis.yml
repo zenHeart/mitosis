@@ -215,9 +215,9 @@ jobs:
 
             CLAUDE_STDERR="/tmp/mitosis-claude-stderr-$ATTEMPT.log"
             CLAUDE_EXIT=0
-            # 使用 claude-timeout 包装器：后台 watchdog 进程在 15min 后杀掉整个进程组
-            # （timeout 单独使用无法杀掉 claude 的子进程，setsid 也无法保证进程组终止）
-            if ! bash scripts/claude-timeout.sh 900 claude -p \
+            # 使用 Python watchdog 包装器：独立进程组 + 后台线程超时 kill
+            # （解决 timeout/setsid 无法有效杀掉 claude 子进程的问题）
+            if ! python3 scripts/claude-timeout.py 900 -- claude -p \
               --model step-3.7-flash \
               --bare \
               --permission-mode bypassPermissions \
@@ -225,7 +225,7 @@ jobs:
               --allowed-tools "Read,Write,Edit,Bash" \
               --max-turns 30 \
               --output-format text \
-              "$(cat "$PROMPT_FILE")" 2>"$CLAUDE_STDERR"; then
+              "$(cat "$PROMPT_FILE")" 2>>"$CLAUDE_STDERR"; then
               CLAUDE_EXIT=$?
             fi
             echo "::debug::Claude exit code: $CLAUDE_EXIT"
