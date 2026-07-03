@@ -239,6 +239,13 @@ jobs:
             echo "::debug::Claude exit code: $CLAUDE_EXIT"
             echo "::debug::Claude stderr: $(cat "$CLAUDE_STDERR" | head -20)"
 
+            # claude -p 在 --max-budget-usd / --max-turns 超出时仍 exit 0
+            # 必须检查 stderr 才能识别这种"表面成功"的情况
+            if [ "$CLAUDE_EXIT" -eq 0 ] && grep -qiE "budget limit exceeded|max turns exceeded|maximum.*turns.*reached|budget.*exceeded" "$CLAUDE_STDERR" 2>/dev/null; then
+              echo "::warning::Claude reached budget/turn limit but exited 0 — treating as failure"
+              CLAUDE_EXIT=1
+            fi
+
             if [ "$CLAUDE_EXIT" -ne 0 ]; then
               if [ "$IS_PLATFORM" = "true" ]; then
                 FEEDBACK="Previous Claude Code run failed before verification. Re-read the Issue and produce valid platform changes before stopping."
