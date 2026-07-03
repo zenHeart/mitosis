@@ -224,16 +224,15 @@ jobs:
 
             # 同时捕获 stdout + stderr，因为 claude 把 budget/turn 错误写到 stdout
             CLAUDE_LOG="/tmp/mitosis-claude-log-$ATTEMPT.log"
-            if ! python3 scripts/claude-timeout.py 900 -- claude -p \
+            python3 scripts/claude-timeout.py 900 -- claude -p \
               --model step-3.7-flash \
               --permission-mode bypassPermissions \
               --max-budget-usd 10 \
               --allowed-tools "Read,Write,Edit,Bash" \
               --max-turns 10 \
               --output-format text \
-              "$(cat "$PROMPT_FILE")" &>>"$CLAUDE_LOG"; then
-              CLAUDE_EXIT=$?
-            fi
+              "$(cat "$PROMPT_FILE")" &>>"$CLAUDE_LOG"
+            CLAUDE_EXIT=$?
             echo "::debug::Claude exit code: $CLAUDE_EXIT"
             echo "::debug::Claude log (last 5 lines): $(tail -5 "$CLAUDE_LOG" 2>/dev/null || echo 'empty')"
 
