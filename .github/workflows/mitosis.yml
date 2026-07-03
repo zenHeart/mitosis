@@ -239,9 +239,18 @@ jobs:
                   SECURITY_FAILURES="${SECURITY_FAILURES}  - S2: DOMPurify 白名单包含 on* 事件\n"
                 fi
 
-                # S3: CI Owner 门控检查
-                if ! rg "comment.user.login.*REPO_OWNER" .github/workflows/mitosis.yml >/dev/null 2>&1; then
-                  SECURITY_FAILURES="${SECURITY_FAILURES}  - S3: CI Owner 门控可能被破坏\n"
+                # S3: CI Owner 门控检查 - 验证 workflow 中有 owner 授权逻辑
+                # 检查 1: env var 中包含 comment 作者信息
+                # 检查 2: bash 逻辑中有 ACTOR = REPO_OWNER 比较
+                S3_FAIL=""
+                if ! rg "github\.event\.(issue|comment)\.user\.login" .github/workflows/mitosis.yml 2>/dev/null | grep -v "Security verifier" >/dev/null; then
+                  S3_FAIL="${S3_FAIL}  - S3a: workflow 中缺少 comment/issue 作者 env var\n"
+                fi
+                if ! rg '\"\$ACTOR\"\s*=\s*\"\$REPO_OWNER\"' .github/workflows/mitosis.yml 2>/dev/null | grep -v "Security verifier" >/dev/null; then
+                  S3_FAIL="${S3_FAIL}  - S3b: workflow 中缺少 ACTOR=REPO_OWNER 授权比较\n"
+                fi
+                if [ -n "$S3_FAIL" ]; then
+                  SECURITY_FAILURES="${SECURITY_FAILURES}${S3_FAIL}"
                 fi
 
                 # S4: localStorage 敏感存储检查
