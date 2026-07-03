@@ -231,7 +231,7 @@ jobs:
               --allowed-tools "Read,Write,Edit,Bash" \
               --max-turns 10 \
               --output-format text \
-              "$(cat "$PROMPT_FILE")" &>>"$CLAUDE_LOG"
+              --prompt-file "$PROMPT_FILE" &>>"$CLAUDE_LOG"
             CLAUDE_EXIT=$?
             echo "::debug::Claude exit code: $CLAUDE_EXIT"
             echo "::debug::Claude log (last 5 lines): $(tail -5 "$CLAUDE_LOG" 2>/dev/null || echo 'empty')"

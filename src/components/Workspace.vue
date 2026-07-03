@@ -10,6 +10,12 @@ import { detectCreateCommand, detectStatusCommand, detectStopCommand, detectStar
 import { createIssue, createIssueComment, getIssue, updateIssue, getLatestAppVersion } from '../composables/useGitHubAPI'
 import ChatInput from './ChatInput.vue'
 import type { BuildIssue, ChatSession } from '../types/app'
+import {
+  Dna, Smartphone, MessageSquare, PanelLeft,
+  Gamepad, FileText, Calculator, Settings,
+  CircleCheckBig, ClipboardList, Hammer,
+  RefreshCw, Key, Search, Star,
+} from '@lucide/vue'
 import { REPO_FULL_NAME, userRepoFullName } from '../config/repo'
 
 const emit = defineEmits<{
@@ -125,13 +131,6 @@ const searchResults = computed<ChatSession[]>(() => {
     return title.includes(q) || app.includes(q)
   })
 })
-
-// 会话图标
-function getSessionIcon(session: ChatSession): string {
-  if (session.labels?.includes('platform')) return '🧬'
-  if (session.appLabel) return '📱'
-  return '💬'
-}
 
 // 相对时间格式化
 function relativeTime(dateStr: string): string {
@@ -314,10 +313,17 @@ onMounted(async () => {
   }
 })
 
-// 移动端侧边栏打开时锁定背景滚动
+// 移动端侧边栏打开时锁定背景滚动，关闭时恢复滚动位置
+const savedScrollY = ref(0)
 watch(sidebarOpen, (open) => {
   if (typeof document !== 'undefined') {
-    document.body.style.overflow = open ? 'hidden' : ''
+    if (open) {
+      savedScrollY.value = window.scrollY
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+      window.scrollTo(0, savedScrollY.value)
+    }
   }
 }, { flush: 'post' })
 
@@ -658,7 +664,7 @@ async function createBuild(appName: string, description: string, basedOn?: strin
 
     sessionStore.addMessage({
       role: 'system',
-      content: `📝 已创建构建任务 #${issue.number} — ${appName} ${version}\n正在启动构建流程...`,
+      content: `已创建构建任务 #${issue.number} — ${appName} ${version}\n正在启动构建流程...`,
       createdAt: new Date().toISOString(),
     })
 
@@ -989,12 +995,16 @@ function handleNewChat() {
     <!-- 移动端侧边栏遮罩 -->
     <div v-if="sidebarOpen" class="sidebar-overlay" @click="sidebarOpen = false"></div>
     <!-- 移动端侧边栏开关 -->
-    <button class="sidebar-toggle-mobile" @click="sidebarOpen = !sidebarOpen">☰</button>
+    <button class="sidebar-toggle-mobile" @click="sidebarOpen = !sidebarOpen" aria-label="打开菜单">
+      <PanelLeft :size="22" stroke-width="2" />
+    </button>
     <aside class="sidebar" :class="{ open: sidebarOpen }">
       <div class="sidebar-header">
         <div class="sidebar-header-left">
-          <h2>🧬 Mitosis</h2>
-          <button class="sidebar-close-mobile" @click="sidebarOpen = false" title="关闭菜单">✕</button>
+          <h2><Dna :size="20" stroke-width="2" /> Mitosis</h2>
+          <button class="sidebar-close-mobile" @click="sidebarOpen = false" aria-label="关闭侧边栏">
+            <X :size="18" stroke-width="2" />
+          </button>
         </div>
         <div class="user-info">
           <img v-if="authStore.user?.avatar_url" :src="authStore.user.avatar_url" class="avatar" />
@@ -1023,23 +1033,23 @@ function handleNewChat() {
         <!-- 搜索模式：显示搜索结果（带图标） -->
         <template v-if="sessionSearch.trim()">
           <div class="search-results" v-if="searchResults.length">
-            <div
+            <a
               v-for="session in searchResults"
               :key="session.issueNumber"
+              href="#"
               class="session-item"
-              tabindex="0"
-              role="button"
               :class="{
                 active: sessionStore.activeSession?.issueNumber === session.issueNumber,
                 closed: session.status === 'closed'
               }"
-              @click="navigateToSession(session)"
-              @keydown.enter="navigateToSession(session)"
+              @click.prevent="navigateToSession(session)"
             >
-              <span class="session-icon">{{ getSessionIcon(session) }}</span>
+              <Dna v-if="session.labels?.includes('platform')" :size="16" stroke-width="2" />
+              <Smartphone v-else-if="session.appLabel" :size="16" stroke-width="2" />
+              <MessageSquare v-else :size="16" stroke-width="2" />
               <span class="session-title">{{ session.title }}</span>
               <span class="session-status" :class="statusClass(session)">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
-            </div>
+            </a>
           </div>
           <div v-else class="no-results">未找到匹配的会话</div>
         </template>
@@ -1048,78 +1058,72 @@ function handleNewChat() {
         <template v-else>
           <!-- 快捷访问（最近使用的应用） -->
           <template v-if="quickAccessApps.length">
-            <div class="session-group-label">⭐ 快捷访问</div>
-            <div
+            <div class="session-group-label"><Star :size="14" stroke-width="2" /> 快捷访问</div>
+            <a
               v-for="group in quickAccessApps"
               :key="'qa-' + group.appName"
+              href="#"
               class="session-item app-group quick-access-item"
-              tabindex="0"
-              role="button"
-              @click="navigateToSession(group.latest)"
-              @keydown.enter="navigateToSession(group.latest)"
+              @click.prevent="navigateToSession(group.latest)"
             >
-              <span class="session-icon">📱</span>
+              <component :is="Smartphone" :size="16" stroke-width="2" />
               <span class="session-title">{{ group.appName }}</span>
               <span class="session-time">{{ relativeTime(group.latest.updatedAt) }}</span>
               <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
-            </div>
+            </a>
           </template>
 
           <!-- 平台会话（open only） -->
           <template v-if="platformSessions.length">
-            <div class="session-group-label">🧬 平台</div>
-            <div
+            <div class="session-group-label"><Dna :size="14" stroke-width="2" /> 平台</div>
+            <a
               v-for="session in platformSessions"
               :key="session.issueNumber"
+              href="#"
               class="session-item"
-              tabindex="0"
-              role="button"
               :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber }"
-              @click="navigateToSession(session)"
-              @keydown.enter="navigateToSession(session)"
+              @click.prevent="navigateToSession(session)"
             >
               <span class="session-title">{{ session.title }}</span>
               <span class="session-status" :class="statusClass(session)">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
-            </div>
+            </a>
           </template>
 
           <!-- 应用会话：按 app name 聚类，只显示 open -->
           <template v-if="clusteredAppGroups.length">
-            <div class="session-group-label">📱 我的应用</div>
-            <div
+            <div class="session-group-label"><Smartphone :size="14" stroke-width="2" /> 我的应用</div>
+            <a
               v-for="group in clusteredAppGroups"
               :key="group.appName"
+              href="#"
               class="session-item app-group"
-              tabindex="0"
-              role="button"
               :class="{ active: sessionStore.activeSession?.issueNumber === group.latest.issueNumber }"
-              @click="navigateToSession(group.latest)"
-              @keydown.enter="navigateToSession(group.latest)"
+              @click.prevent="navigateToSession(group.latest)"
             >
-              <span class="session-icon">📱</span>
+              <component :is="Smartphone" :size="16" stroke-width="2" />
               <span class="session-title app-name-title" :title="group.appName">{{ group.appName }}</span>
               <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
-            </div>
+            </a>
           </template>
 
           <!-- 最近关闭的会话 -->
           <template v-if="recentClosedSessions.length">
-            <div class="session-group-label closed-group-label">📋 最近关闭</div>
-            <div
+            <div class="session-group-label closed-group-label"><ClipboardList :size="14" stroke-width="2" /> 最近关闭</div>
+            <a
               v-for="session in recentClosedSessions"
               :key="'closed-' + session.issueNumber"
+              href="#"
               class="session-item closed-session-item"
-              tabindex="0"
-              role="button"
               :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber }"
-              @click="navigateToSession(session)"
-              @keydown.enter="navigateToSession(session)"
+              @click.prevent="navigateToSession(session)"
             >
-              <span class="session-icon">{{ getSessionIcon(session) }}</span>
+              <Dna v-if="session.labels?.includes('platform')" :size="16" stroke-width="2" />
+              <Smartphone v-else-if="session.appLabel" :size="16" stroke-width="2" />
+              <MessageSquare v-else :size="16" stroke-width="2" />
               <span class="session-title">{{ session.title }}</span>
               <span class="session-time">{{ relativeTime(session.updatedAt) }}</span>
               <span class="session-status" :class="statusClass(session)">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
-            </div>
+            </a>
           </template>
         </template>
       </div>
@@ -1143,12 +1147,12 @@ function handleNewChat() {
           <h3>👋 你好，{{ authStore.user?.login }}</h3>
           <p>描述你想做的事情，AI 会自动判断是构建应用还是平台变更。</p>
           <div class="examples">
-            <button @click="inputText = '帮我做一个俄罗斯方块游戏，支持消行和计分'">🎮 俄罗斯方块</button>
-            <button @click="inputText = '帮我做一个 todo 应用，支持添加、删除和标记完成'">📝 Todo 应用</button>
-            <button @click="inputText = '帮我做一个计算器，支持加减乘除'">🔢 计算器</button>
-            <button @click="inputText = '在 tetris-game 的基础上加一个关卡系统'">🧬 继续迭代</button>
-            <button @click="inputText = '优化 Workspace 的聊天界面性能'">⚙️ 平台优化</button>
-            <button @click="inputText = 'Mitosis 目前的技术栈是什么？'">💬 咨询问题</button>
+            <button @click="inputText = '帮我做一个俄罗斯方块游戏，支持消行和计分'"><Gamepad :size="16" stroke-width="2" /> 俄罗斯方块</button>
+            <button @click="inputText = '帮我做一个 todo 应用，支持添加、删除和标记完成'"><FileText :size="16" stroke-width="2" /> Todo 应用</button>
+            <button @click="inputText = '帮我做一个计算器，支持加减乘除'"><Calculator :size="16" stroke-width="2" /> 计算器</button>
+            <button @click="inputText = '在 tetris-game 的基础上加一个关卡系统'"><Dna :size="16" stroke-width="2" /> 继续迭代</button>
+            <button @click="inputText = '优化 Workspace 的聊天界面性能'"><Settings :size="16" stroke-width="2" /> 平台优化</button>
+            <button @click="inputText = 'Mitosis 目前的技术栈是什么？'"><MessageSquare :size="16" stroke-width="2" /> 咨询问题</button>
           </div>
         </div>
         <div v-else-if="displayMessages.length === 0 && !isOwner" class="welcome">
@@ -1167,9 +1171,9 @@ function handleNewChat() {
         <!-- 错误恢复操作栏 -->
         <div v-if="lastErrorKind && !thinking && !building" class="recovery-bar">
           <span class="recovery-label">恢复操作：</span>
-          <button @click="handleRetry" class="recovery-btn retry-btn">🔄 重试</button>
-          <button v-if="lastErrorKind === 'auth'" @click="handleUpdateToken" class="recovery-btn">🔑 更新 Token</button>
-          <button @click="handleCreateDirectIssue" class="recovery-btn direct-btn">📝 直接建 Issue</button>
+          <button @click="handleRetry" class="recovery-btn retry-btn"><RefreshCw :size="16" stroke-width="2" /> 重试</button>
+          <button v-if="lastErrorKind === 'auth'" @click="handleUpdateToken" class="recovery-btn"><Key :size="16" stroke-width="2" /> 更新 Token</button>
+          <button @click="handleCreateDirectIssue" class="recovery-btn direct-btn"><FileText :size="16" stroke-width="2" /> 直接建 Issue</button>
         </div>
         <div v-if="thinking" class="message system">
           <div class="typing-indicator">
@@ -1180,22 +1184,22 @@ function handleNewChat() {
         <div v-if="buildProgress" class="build-progress">
           <div class="build-progress-steps">
             <div class="build-step" :class="{ active: buildProgress.step >= 0, done: buildProgress.step > 0 }">
-              <span class="step-icon">📋</span>
+              <component :is="ClipboardList" :size="18" stroke-width="2" class="step-icon" />
               <span class="step-label">分析</span>
             </div>
             <div class="build-step-line" :class="{ active: buildProgress.step >= 1 }"></div>
             <div class="build-step" :class="{ active: buildProgress.step >= 1, done: buildProgress.step > 1 }">
-              <span class="step-icon">🔨</span>
+              <component :is="Hammer" :size="18" stroke-width="2" class="step-icon" />
               <span class="step-label">构建</span>
             </div>
             <div class="build-step-line" :class="{ active: buildProgress.step >= 2 }"></div>
             <div class="build-step" :class="{ active: buildProgress.step >= 2, done: buildProgress.step > 3 }">
-              <span class="step-icon">🔎</span>
+              <component :is="Search" :size="18" stroke-width="2" class="step-icon" />
               <span class="step-label">验证</span>
             </div>
             <div class="build-step-line" :class="{ active: buildProgress.step >= 3 }"></div>
             <div class="build-step" :class="{ active: buildProgress.step >= 3 }">
-              <span class="step-icon">✅</span>
+              <component :is="CircleCheckBig" :size="18" stroke-width="2" class="step-icon" />
               <span class="step-label">审查</span>
             </div>
           </div>
@@ -1205,25 +1209,25 @@ function handleNewChat() {
       <!-- 错误恢复操作栏 -->
       <div v-if="lastErrorKind && !thinking && !building" class="recovery-bar">
         <span class="recovery-label">恢复操作：</span>
-        <button @click="handleRetry" class="recovery-btn retry-btn">🔄 重试</button>
-        <button v-if="lastErrorKind === 'auth'" @click="handleUpdateToken" class="recovery-btn">🔑 更新 Token</button>
+        <button @click="handleRetry" class="recovery-btn retry-btn"><RefreshCw :size="16" stroke-width="2" /> 重试</button>
+        <button v-if="lastErrorKind === 'auth'" @click="handleUpdateToken" class="recovery-btn"><Key :size="16" stroke-width="2" /> 更新 Token</button>
         <template v-if="lastErrorKind === 'quota' || lastErrorKind === 'unknown'">
           <button
             v-if="!confirmingPlatform"
             @click="startConfirmPlatform"
             class="recovery-btn direct-btn"
-          >📝 创建平台变更任务</button>
+          ><FileText :size="16" stroke-width="2" /> 创建平台变更任务</button>
           <template v-else>
             <span class="recovery-confirm-text">确认创建平台 Issue？</span>
             <button @click="confirmCreatePlatform" class="recovery-btn confirm-yes">✓ 确认</button>
             <button @click="cancelConfirmPlatform" class="recovery-btn confirm-no">✕ 取消</button>
           </template>
         </template>
-        <button @click="handleCreateDirectIssue" class="recovery-btn direct-btn">📝 直接建应用 Issue</button>
+        <button @click="handleCreateDirectIssue" class="recovery-btn direct-btn"><FileText :size="16" stroke-width="2" /> 直接建应用 Issue</button>
       </div>
       <!-- 活跃会话的应用导航栏 -->
       <div v-if="sessionStore.activeSession?.appLabel" class="app-nav-bar">
-        <span class="app-nav-label">📱 {{ sessionStore.activeSession.appLabel.replace('app/', '') }}</span>
+        <span class="app-nav-label"><Smartphone :size="16" stroke-width="2" /> {{ sessionStore.activeSession.appLabel.replace('app/', '') }}</span>
         <button @click="openAppSession(sessionStore.activeSession)" class="app-nav-open-btn">打开应用 →</button>
       </div>
       <ChatInput
@@ -1288,8 +1292,8 @@ function handleNewChat() {
   padding: 0.2rem 0.4rem;
   border-radius: 4px;
   line-height: 1;
-  min-width: 32px;
-  min-height: 32px;
+  min-width: 44px;
+  min-height: 44px;
   align-items: center;
   justify-content: center;
   transition: color 0.2s, background 0.2s;
@@ -1343,7 +1347,7 @@ function handleNewChat() {
 
 .logout-btn:hover {
   color: var(--error);
-  background: rgba(248, 81, 73, 0.1);
+  background: var(--error-tint);
 }
 
 .nav {
@@ -1353,12 +1357,13 @@ function handleNewChat() {
 .new-chat-btn {
   width: 100%;
   padding: 0.5rem;
+  min-height: 44px;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-primary);
   font-size: 0.85rem;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s;
 }
 
 .new-chat-btn:hover {
@@ -1409,6 +1414,12 @@ function handleNewChat() {
 
 .search-input:focus {
   border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.search-input:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .search-input::placeholder {
@@ -1445,6 +1456,9 @@ function handleNewChat() {
   color: var(--text-secondary);
   padding: 0.35rem 0.5rem 0.1rem;
   letter-spacing: 0.03em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .closed-group-label {
@@ -1497,17 +1511,17 @@ function handleNewChat() {
 
 .status-active {
   color: var(--success);
-  background: rgba(63, 185, 80, 0.1);
+  background: var(--success-tint);
 }
 
 .status-review {
-  color: #b8860b;
-  background: rgba(210, 153, 34, 0.2);
+  color: var(--warning);
+  background: var(--warning-tint);
 }
 
 .status-error {
   color: var(--error);
-  background: rgba(248, 81, 73, 0.1);
+  background: var(--error-tint);
 }
 
 .status-closed {
@@ -1518,7 +1532,7 @@ function handleNewChat() {
 .session-open-btn {
   margin-left: auto;
   font-size: 0.7rem;
-  padding: 0.25rem 0.6rem;
+  padding: 0.35rem 0.75rem;
   border-radius: 4px;
   border: 1px solid var(--accent);
   background: transparent;
@@ -1526,8 +1540,8 @@ function handleNewChat() {
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  min-height: 28px;
-  line-height: 1.2;
+  min-height: 44px;
+  line-height: 1.4;
 }
 
 .session-open-btn:hover {
@@ -1540,10 +1554,13 @@ function handleNewChat() {
 }
 
 .session-icon {
-  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 1.5rem;
-  text-align: center;
+  height: 1.5rem;
   flex-shrink: 0;
+  color: var(--text-secondary);
 }
 
 .session-item.active {
@@ -1612,7 +1629,7 @@ function handleNewChat() {
 
 .empty-apps {
   font-size: 0.8rem;
-  color: #555;
+  color: var(--text-tertiary);
   padding: 0.5rem;
 }
 
@@ -1637,17 +1654,21 @@ function handleNewChat() {
 .app-nav-label {
   color: var(--text-primary);
   font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .app-nav-open-btn {
   padding: 0.35rem 0.75rem;
+  min-height: 44px;
   background: transparent;
   color: var(--accent);
   border: 1px solid var(--accent);
   border-radius: 6px;
   font-size: 0.8rem;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s, color 0.2s;
 }
 
 .app-nav-open-btn:hover {
@@ -1664,7 +1685,7 @@ function handleNewChat() {
   border-radius: 6px;
   font-size: 0.85rem;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s, color 0.2s;
 }
 
 .back-to-app-btn:hover {
@@ -1736,7 +1757,7 @@ function handleNewChat() {
   border-radius: 20px;
   color: var(--text-primary);
   font-size: 0.85rem;
-  transition: all 0.2s;
+  transition: border-color 0.2s, background 0.2s;
 }
 
 .examples button:hover {
@@ -1755,7 +1776,7 @@ function handleNewChat() {
 
 .message.user {
   align-self: flex-end;
-  background: linear-gradient(135deg, #58a6ff, #79c0ff);
+  background: var(--user-msg-bg);
   color: #fff;
   border-bottom-right-radius: 4px;
 }
@@ -1767,12 +1788,12 @@ function handleNewChat() {
 }
 
 .message.user + .message.user {
-  background: linear-gradient(135deg, #4790e8, #68afef);
+  background: var(--user-msg-bg);
 }
 
 .message.system + .message.system {
-  background: #1a1f26;
-  border-color: #3a3f46;
+  background: var(--bg-tertiary);
+  border-color: var(--border-subtle);
 }
 
 /* 移动端消息宽度限制 */
@@ -1799,8 +1820,8 @@ function handleNewChat() {
   align-items: center;
   gap: 0.5rem;
   padding: 0.6rem 0.75rem;
-  background: rgba(255, 170, 0, 0.08);
-  border: 1px solid rgba(255, 170, 0, 0.3);
+  background: var(--warning-tint);
+  border: 1px solid var(--warning-border);
   border-radius: 8px;
   margin-bottom: 0.5rem;
   flex-wrap: wrap;
@@ -1812,24 +1833,39 @@ function handleNewChat() {
 }
 .recovery-btn {
   padding: 0.35rem 0.7rem;
-  min-height: 36px;
+  min-height: 44px;
   font-size: 0.8rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-secondary);
   color: var(--text-primary);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 .recovery-btn:hover {
   background: var(--accent);
   color: #fff;
 }
 .retry-btn {
-  border-color: #58a6ff;
+  border-color: var(--accent);
 }
 .direct-btn {
-  border-color: #3fb950;
+  border-color: var(--success);
+}
+.confirm-yes {
+  border-color: var(--error);
+  background: var(--error-tint);
+}
+.confirm-no {
+  border-color: var(--text-secondary);
+}
+.recovery-confirm-text {
+  font-size: 0.8rem;
+  color: var(--warning);
+  font-weight: 600;
 }
 
 .message-content {
@@ -1919,7 +1955,6 @@ function handleNewChat() {
 }
 
 .step-icon {
-  font-size: 1.1rem;
   width: 2rem;
   height: 2rem;
   display: flex;
@@ -1928,7 +1963,8 @@ function handleNewChat() {
   border-radius: 50%;
   background: var(--bg-tertiary);
   border: 2px solid var(--border);
-  transition: all 0.3s;
+  transition: background 0.3s, border-color 0.3s, box-shadow 0.3s;
+  color: var(--text-secondary);
 }
 
 .build-step.active .step-icon {
@@ -1939,7 +1975,7 @@ function handleNewChat() {
 
 .build-step.done .step-icon {
   border-color: var(--success);
-  background: rgba(63, 185, 80, 0.1);
+  background: var(--success-tint);
 }
 
 .build-step-line {
@@ -2042,7 +2078,6 @@ function handleNewChat() {
     border: 1px solid var(--border);
     border-radius: 8px;
     color: var(--text-secondary);
-    font-size: 1.25rem;
     cursor: pointer;
   }
 
@@ -2100,54 +2135,4 @@ function handleNewChat() {
   }
 }
 
-/* 错误恢复操作栏 */
-.recovery-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 0.75rem;
-  background: rgba(255, 170, 0, 0.08);
-  border: 1px solid rgba(255, 170, 0, 0.3);
-  border-radius: 8px;
-  margin-bottom: 0.5rem;
-  flex-wrap: wrap;
-}
-.recovery-label {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin-right: 0.25rem;
-}
-.recovery-btn {
-  padding: 0.35rem 0.7rem;
-  min-height: 36px;
-  font-size: 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.recovery-btn:hover {
-  background: var(--accent);
-  color: #fff;
-}
-.retry-btn {
-  border-color: #58a6ff;
-}
-.direct-btn {
-  border-color: #3fb950;
-}
-.confirm-yes {
-  border-color: #f85149;
-  background: rgba(248, 81, 73, 0.15);
-}
-.confirm-no {
-  border-color: var(--text-secondary);
-}
-.recovery-confirm-text {
-  font-size: 0.8rem;
-  color: #f0883e;
-  font-weight: 600;
-}
 </style>

@@ -1,18 +1,20 @@
 import type { BuildIssue } from '../types/app'
 
-export function usePolling() {
+export function usePolling(options?: { defaultIntervalMs?: number }) {
+  const defaultInterval = options?.defaultIntervalMs ?? 5000
   const intervals: Map<number, ReturnType<typeof setInterval>> = new Map()
 
   function start(
     issueNumber: number,
     fetchFn: () => Promise<BuildIssue>,
     onUpdate: (issue: BuildIssue) => void,
-    intervalMs = 5000
+    intervalMs?: number
   ): void {
     if (intervals.has(issueNumber)) return
 
     let count = 0
     const maxPolls = 120 // 10 minutes at 5s interval
+    const actualInterval = intervalMs ?? defaultInterval
 
     const id = setInterval(async () => {
       count++
@@ -26,7 +28,7 @@ export function usePolling() {
         console.error(`Polling error for issue #${issueNumber}:`, e)
         if (count >= maxPolls) stop(issueNumber)
       }
-    }, intervalMs)
+    }, actualInterval)
 
     intervals.set(issueNumber, id)
   }

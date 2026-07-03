@@ -41,8 +41,6 @@ export const useAuthStore = defineStore('auth', {
       if (typeof window !== 'undefined') {
         sessionStorage.clear()
         localStorage.removeItem('mitosis_setup_complete')
-        localStorage.removeItem('mitosis_token')
-        localStorage.removeItem('mitosis_user')
       }
     },
 
@@ -145,8 +143,6 @@ export const useAuthStore = defineStore('auth', {
       if (typeof window !== 'undefined') {
         sessionStorage.clear()
         localStorage.removeItem('mitosis_setup_complete')
-        localStorage.removeItem('mitosis_token')
-        localStorage.removeItem('mitosis_user')
       }
       this.user = null
       this.token = null

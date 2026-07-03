@@ -6,6 +6,7 @@ import { useSessionStore } from '../stores/session'
 import { getLoginUrl } from '../composables/useAuth'
 import { REPO_FULL_NAME } from '../config/repo'
 import { listApps } from '../composables/useGitHubAPI'
+import { Wrench, Smartphone, FileText, PanelLeft, Sun, Moon, Package, Gamepad, AlertTriangle } from '@lucide/vue'
 import { useDarkMode } from '../composables/useDarkMode'
 
 const props = defineProps<{
@@ -24,7 +25,10 @@ const isLoggedIn = computed(() => !!authStore.token)
 
 const apps = ref<AppInfo[]>(LOCAL_APPS)
 const loading = ref(true)
-const error = ref('')
+const error = ref('') // OAuth 错误等
+const apiError = ref('') // 应用列表 API 错误（不掩盖 fallback）
+const retryLoading = ref(false)
+let loadTimer: ReturnType<typeof setTimeout> | null = null
 const selectedApp = ref<string | undefined>(props.initialApp)
 const selectedSession = ref<number | undefined>(props.initialApp ? undefined : undefined)
 const selectedCardRef = ref<HTMLElement | null>(null)
@@ -35,9 +39,9 @@ const loginLoading = ref(false)
 const sessionGroups = computed(() => {
   const raw = sessionStore.groupedSessions as { platform: ChatSession[]; app: ChatSession[]; other: ChatSession[] }
   return [
-    { key: 'platform', label: '🔧 平台', sessions: raw.platform },
-    { key: 'app', label: '📱 应用', sessions: raw.app },
-    { key: 'other', label: '📋 其他', sessions: raw.other },
+    { key: 'platform', label: '平台', icon: Wrench, sessions: raw.platform },
+    { key: 'app', label: '应用', icon: Smartphone, sessions: raw.app },
+    { key: 'other', label: '其他', icon: FileText, sessions: raw.other },
   ].filter((g) => g.sessions.length > 0)
 })
 
@@ -54,6 +58,28 @@ function selectSession(issueNumber: number) {
 
 function scrollToApps() {
   appsGridRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+async function loadApps() {
+  loading.value = true
+  apiError.value = ''
+  retryLoading.value = false
+  if (loadTimer) clearTimeout(loadTimer)
+  loadTimer = setTimeout(() => {
+    if (loading.value) retryLoading.value = true
+  }, 8000)
+
+  try {
+    const apiApps = await listApps(authStore.token || '', REPO_FULL_NAME)
+    apps.value = apiApps.length > 0 ? apiApps : LOCAL_APPS
+  } catch (e) {
+    apps.value = LOCAL_APPS
+    // 不掩盖 fallback：保留 API 错误信息，让用户知道正在使用本地数据
+    apiError.value = e instanceof Error ? e.message : '加载应用列表失败，显示本地示例'
+  } finally {
+    loading.value = false
+    if (loadTimer) clearTimeout(loadTimer)
+  }
 }
 
 function handleLogin() {
@@ -94,19 +120,8 @@ onMounted(async () => {
     if (!isNaN(num)) selectedSession.value = num
   }
 
-  try {
-    const apiApps = await listApps(authStore.token || '', REPO_FULL_NAME)
-    if (apiApps.length > 0) {
-      apps.value = apiApps
-    } else {
-      apps.value = LOCAL_APPS
-    }
-  } catch (e) {
-    apps.value = LOCAL_APPS
-    error.value = ''
-  } finally {
-    loading.value = false
-  }
+  // 加载应用列表（带 8s 慢加载提示）
+  await loadApps()
 })
 
 // 监听 OAuth 错误（处理 authStore.init() 在组件挂载后才完成的情况）
@@ -127,7 +142,9 @@ watch(
     <aside v-if="isLoggedIn" class="session-sidebar" :class="{ open: sidebarOpen }">
       <div class="sidebar-header">
         <h3>会话</h3>
-        <button class="sidebar-close" @click="sidebarOpen = false">×</button>
+        <button class="sidebar-close" @click="sidebarOpen = false" aria-label="关闭侧边栏">
+          <X :size="18" stroke-width="2" />
+        </button>
       </div>
       <div class="sidebar-sessions">
         <div
@@ -135,30 +152,37 @@ watch(
           :key="group.key"
           class="session-group"
         >
-          <div class="group-label">{{ group.label }}</div>
-          <div
+          <div class="group-label">
+            <component :is="group.icon" :size="14" stroke-width="2" />
+            {{ group.label }}
+          </div>
+          <button
             v-for="session in group.sessions"
             :key="session.issueNumber"
+            type="button"
             :class="['session-item', { active: selectedSession === session.issueNumber }]"
             @click="selectSession(session.issueNumber)"
           >
             <span class="session-title">{{ session.title }}</span>
             <span class="session-status" :class="session.status">{{ session.status }}</span>
-          </div>
+          </button>
         </div>
       </div>
     </aside>
 
     <header class="gallery-header">
       <div class="brand">
-        <button v-if="isLoggedIn" class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen">☰</button>
+        <button v-if="isLoggedIn" class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen" aria-label="打开会话侧边栏">
+          <PanelLeft :size="22" stroke-width="2" />
+        </button>
         <div class="brand-center">
-          <span class="logo">🧬</span>
+          <Dna :size="28" stroke-width="2" class="logo-icon" />
           <h1>Mitosis</h1>
-          <button class="theme-toggle" @click="toggleDarkMode" :title="darkMode === 'dark' ? '切换到亮色模式' : '切换到暗黑模式'">
-            {{ darkMode === 'dark' ? '☀️' : '🌙' }}
-          </button>
         </div>
+        <button class="theme-toggle" @click="toggleDarkMode" :aria-label="darkMode === 'dark' ? '切换到亮色模式' : '切换到暗黑模式'">
+          <Sun v-if="darkMode === 'dark'" :size="20" stroke-width="2" />
+          <Moon v-else :size="20" stroke-width="2" />
+        </button>
       </div>
       <p class="tagline">AI 构建 AI，无限繁衍</p>
     </header>
@@ -170,26 +194,51 @@ watch(
       </section>
 
       <section class="apps-section">
-        <div v-if="loading" class="status">加载中...</div>
-        <div v-else-if="error" class="status error">{{ error }}</div>
-        <div v-else-if="apps.length === 0" class="status empty">
-          暂无应用，登录后可以开始构建。
+        <!-- 加载骨架屏（1.5s shimmer 动画） -->
+        <div v-if="loading" class="apps-grid apps-grid--skeleton">
+          <div v-for="i in 2" :key="'sk-'+i" class="skeleton-card">
+            <div class="skeleton-icon"></div>
+            <div class="skeleton-lines">
+              <div class="skeleton-line skeleton-line--title"></div>
+              <div class="skeleton-line skeleton-line--version"></div>
+            </div>
+          </div>
+          <div v-if="retryLoading" class="skeleton-retry">
+            <button @click="loadApps" class="retry-link">加载较慢，点击重试</button>
+          </div>
         </div>
+
+        <!-- API 错误提示（不掩盖 fallback 数据） -->
+        <div v-if="apiError" class="api-error-banner">
+          <AlertTriangle :size="18" stroke-width="2" class="api-error-icon" />
+          <span class="api-error-text">{{ apiError }}</span>
+          <button @click="loadApps" class="retry-link">重试</button>
+        </div>
+
+        <!-- 空状态 -->
+        <div v-else-if="apps.length === 0" class="status empty">
+          <Package :size="32" stroke-width="1.5" class="empty-icon" />
+          <p>暂无应用</p>
+          <p class="empty-hint">登录后可以开始构建自己的应用。</p>
+        </div>
+
+        <!-- 应用列表（API 数据或 LOCAL_APPS fallback） -->
         <div v-else class="apps-grid" ref="appsGridRef">
-          <div
+          <button
             v-for="app in apps"
             :key="app.id"
             :ref="(el) => setSelectedCard(selectedApp === app.id ? el as HTMLElement : null)"
             :class="['app-item', { selected: selectedApp === app.id }]"
+            type="button"
             @click="openApp(app)"
           >
-            <div class="app-icon">📦</div>
+            <Package :size="24" stroke-width="2" class="app-icon-svg" />
             <div class="app-details">
               <span class="app-name">{{ app.name }}</span>
               <span class="app-version">v{{ app.latestVersion }}</span>
             </div>
             <span class="app-action">打开 →</span>
-          </div>
+          </button>
         </div>
       </section>
 
@@ -198,7 +247,7 @@ watch(
         <p v-else>想构建自己的应用？仅仓库所有者登录后可使用 AI 构建。</p>
         <div class="cta-buttons">
           <button @click="scrollToApps" class="cta-btn cta-browse">
-            🎮 浏览应用
+            <Gamepad :size="18" stroke-width="2" /> 浏览应用
           </button>
           <button
             v-if="!isLoggedIn"
@@ -206,7 +255,7 @@ watch(
             class="cta-btn cta-login"
             :disabled="loginLoading"
           >
-            {{ loginLoading ? '跳转中...' : '🔨 使用 GitHub 登录后创建自己的应用' }}
+            {{ loginLoading ? '跳转中...' : '使用 GitHub 登录后创建自己的应用' }}
           </button>
         </div>
       </section>
@@ -229,14 +278,15 @@ watch(
 .gallery-header {
   position: relative;
   text-align: center;
-  padding: 3rem 1rem 1.5rem;
+  padding: 1.5rem 1rem 1rem;
   border-bottom: 1px solid var(--border);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 0.5rem;
   margin-bottom: 0.5rem;
   padding: 0 0.5rem;
 }
@@ -246,24 +296,26 @@ watch(
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
 }
 
-.logo {
-  font-size: 2.5rem;
+.logo-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--accent);
+  flex-shrink: 0;
 }
 
 .brand h1 {
-  font-size: 2rem;
+  font-size: 1.75rem;
   font-weight: 700;
   color: var(--text-primary);
+  line-height: var(--leading-tight);
 }
 
 .tagline {
   color: var(--text-secondary);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  line-height: var(--leading-normal);
 }
 
 .gallery-main {
@@ -271,41 +323,58 @@ watch(
   max-width: 800px;
   width: 100%;
   margin: 0 auto;
-  padding: 2rem 1.5rem;
+  padding: 1.5rem 1.25rem;
 }
 
 @media (min-width: 1024px) {
   .gallery-main {
-    max-width: none;
-    margin: 0;
+    max-width: 960px;
+    padding: 2rem;
+  }
+
+  .brand {
+    justify-content: space-between;
+    max-width: 960px;
+    margin-left: auto;
+    margin-right: auto;
+    width: 100%;
+  }
+
+  .brand-center {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
   }
 }
 
 .hero {
   text-align: center;
-  margin-bottom: 2.5rem;
+  margin-bottom: 1.25rem;
 }
 
 .hero h2 {
-  font-size: 1.5rem;
+  font-size: 1.375rem;
   margin-bottom: 0.5rem;
   color: var(--text-primary);
+  line-height: var(--leading-tight);
 }
 
 .hero p {
   color: var(--text-secondary);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  line-height: var(--leading-normal);
 }
 
 .apps-section {
-  margin-bottom: 3rem;
+  margin-bottom: 1.25rem;
 }
 
 .status {
   text-align: center;
-  padding: 2rem;
+  padding: 1.5rem;
   color: var(--text-secondary);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  line-height: var(--leading-normal);
 }
 
 .status.error {
@@ -313,7 +382,113 @@ watch(
 }
 
 .status.empty {
-  color: #666;
+  color: var(--text-tertiary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.empty-icon {
+  color: var(--text-tertiary);
+  opacity: 0.6;
+  margin-bottom: 0.25rem;
+}
+
+.empty-hint {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* ── Skeleton loading ─────────────────────────────────────── */
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.apps-grid--skeleton {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.skeleton-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.skeleton-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border) 50%, var(--bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+}
+
+.skeleton-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border) 50%, var(--bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+}
+
+.skeleton-line--title {
+  width: 70%;
+}
+
+.skeleton-line--version {
+  width: 35%;
+  height: 10px;
+}
+
+.skeleton-retry {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 0.75rem;
+}
+
+.retry-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  padding: 0.25rem 0.5rem;
+}
+
+.api-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: var(--warning-tint);
+  border: 1px solid var(--warning-border);
+  border-radius: 8px;
+  color: var(--warning);
+  font-size: 0.9rem;
+}
+
+.api-error-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
 .apps-grid {
@@ -331,7 +506,16 @@ watch(
   border: 1px solid var(--border);
   border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s;
+  font: inherit;
+  text-align: left;
+  line-height: inherit;
+  color: inherit;
+}
+
+.app-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .app-item:hover {
@@ -346,8 +530,16 @@ watch(
 }
 
 .app-icon {
-  font-size: 1.75rem;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-icon-svg {
+  width: 24px;
+  height: 24px;
+  color: var(--text-secondary);
 }
 
 .app-details {
@@ -393,19 +585,20 @@ watch(
 
 .cta-section {
   text-align: center;
-  padding: 2rem;
+  padding: 1.5rem 1rem;
   border-top: 1px solid var(--border);
 }
 
 .cta-section p {
   color: var(--text-secondary);
   margin-bottom: 1rem;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  line-height: var(--leading-normal);
 }
 
 .cta-buttons {
   display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
   justify-content: center;
   flex-wrap: wrap;
 }
@@ -426,32 +619,37 @@ watch(
   color: #fff;
 }
 
-.cta-login:hover {
+.cta-login:hover:not(:disabled) {
   opacity: 0.9;
 }
 
 .cta-btn {
-  display: inline-block;
-  padding: 0.75rem 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
   border-radius: 8px;
   text-decoration: none;
   font-weight: 500;
-  font-size: 0.95rem;
-  transition: all 0.2s;
+  font-size: 0.9rem;
+  transition: transform 0.2s, border-color 0.2s, background 0.2s;
   cursor: pointer;
   border: none;
+  min-height: 44px;
 }
 
-.cta-btn:hover {
+.cta-btn:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 
 .gallery-footer {
   text-align: center;
-  padding: 1.5rem;
+  padding: 1.25rem 1rem;
   border-top: 1px solid var(--border);
-  color: #555;
+  color: var(--text-tertiary);
   font-size: 0.8rem;
+  line-height: var(--leading-normal);
 }
 
 .gallery-footer a {
@@ -500,11 +698,13 @@ watch(
 .sidebar-close {
   background: none;
   border: none;
-  font-size: 1.5rem;
   color: var(--text-secondary);
   cursor: pointer;
   padding: 0;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .sidebar-close:hover {
@@ -528,12 +728,16 @@ watch(
   color: var(--text-secondary);
   padding: 0.5rem 0.75rem;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .session-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
   cursor: pointer;
@@ -575,7 +779,7 @@ watch(
 }
 
 .session-status.closed {
-  background: #666;
+  background: var(--text-tertiary);
   color: #fff;
 }
 
@@ -583,12 +787,16 @@ watch(
   background: none;
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-size: 1.2rem;
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 0.3rem 0.6rem;
+  padding: 0.4rem;
   margin-right: 0.5rem;
-  transition: all 0.15s;
+  transition: border-color 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
 }
 
 .sidebar-toggle:hover {
@@ -597,16 +805,20 @@ watch(
 }
 
 .theme-toggle {
-  background: none;
-  border: 1px solid var(--border);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 6px;
-  font-size: 1.2rem;
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 0.3rem 0.6rem;
+  padding: 0.4rem;
   margin-left: 0.5rem;
-  transition: all 0.15s;
+  transition: border-color 0.15s, color 0.15s, transform 0.15s;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
 }
 
 .theme-toggle:hover {
@@ -618,15 +830,21 @@ watch(
 /* ── 移动端适配 ─────────────────────────────────────────── */
 @media (max-width: 640px) {
   .gallery-header {
-    padding: 1.5rem 1rem 1rem;
+    padding: 0.75rem 1rem 0.5rem;
+  }
+
+  .brand {
+    gap: 0.25rem;
   }
 
   .brand h1 {
     font-size: 1.5rem;
   }
 
-  .logo {
-    font-size: 1.75rem;
+  .logo-icon {
+    width: 22px;
+    height: 22px;
+    color: var(--accent);
   }
 
   .tagline {
@@ -641,7 +859,8 @@ watch(
     font-size: 1.25rem;
   }
 
-  .apps-grid {
+  .apps-grid,
+  .apps-grid--skeleton {
     grid-template-columns: 1fr;
     gap: 0.75rem;
   }
@@ -685,6 +904,38 @@ watch(
 }
 
 @media (min-width: 1024px) {
+  .brand {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    max-width: 960px;
+    margin: 0 auto;
+    width: 100%;
+    gap: 0;
+  }
+
+  .sidebar-toggle {
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  .brand-center {
+    grid-column: 2;
+    position: static;
+    transform: none;
+  }
+
+  .theme-toggle {
+    grid-column: 3;
+    justify-self: end;
+    margin-left: 0;
+  }
+
+  .gallery-main {
+    max-width: 960px;
+    padding: 2rem;
+  }
+
   .session-sidebar {
     transform: translateX(0);
     position: sticky;

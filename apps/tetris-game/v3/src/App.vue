@@ -410,14 +410,55 @@ function handleKeyDown(e: KeyboardEvent): void {
   }
 }
 
+// ─── Touch Controls ─────────────────────────────────────────────────────────
+
+const touchStartX = ref(0)
+const touchStartY = ref(0)
+const touchStartTime = ref(0)
+
+function handleTouchStart(e: TouchEvent): void {
+  if (!gameStarted.value || gameOver.value) return
+  const touch = e.touches[0]
+  touchStartX.value = touch.clientX
+  touchStartY.value = touch.clientY
+  touchStartTime.value = Date.now()
+}
+
+function handleTouchEnd(e: TouchEvent): void {
+  if (!gameStarted.value || gameOver.value) return
+  const touch = e.changedTouches[0]
+  const dx = touch.clientX - touchStartX.value
+  const dy = touch.clientY - touchStartY.value
+  const dt = Date.now() - touchStartTime.value
+
+  const absDx = Math.abs(dx)
+  const absDy = Math.abs(dy)
+
+  if (absDx < 30 && absDy < 30 && dt < 200) {
+    // Tap - rotate
+    rotate()
+  } else if (absDx > absDy) {
+    // Horizontal swipe
+    if (dx > 0) moveRight()
+    else moveLeft()
+  } else if (dy > absDx && dy > 50) {
+    // Down swipe - hard drop
+    hardDrop()
+  }
+}
+
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown)
+  window.addEventListener('touchstart', handleTouchStart, { passive: true })
+  window.addEventListener('touchend', handleTouchEnd)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
+  window.removeEventListener('touchstart', handleTouchStart)
+  window.removeEventListener('touchend', handleTouchEnd)
   if (dropTimer.value) {
     clearInterval(dropTimer.value)
     dropTimer.value = null

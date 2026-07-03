@@ -1,6 +1,6 @@
 <!-- Tetris Game - Vue 3 + TypeScript -->
 <script setup lang="ts">
-import { reactive, computed, onMounted, onUnmounted } from 'vue'
+import { reactive, computed, ref, onMounted, onUnmounted } from 'vue'
 import './assets/main.css'
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -370,14 +370,55 @@ function handleKeyDown(e: KeyboardEvent): void {
   }
 }
 
+// ── Touch Controls ──────────────────────────────────────────────────────
+
+const touchStartX = ref(0)
+const touchStartY = ref(0)
+const touchStartTime = ref(0)
+
+function handleTouchStart(e: TouchEvent): void {
+  if (!state.isRunning || state.isGameOver) return
+  const touch = e.touches[0]
+  touchStartX.value = touch.clientX
+  touchStartY.value = touch.clientY
+  touchStartTime.value = Date.now()
+}
+
+function handleTouchEnd(e: TouchEvent): void {
+  if (!state.isRunning || state.isGameOver) return
+  const touch = e.changedTouches[0]
+  const dx = touch.clientX - touchStartX.value
+  const dy = touch.clientY - touchStartY.value
+  const dt = Date.now() - touchStartTime.value
+
+  const absDx = Math.abs(dx)
+  const absDy = Math.abs(dy)
+
+  if (absDx < 30 && absDy < 30 && dt < 200) {
+    // Tap - rotate
+    rotatePiece()
+  } else if (absDx > absDy) {
+    // Horizontal swipe
+    if (dx > 0) moveHorizontal(1)
+    else moveHorizontal(-1)
+  } else if (dy > absDx && dy > 50) {
+    // Down swipe - soft drop
+    softDrop()
+  }
+}
+
 // ── Lifecycle ───────────────────────────────────────────────────────────
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown)
+  window.addEventListener('touchstart', handleTouchStart, { passive: true })
+  window.addEventListener('touchend', handleTouchEnd)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
+  window.removeEventListener('touchstart', handleTouchStart)
+  window.removeEventListener('touchend', handleTouchEnd)
   stopTimer()
 })
 </script>

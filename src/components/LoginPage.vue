@@ -7,6 +7,7 @@ import {
   fetchGitHubUser,
   saveSession,
 } from '../composables/useAuth'
+import { Dna } from '@lucide/vue'
 
 const authStore = useAuthStore()
 const loading = ref(false)
@@ -51,7 +52,7 @@ const emit = defineEmits<{
 <template>
   <div class="login-page">
     <div class="login-card">
-      <h1 class="logo">🧬</h1>
+      <h1 class="logo"><Dna :size="48" stroke-width="2" /></h1>
       <h1 class="title">Mitosis</h1>
       <p class="subtitle">AI 构建 AI，无限繁衍</p>
       <button @click="handleLogin" class="github-btn" :disabled="loading">
@@ -76,7 +77,7 @@ const emit = defineEmits<{
 
 .login-card {
   text-align: center;
-  padding: 3rem;
+  padding: 2rem;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -85,7 +86,7 @@ const emit = defineEmits<{
 }
 
 .logo {
-  font-size: 3rem;
+  font-size: 2.5rem;
   margin-bottom: 0.5rem;
 }
 
@@ -98,7 +99,7 @@ const emit = defineEmits<{
 
 .subtitle {
   color: var(--text-secondary);
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
   font-size: 0.95rem;
 }
 
@@ -109,18 +110,30 @@ const emit = defineEmits<{
   gap: 0.75rem;
   width: 100%;
   padding: 0.75rem 1.5rem;
-  background: #24292e;
+  min-height: 44px;
+  background: var(--github-bg);
   color: #fff;
-  border: 1px solid #444;
+  border: 1px solid var(--github-border);
   border-radius: 8px;
   font-size: 1rem;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s, transform 0.15s;
+  cursor: pointer;
 }
 
 .github-btn:hover:not(:disabled) {
-  background: #2f363d;
-  border-color: #666;
+  background: var(--github-bg-hover);
+  border-color: var(--github-border-hover);
+  transform: translateY(-1px);
+}
+
+.github-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.github-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .github-btn:disabled {
@@ -134,7 +147,7 @@ const emit = defineEmits<{
 
 .error {
   color: var(--error);
-  margin-top: 1rem;
+  margin-top: 0.75rem;
   font-size: 0.875rem;
 }
 </style>

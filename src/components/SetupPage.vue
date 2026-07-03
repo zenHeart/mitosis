@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { verifyRepoOwnership } from '../composables/useAuth'
 import { REPO_NAME, REPO_FULL_NAME } from '../config/repo'
+import { Dna, ClipboardList, Info } from '@lucide/vue'
 
 const props = defineProps<{
   userName?: string
@@ -93,7 +94,7 @@ async function copyToken() {
 <template>
   <div class="setup-page">
     <div class="setup-card">
-      <h1>🧬 Mitosis</h1>
+      <h1><Dna :size="28" stroke-width="2" /> Mitosis</h1>
       <p class="greeting">你好，{{ userName || '用户' }}！</p>
       <p class="desc">欢迎来到 Mitosis。在开始创造之前，需要进行一些简单配置。</p>
 
@@ -101,7 +102,7 @@ async function copyToken() {
 
       <div v-else-if="!isRepoOwner" class="non-owner-guide">
         <div class="info-banner">
-          <span class="icon">ℹ️</span>
+          <span class="icon"><Info :size="18" stroke-width="2" /></span>
           <div>
             <h3>欢迎体验 Mitosis！</h3>
             <p>当前登录的 GitHub 账号 <strong>{{ userName || '用户' }}</strong> 还没有可用的 <code>{{ userRepo }}</code> 仓库。</p>
@@ -119,7 +120,7 @@ async function copyToken() {
               <a
                 :href="`https://github.com/${REPO_FULL_NAME}/fork`"
                 target="_blank"
-                rel="noopener"
+                rel="noopener noreferrer"
                 class="link"
               >
                 github.com/{{ REPO_FULL_NAME }}/fork ↗
@@ -194,7 +195,7 @@ async function copyToken() {
               <a
                 :href="`https://github.com/${userRepo}/settings/secrets`"
                 target="_blank"
-                rel="noopener"
+                rel="noopener noreferrer"
                 class="link"
               >
                 github.com/{{ userRepo }}/settings/secrets ↗
@@ -209,7 +210,10 @@ async function copyToken() {
               <div class="secret-item">
                 <span class="secret-key">STEP_TOKEN</span>
                 <button class="copy-btn" @click="copyToken" :title="copied ? '已复制到剪贴板' : '点击复制 Token'">
-                  {{ copied ? '✅ 已复制' : '📋 复制 Token' }}
+                  <span v-if="copied">✅ 已复制</span>
+                  <span v-else class="copy-btn-content">
+                    <ClipboardList :size="14" stroke-width="2" /> 复制 Token
+                  </span>
                 </button>
               </div>
             </div>
@@ -245,14 +249,14 @@ async function copyToken() {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 2.5rem;
+  padding: 2rem;
   max-width: 520px;
   width: 100%;
 }
 
 .status {
   text-align: center;
-  padding: 2rem;
+  padding: 1.5rem;
   color: var(--text-secondary);
 }
 
@@ -267,8 +271,8 @@ async function copyToken() {
   gap: 1rem;
   align-items: flex-start;
   padding: 1rem;
-  background: rgba(0, 229, 255, 0.05);
-  border: 1px solid rgba(0, 229, 255, 0.2);
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-border);
   border-radius: 8px;
 }
 
@@ -303,18 +307,29 @@ async function copyToken() {
 .btn-secondary {
   margin-top: 0.5rem;
   padding: 0.75rem 1.5rem;
+  min-height: 44px;
   background: transparent;
   color: var(--accent);
   border: 1px solid var(--accent);
   border-radius: 8px;
   font-size: 0.95rem;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s, transform 0.15s;
   cursor: pointer;
 }
 
 .btn-secondary:hover {
-  background: rgba(0, 229, 255, 0.1);
+  background: var(--accent-tint);
+  border-color: var(--accent);
+}
+
+.btn-secondary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 h1 {
@@ -331,7 +346,7 @@ h1 {
 .desc {
   color: var(--text-secondary);
   font-size: 0.9rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .form {
@@ -365,26 +380,44 @@ h1 {
 
 .input:focus {
   border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.input:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .input::placeholder {
-  color: #555;
+  color: var(--placeholder);
 }
 
 .btn-primary {
   margin-top: 1rem;
   padding: 0.75rem 1.5rem;
+  min-height: 44px;
   background: var(--accent);
   color: #fff;
   border: none;
   border-radius: 8px;
   font-size: 0.95rem;
   font-weight: 500;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, transform 0.15s;
+  cursor: pointer;
 }
 
 .btn-primary:hover:not(:disabled) {
   opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-primary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .btn-primary:disabled {
@@ -402,12 +435,12 @@ h1 {
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  background: rgba(63, 185, 80, 0.1);
-  border: 1px solid rgba(63, 185, 80, 0.3);
+  background: var(--success-tint);
+  border: 1px solid var(--success-border);
   border-radius: 8px;
   color: var(--success);
   font-weight: 500;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .secrets-guide {

@@ -11,9 +11,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "verify:mvp:local": "npm run typecheck && npm run build && RUN_BUILD=1 bash scripts/verify/main-pipeline.sh && BASE_URL=http://127.0.0.1:5173 node scripts/verify/e2e-golden.mjs",
+    "verify:mvp:real": "GITHUB_MCP_PAT=$GITHUB_MCP_PAT STEP_TOKEN=$STEP_TOKEN npx playwright test tests/build-flow.spec.ts tests/platform-build.spec.ts tests/setup-flow.spec.ts tests/non-owner.spec.ts --reporter=list"
   },
   "dependencies": {
+    "@lucide/vue": "^1.23.0",
     "cors": "^2.8.6",
     "dompurify": "^3.4.11",
     "express": "^5.2.1",

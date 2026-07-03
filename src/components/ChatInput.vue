@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { Image } from '@lucide/vue'
 
 const props = defineProps<{
   isOwner: boolean
@@ -21,6 +22,7 @@ const inputText = computed({
 
 const images = ref<{ dataUrl: string; name: string }[]>([])
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const imageError = ref('')
 
 const sendTitle = computed(() => {
   if (!props.isOwner) return '仅仓库所有者可使用'
@@ -32,8 +34,10 @@ const sendTitle = computed(() => {
 
 function handleSend() {
   if (!props.isOwner || props.thinking || props.building) return
+  imageError.value = ''
   emit('images', images.value)
   emit('send')
+  images.value = [] // 发送后清空图片
 }
 
 function triggerFileSelect() {
@@ -64,17 +68,21 @@ async function onPaste(e: ClipboardEvent) {
 }
 
 async function addImageFiles(files: FileList | File[]) {
+  imageError.value = ''
   const MAX_IMAGES = 4
   const MAX_SIZE_MB = 2
+  const oversized: string[] = []
   for (const file of Array.from(files)) {
     if (images.value.length >= MAX_IMAGES) break
     if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-      // 超出大小限制，此处用 alert 作为兜底提示（用户主动操作触发，非攻击面）
-      alert(`图片 "${file.name}" 超过 ${MAX_SIZE_MB}MB 限制，请压缩后重试。`)
+      oversized.push(file.name)
       continue
     }
     const dataUrl = await readFileAsDataURL(file)
     images.value.push({ dataUrl, name: file.name })
+  }
+  if (oversized.length > 0) {
+    imageError.value = `图片 ${oversized.join('、')} 超过 ${MAX_SIZE_MB}MB 限制，请压缩后重试。`
   }
 }
 
@@ -102,6 +110,7 @@ function removeImage(index: number) {
           <button class="remove-img-btn" @click="removeImage(i)" title="移除图片" aria-label="移除图片">✕</button>
         </div>
       </div>
+      <div v-if="imageError" class="image-error">{{ imageError }}</div>
       <div class="cursor-glow"></div>
       <textarea
         v-model="inputText"
@@ -128,7 +137,7 @@ function removeImage(index: number) {
           title="添加图片（最多4张，单张≤2MB）"
           aria-label="添加图片"
         >
-          🖼️
+          <Image :size="20" stroke-width="2" />
         </button>
         <button
           @click="handleSend"
@@ -149,7 +158,7 @@ function removeImage(index: number) {
 
 <style scoped>
 .input-area {
-  padding: 1rem 1.5rem 1.5rem;
+  padding: 0.75rem 1rem 1rem;
   background: var(--bg-primary);
 }
 
@@ -226,10 +235,18 @@ function removeImage(index: number) {
   justify-content: center;
   line-height: 1;
   padding: 0;
+  transition: background 0.15s;
 }
 
 .remove-img-btn:hover {
   background: rgba(255, 60, 60, 0.8);
+}
+
+.image-error {
+  color: var(--error);
+  font-size: 0.8rem;
+  padding: 0.35rem 0.5rem 0;
+  line-height: 1.4;
 }
 
 /* 输入行 */
@@ -253,7 +270,7 @@ function removeImage(index: number) {
 }
 
 .chat-input::placeholder {
-  color: #555;
+  color: var(--placeholder);
 }
 
 .action-btns {
@@ -265,13 +282,12 @@ function removeImage(index: number) {
 }
 
 .attach-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-secondary);
-  font-size: 1rem;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -283,6 +299,11 @@ function removeImage(index: number) {
 .attach-btn:hover:not(:disabled) {
   background: var(--bg-tertiary);
   color: var(--text-primary);
+}
+
+.attach-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .attach-btn:disabled {
@@ -312,6 +333,11 @@ function removeImage(index: number) {
 
 .send-btn:active:not(:disabled) {
   transform: translateY(0);
+}
+
+.send-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .send-btn:disabled {

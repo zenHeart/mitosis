@@ -119,7 +119,7 @@ export function formatStepFunError(err: unknown): FormattedError {
     // 5xx 服务端错误
     if (/50[0-9]/.test(raw)) {
       return {
-        title: '🔧 StepFun 服务异常',
+        title: 'StepFun 服务异常',
         detail: `StepFun 服务器返回错误 (${raw.match(/50[0-9]/)?.[0] || '5xx'})。`,
         kind: 'server',
         suggestion: 'StepFun 服务暂时不可用，请稍后重试。你也可以直接创建 Issue。',

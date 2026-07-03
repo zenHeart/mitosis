@@ -56,6 +56,18 @@ def main():
         print("Error: no claude args provided after --")
         sys.exit(1)
 
+    # 检查是否有 --prompt-file 参数（新方式，避免 shell 转义问题）
+    prompt_file = None
+    if '--prompt-file' in claude_args:
+        pf_idx = claude_args.index('--prompt-file')
+        if pf_idx + 1 < len(claude_args):
+            prompt_file = claude_args[pf_idx + 1]
+            claude_args = claude_args[:pf_idx] + claude_args[pf_idx + 2:]
+
+    if not claude_args:
+        print("Error: no claude args provided after --")
+        sys.exit(1)
+
     # 启动 claude：新 session（独立进程组）+ stdin pipe（传递 prompt）
     try:
         proc = subprocess.Popen(
@@ -73,17 +85,33 @@ def main():
     print(f"[timeout] claude started: pid={proc.pid}, pgid={pgid}", file=sys.stderr)
     print(f"[timeout] watchdog: {timeout}s (SIGKILL)", file=sys.stderr)
 
-    # 通过 stdin 传递 prompt（如果 claude_args 末尾是 prompt 文本）
-    # 最后一个参数可能是 prompt 文本 → 写入 stdin
-    prompt_text = claude_args[-1] if claude_args else ""
-    # 如果最后一个参数不是以 - 开头，视为 prompt 文本
-    if prompt_text and not prompt_text.startswith('-'):
-        claude_args = claude_args[:-1]  # 从参数列表移除 prompt
+    # 通过 stdin 传递 prompt
+    if prompt_file:
+        # 新方式：从文件读取 prompt（避免 shell 转义问题）
         try:
-            proc.stdin.write(prompt_text.encode('utf-8'))
+            with open(prompt_file, 'rb') as f:
+                prompt_text = f.read()
+            proc.stdin.write(prompt_text)
             proc.stdin.close()
         except Exception as e:
-            print(f"[timeout] stdin write warning: {e}", file=sys.stderr)
+            print(f"[timeout] Failed to read prompt file: {e}", file=sys.stderr)
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            sys.exit(1)
+    else:
+        # 旧方式：通过 stdin 传递 prompt（如果 claude_args 末尾是 prompt 文本）
+        # 最后一个参数可能是 prompt 文本 → 写入 stdin
+        prompt_text = claude_args[-1] if claude_args else ""
+        # 如果最后一个参数不是以 - 开头，视为 prompt 文本
+        if prompt_text and not prompt_text.startswith('-'):
+            claude_args = claude_args[:-1]  # 从参数列表移除 prompt
+            try:
+                proc.stdin.write(prompt_text.encode('utf-8'))
+                proc.stdin.close()
+            except Exception as e:
+                print(f"[timeout] stdin write warning: {e}", file=sys.stderr)
 
     # 启动 watchdog 线程
     wd = threading.Thread(

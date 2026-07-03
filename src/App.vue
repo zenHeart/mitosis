@@ -72,18 +72,22 @@ const appIframeSrc = computed(() => {
 </script>
 
 <template>
+  <!-- Skip link for keyboard accessibility -->
+  <a href="#main-content" class="skip-link">跳到主要内容</a>
+
   <!-- App viewer: Gallery for anonymous/gallery view, Workspace for authenticated -->
-  <Gallery v-if="view === 'gallery'" :initial-app="initialApp" />
-  <LoginPage v-else-if="view === 'login'" @login-success="onLoginSuccess" />
+  <Gallery v-if="view === 'gallery'" id="main-content" :initial-app="initialApp" />
+  <LoginPage v-else-if="view === 'login'" id="main-content" @login-success="onLoginSuccess" />
   <SetupPage
     v-else-if="view === 'setup'"
+    id="main-content"
     :user-name="authStore.user?.login"
     @complete="onSetupComplete"
     @browse="onBrowsePublic"
   />
   <!-- Workspace always visible for sidebar; iframe overlay for app viewing -->
   <div v-if="view === 'workspace'" style="position: relative; width: 100%; height: 100vh;">
-    <Workspace @navigate="(v) => { if (v === 'setup') (currentView as any).value = 'setup' }" />
+    <Workspace id="main-content" @navigate="(v) => { if (v === 'setup') (currentView as any).value = 'setup' }" />
     <iframe
       v-if="isAppPath"
       :src="appIframeSrc"
