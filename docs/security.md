@@ -46,9 +46,10 @@
 ## IssueOps 安全门控
 
 - 仓库是开源的，外部用户可以创建 Issue 或评论。
-- 外部 Issue 或外部 `/build` 评论不得直接触发 Agent Loop。
+- 外部 Issue 或外部 `/create` 评论不得直接触发 Agent Loop。
 - 真实 Agent Loop 只允许两类请求：
   - Issue 作者是仓库 owner。
-  - 仓库 owner 通过 `/build` 评论或 `owner-approved` label 批准。
-- Issue 必须带有明确的 `app/{name}` label 才能构建应用。
+  - 仓库 owner 通过 `/create` 评论批准。
+- 应用构建 Issue 必须带有明确的 `app/{name}` label；平台变更 Issue 必须带有 `platform` label。
+- `owner-approved` label 目前只是预留语义；workflow 真正接线并验证前，不得把它写成可触发能力。
 - 验证通过后创建 draft PR，等待人工审查；不直接合入主干。

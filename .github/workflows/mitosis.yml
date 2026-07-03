@@ -50,7 +50,7 @@ jobs:
           if [ "$NEEDS_APPROVAL" = "true" ] && [ -n "$ISSUE_NUMBER" ]; then
             gh issue comment "$ISSUE_NUMBER" \
               --repo "${{ github.repository }}" \
-              --body "🔒 Mitosis did not run the Agent Loop. External issues or comments require repository owner approval. The owner can approve by commenting \`/create\` or applying the \`owner-approved\` label with an \`app/{name}\` label."
+              --body "🔒 Mitosis did not run the Agent Loop. External issues or comments require repository owner approval. In the current workflow, the repository owner must comment \`/create\` on an issue that has an \`app/{name}\` or \`platform\` label."
           else
             echo "$REASON"
           fi
@@ -143,7 +143,7 @@ jobs:
           ensure_label "status:verifying" "fbca04" "Mitosis verifier is running"
           ensure_label "status:review" "0e8a16" "Human review required"
           ensure_label "status:failed" "b60205" "Mitosis Agent Loop failed"
-          ensure_label "owner-approved" "5319e7" "Repository owner approved external request"
+          ensure_label "owner-approved" "5319e7" "Reserved approval label; current workflow still requires owner /create"
 
           set_status() {
             STATUS_LABEL="$1"

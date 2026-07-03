@@ -59,9 +59,11 @@ Stop Hook 阻止结束时应使用：
 
 ## CI 输入
 
-- GitHub Issue 正文：生成应用的唯一权威规格。
-- Issue label：`app/{app-name}`。
-- 安全门控：Issue 作者必须是仓库 owner，或由仓库 owner 用 `/build`/`owner-approved` 批准。
+- GitHub Issue 正文：生成应用或平台变更的唯一权威规格。
+- Issue label：应用构建使用 `app/{app-name}`；平台变更使用 `platform`。
+- 当前触发：Issue 评论包含 `/create`。
+- 安全门控：当前 workflow 只允许仓库 owner 发送 `/create` 触发 Agent Loop。
+- 预留但未接线：`owner-approved` label 目前不能单独触发 Agent Loop，除非 workflow 后续实现并验证。
 - `worker/prompt.txt`：构建指令模板。
 - GitHub Secrets：`STEP_TOKEN`。
 
@@ -69,7 +71,7 @@ Stop Hook 阻止结束时应使用：
 
 ```mermaid
 flowchart TD
-    A["Issue opened / labeled / /build"] --> B["Owner approval gate"]
+    A["Issue comment: /create"] --> B["Owner approval gate"]
     B -->|unauthorized| X["comment needs owner approval; stop"]
     B -->|authorized| C["Parse app label + next version"]
     C --> D["Prepare prompt from worker/prompt.txt"]
@@ -117,7 +119,7 @@ bash ../../../worker/verify-build.sh
 | `status:verifying` | verifier 正在运行 |
 | `status:review` | 自动验证通过，等待人工审查 |
 | `status:failed` | 自动生成或验证失败 |
-| `owner-approved` | owner 批准外部 IssueOps 请求 |
+| `owner-approved` | 预留：owner 批准外部 IssueOps 请求；当前 workflow 未把它作为触发条件 |
 
 ## Verifier
 

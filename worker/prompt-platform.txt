@@ -157,7 +157,7 @@ npx vite preview --port 4173 &
 
 当 Issue 要求"按 goal.md 持续迭代 / 优化 MVP 体验 / continue"时，按以下协议执行**单轮**：
 
-1. **读 `goal.md`**（仓库根目录）第 3 节，找到**第一个**未勾选 `[ ]` 的验收项（按 Stage 顺序）。它就是本轮唯一目标。
+1. **读 `goal.md`**（仓库根目录），找到执行 Backlog 中**第一个**未勾选 `[ ]` 的验收项（按 Stage 顺序）。它就是本轮唯一目标。
 2. **读代码现实**：用 Read 确认相关文件当前内容，不信任记忆。
 3. **最小实现**：只改实现该项必需的代码；不顺手重构、不扩大范围、不同时做多项。
 4. **安全自检**（强制）：运行本文件"Step 3 安全自检"命令；发现问题立即修复。
@@ -168,7 +168,7 @@ npx vite preview --port 4173 &
    # 黄金指标跟踪（需 dev server）：起 npx vite preview --port 4173 后
    BASE_URL=http://localhost:4173 node scripts/verify/e2e-golden.mjs   # 目标转 GREEN
    ```
-6. **回写 `goal.md`**：把完成的 `[ ]` 改成 `[x]` 并 git add。
+6. **回写 `goal.md`**：只有 fresh verifier 通过后，才能把完成的 `[ ]` 改成 `[x]` 并 git add。
 7. **提交**：`git add -A && git commit`；输出自检报告（改了哪些文件、verifier 结果、勾选了哪个项）。
 
 铁律：一轮只完成一个验收项；`main-pipeline.sh` 必须保持 PASS（不得让回归守卫变红）；不得修改 CI owner 门控核心逻辑。

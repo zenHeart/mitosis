@@ -38,15 +38,17 @@ Session List    →   GET /repos/{owner}/{repo}/issues
 ### /create 触发链
 
 ```
-用户输入 /create
-  → 前端: 检测命令 → postComment(issueNumber, "/create")
+用户输入 /create 或 Workspace 创建构建 Issue 后
+  → 前端: 必须 postComment(issueNumber, "/create")
   → GitHub: issue_comment.created webhook
   → CI: 检查以下条件:
       1. comment.author === repo.owner
-      2. Issue 有 app/{name} label
+      2. Issue 有 app/{name} label 或 platform label
       3. Issue 无 status:building label (去重)
   → 全部通过 → 触发 agent loop
 ```
+
+> 当前 P0 gap：Workspace 的 `createBuild()` / `createPlatformBuild*()` 已能创建 Issue，但尚未保证随后评论 `/create`。根目录 `goal.md` 将该项列为第一优先级。
 
 **攻击面防护：**
 - 非 owner 的 `/create` → CI 直接忽略（无需审查）
@@ -106,8 +108,8 @@ DOMPurify.sanitize(html, {
 2. triage 分流
 3. 分流结果:
    - chat: 直接 AI 回复 → push to messages[] (不写 GitHub)
-   - build: AI 确认 BUILD_APP → 用户输入 /create → postComment("/create")
-   - platform: postComment(用户消息) → 创建 Issue（如果还没有）
+   - build: 创建 app Issue → postComment("/create") 触发 CI
+   - platform: 创建 platform Issue → postComment("/create") 触发 CI
 4. postComment 同时:
    - 乐观更新 messages[] (role: 'user')
    - 等待 GitHub 返回确认
@@ -117,11 +119,11 @@ DOMPurify.sanitize(html, {
 ### /create 触发
 
 ```
-1. 用户在 build session 中输入 "/create"
-2. 前端检测: 精确匹配 ^/create$ (首字符 /create)
+1. 用户在 build session 中输入 "/create"，或 Workspace 自动创建构建 Issue 后触发。
+2. 前端检测: 精确匹配 ^/create$ (首字符 /create)，或由 `createBuild()` / `createPlatformBuild*()` 在 Issue 创建成功后执行。
 3. POST /issues/{n}/comments { body: "/create" }
 4. 前端显示 "🔨 已确认构建，等待 CI 启动..."
-5. CI 触发 → 检测到 owner /create comment + app/{name} label
+5. CI 触发 → 检测到 owner /create comment + app/{name} label 或 platform label
 6. CI 添加 status:building label → 前端 polls 到变化 → 显示构建进度
 ```
 

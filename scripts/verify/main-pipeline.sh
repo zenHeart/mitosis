@@ -26,6 +26,16 @@ if printf '%s' "$ALLOWED_BLOCK" | rg -qi "on(click|error|load|mouse|focus|blur|c
   note "FAIL: ALLOWED_ATTR 含 on* 事件"; FAIL=1
 else note "PASS"; fi
 
+echo "== 3b. 前端创建 Issue 后自动评论 /create 触发 CI =="
+# 验证 Workspace.vue 中 createBuild/createPlatformBuild 在 createIssue 之后调用 createIssueComment('/create')
+if rg -q "createIssueComment\(.*,\s*'/create'\)" src/components/Workspace.vue 2>/dev/null; then
+  # 进一步验证调用的位置在 createIssue 之后（同函数内）
+  if awk '/createIssue\(/,/\}$/' src/components/Workspace.vue 2>/dev/null | rg -q "createIssueComment"; then
+    note "PASS"; else note "FAIL: createIssueComment 未在 createIssue 后调用"; FAIL=1; fi
+else
+  note "FAIL: Workspace.vue 缺少 createIssueComment('/create') 调用"; FAIL=1
+fi
+
 echo "== 4. 消息渲染经过 sanitize =="
 if rg -n 'v-html="[^"]*\b(msg|message)\.(text|content|body)\b' src/ 2>/dev/null | rg -qv 'sanitize'; then
   note "FAIL: 存在未 sanitize 的 v-html 用户内容"; FAIL=1

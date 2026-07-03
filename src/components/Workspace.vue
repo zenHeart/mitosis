@@ -7,7 +7,7 @@ import { chatWithStepFun, formatStepFunError } from '../composables/useStepFun'
 import { getSystemPrompt } from '../composables/useSystemPrompts'
 import { sanitize } from '../composables/useSanitize'
 import { detectCreateCommand, detectStatusCommand, detectStopCommand, detectStartCommand } from '../composables/useMockGitHub'
-import { createIssue, getIssue, updateIssue, getLatestAppVersion } from '../composables/useGitHubAPI'
+import { createIssue, createIssueComment, getIssue, updateIssue, getLatestAppVersion } from '../composables/useGitHubAPI'
 import ChatInput from './ChatInput.vue'
 import type { BuildIssue, ChatSession } from '../types/app'
 import { REPO_FULL_NAME, userRepoFullName } from '../config/repo'
@@ -628,6 +628,27 @@ async function createBuild(appName: string, description: string, basedOn?: strin
     const token = authStore.token!
     const issue = await createIssue(token, repo.value, `build: ${appName} ${version}`, body, labels)
 
+    // 自动评论 /create 触发 CI Agent Loop
+    try {
+      await createIssueComment(token, repo.value, issue.number, '/create')
+    } catch (commentErr) {
+      const commentStatus = (commentErr instanceof Error ? commentErr.message.match(/(\d{3})/) : null)?.[1]
+      const fallbackUrl = `https://github.com/${repo.value}/issues/${issue.number}`
+      if (commentStatus === '403') {
+        sessionStore.addMessage({
+          role: 'system',
+          content: `⚠️ Issue #${issue.number} 已创建，但当前 Token 无评论权限，无法自动触发构建。\n\n请手动访问 Issue 页面并评论 \`/create\`：\n[在 GitHub 上触发构建](${fallbackUrl})`,
+          createdAt: new Date().toISOString(),
+        })
+      } else {
+        sessionStore.addMessage({
+          role: 'system',
+          content: `⚠️ Issue #${issue.number} 已创建，但自动触发构建失败。\n\n请手动评论 \`/create\`：\n[在 GitHub 上触发构建](${fallbackUrl})`,
+          createdAt: new Date().toISOString(),
+        })
+      }
+    }
+
     sessionStore.addMessage({
       role: 'system',
       content: `📝 已创建构建任务 #${issue.number} — ${appName} ${version}\n正在启动构建流程...`,
@@ -674,6 +695,27 @@ async function createPlatformBuild(originalText: string, description: string) {
     const token = authStore.token!
     const issue = await createIssue(token, repo.value, title, body, ['platform'])
 
+    // 自动评论 /create 触发 CI Agent Loop
+    try {
+      await createIssueComment(token, repo.value, issue.number, '/create')
+    } catch (commentErr) {
+      const commentStatus = (commentErr instanceof Error ? commentErr.message.match(/(\d{3})/) : null)?.[1]
+      const fallbackUrl = `https://github.com/${repo.value}/issues/${issue.number}`
+      if (commentStatus === '403') {
+        sessionStore.addMessage({
+          role: 'system',
+          content: `⚠️ 平台构建 Issue #${issue.number} 已创建，但当前 Token 无评论权限，无法自动触发构建。\n\n请手动评论 \`/create\`：\n[在 GitHub 上触发构建](${fallbackUrl})`,
+          createdAt: new Date().toISOString(),
+        })
+      } else {
+        sessionStore.addMessage({
+          role: 'system',
+          content: `⚠️ 平台构建 Issue #${issue.number} 已创建，但自动触发构建失败。\n\n请手动评论 \`/create\`：\n[在 GitHub 上触发构建](${fallbackUrl})`,
+          createdAt: new Date().toISOString(),
+        })
+      }
+    }
+
     sessionStore.addMessage({
       role: 'system',
       content: `🔨 已创建平台构建任务 #${issue.number}，CI 将自动构建。\n查看: https://github.com/${repo.value}/issues/${issue.number}`,
@@ -715,6 +757,27 @@ async function createPlatformBuildDirect(originalText: string): Promise<BuildIss
   try {
     const token = authStore.token!
     const issue = await createIssue(token, repo.value, title, body, ['platform'])
+
+    // 自动评论 /create 触发 CI Agent Loop
+    try {
+      await createIssueComment(token, repo.value, issue.number, '/create')
+    } catch (commentErr) {
+      const commentStatus = (commentErr instanceof Error ? commentErr.message.match(/(\d{3})/) : null)?.[1]
+      const fallbackUrl = `https://github.com/${repo.value}/issues/${issue.number}`
+      if (commentStatus === '403') {
+        sessionStore.addMessage({
+          role: 'system',
+          content: `⚠️ 平台构建 Issue #${issue.number} 已创建，但当前 Token 无评论权限，无法自动触发构建。\n\n请手动评论 \`/create\`：\n[在 GitHub 上触发构建](${fallbackUrl})`,
+          createdAt: new Date().toISOString(),
+        })
+      } else {
+        sessionStore.addMessage({
+          role: 'system',
+          content: `⚠️ 平台构建 Issue #${issue.number} 已创建，但自动触发构建失败。\n\n请手动评论 \`/create\`：\n[在 GitHub 上触发构建](${fallbackUrl})`,
+          createdAt: new Date().toISOString(),
+        })
+      }
+    }
 
     sessionStore.addMessage({
       role: 'system',

@@ -39,8 +39,10 @@ export default defineConfig({
 
 ## GitHub Actions
 
-- `mitosis.yml`：Issue 或 `/build` 触发 Agent Loop，生成新应用版本，通过 verifier 后创建 draft PR。
+- `mitosis.yml`：当前由 Issue 评论中的 `/create` 触发 Agent Loop，生成新应用版本或平台变更，通过 verifier 后创建 draft PR。
 - `deploy.yml`：PR 合入 `master` 后构建平台主站，并把已有应用 dist 复制到部署目录。
+
+> 当前 P0 gap：Workspace 创建 Issue 后还必须触发 `/create`，否则 CI 不会启动。执行状态与后续修复项见根目录 `goal.md`。
 
 ## 验证清单
 
@@ -49,3 +51,4 @@ export default defineConfig({
 - `https://mitosis.zenheart.site/apps/{name}/v{n}/` 返回 200。
 - 生成应用 JS/CSS 使用相对路径加载。
 - 打开任意生成应用能看到返回 Mitosis 页面继续迭代的入口。
+- `BASE_URL=https://mitosis.zenheart.site node scripts/verify/e2e-golden.mjs` 与本地 golden 结果一致；否则先排查部署漂移。
