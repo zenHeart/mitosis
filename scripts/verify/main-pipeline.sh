@@ -16,7 +16,7 @@ if rg -n -i "(ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{
 else note "PASS"; fi
 
 echo "== 2. CI Owner 门控未被破坏 =="
-if rg -q 'ACTOR.*REPO_OWNER|REPO_OWNER.*ACTOR|comment\.user\.login' .github/workflows/mitosis.yml 2>/dev/null; then
+if rg -q '\$\{\{\s*github\.event\.(issue|comment)\.user\.login|\$\{ACTOR\}.*\$\{REPO_OWNER\}' .github/workflows/mitosis.yml 2>/dev/null; then
   note "PASS"; else note "FAIL: mitosis.yml owner 门控缺失"; FAIL=1; fi
 
 echo "== 3. DOMPurify ALLOWED_ATTR 白名单内无 on* 事件 =="
