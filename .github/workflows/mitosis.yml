@@ -31,6 +31,7 @@ jobs:
           REPO_OWNER: ${{ github.repository_owner }}
           ACTOR: ${{ github.actor }}
           ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
           EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
@@ -241,7 +242,7 @@ jobs:
 
             # claude -p 在 --max-budget-usd / --max-turns 超出时仍 exit 0
             # 必须检查 stderr 才能识别这种"表面成功"的情况
-            if [ "$CLAUDE_EXIT" -eq 0 ] && grep -qiE "budget limit exceeded|max turns exceeded|maximum.*turns.*reached|budget.*exceeded" "$CLAUDE_STDERR" 2>/dev/null; then
+            if [ "$CLAUDE_EXIT" -eq 0 ] && grep -qiE "budget limit exceeded|reached max turns|max turns exceeded|budget.*exceeded" "$CLAUDE_STDERR" 2>/dev/null; then
               echo "::warning::Claude reached budget/turn limit but exited 0 — treating as failure"
               CLAUDE_EXIT=1
             fi
