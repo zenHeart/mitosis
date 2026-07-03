@@ -107,8 +107,9 @@
   - 完成标准：干净浏览器访问线上站点，GitHub OAuth 能返回页面并被 `authStore.init()` 消费；失败时页面给出可读原因。
   - 验证证据：上一轮 Playwright 验证 OAuth callback 流程；本轮新增 oauthError 处理（auth.ts + Gallery.vue），错误时在 Gallery 显示可读原因；线上 golden path PASS（commit 8526a3f）。
 
-- [ ] C2.2 真实验证 owner Setup。
+- [x] C2.2 真实验证 owner Setup。
   - 完成标准：owner 登录后仓库归属判断正确；StepFun token 验证、GitHub Secrets 指引、完成 setup 后进入 Workspace；token 不显示明文。
+  - 验证证据：tests/setup-flow.spec.ts 9 项 Playwright 测试全 PASS（真实 GitHub API + 真实 StepFun token）；verifyRepoOwnership 对 zenHeart 返回 true，对不存在用户返回 false；Setup 页面 owner 分支显示 StepFun token 输入（password 类型），完成后进入 Workspace；token 不显示在页面内容中。
 
 - [ ] C2.3 真实验证 app build 闭环。
   - 完成标准：发“做一个 todo 应用”后创建 app Issue、触发 CI、进入 status:building/status:verifying/status:review 或 status:failed；UI 能轮询并展示状态。
