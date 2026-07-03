@@ -216,17 +216,19 @@ jobs:
             echo "::debug::ANTHROPIC_API_KEY set: $([ -n "$ANTHROPIC_API_KEY" ] && echo "yes" || echo "no")"
 
             CLAUDE_STDERR="/tmp/mitosis-claude-stderr-$ATTEMPT.log"
-            if ! timeout 600 claude -p \
+            CLAUDE_EXIT=0
+            timeout 600 claude -p \
               --model step-3.7-flash \
-              --bare \
               --permission-mode bypassPermissions \
               --max-budget-usd 5 \
               --allowed-tools "Read,Write,Edit,Bash" \
-              --max-turns 60 \
+              --max-turns 30 \
               --output-format text \
-              "$(cat "$PROMPT_FILE")" 2>"$CLAUDE_STDERR"; then
-              echo "::debug::Claude exit code: $?"
-              echo "::debug::Claude stderr: $(cat "$CLAUDE_STDERR" | head -20)"
+              "$(cat "$PROMPT_FILE")" 2>"$CLAUDE_STDERR" || CLAUDE_EXIT=$?
+            echo "::debug::Claude exit code: $CLAUDE_EXIT"
+            echo "::debug::Claude stderr: $(cat "$CLAUDE_STDERR" | head -20)"
+
+            if [ "$CLAUDE_EXIT" -ne 0 ]; then
               if [ "$IS_PLATFORM" = "true" ]; then
                 FEEDBACK="Previous Claude Code run failed before verification. Re-read the Issue and produce valid platform changes before stopping."
               else
