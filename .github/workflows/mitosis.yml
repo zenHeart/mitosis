@@ -226,14 +226,19 @@ jobs:
 
             CLAUDE_STDERR="/tmp/mitosis-claude-stderr-$ATTEMPT.log"
             CLAUDE_EXIT=0
-            timeout 600 claude -p \
+            # 使用 setsid 启动 claude，确保能杀死整个进程组（包括子进程）
+            # timeout 900 (15min) 作为安全网
+            if ! setsid timeout 900 claude -p \
               --model step-3.7-flash \
+              --bare \
               --permission-mode bypassPermissions \
               --max-budget-usd 5 \
               --allowed-tools "Read,Write,Edit,Bash" \
               --max-turns 30 \
               --output-format text \
-              "$(cat "$PROMPT_FILE")" 2>"$CLAUDE_STDERR" || CLAUDE_EXIT=$?
+              "$(cat "$PROMPT_FILE")" 2>"$CLAUDE_STDERR"; then
+              CLAUDE_EXIT=$?
+            fi
             echo "::debug::Claude exit code: $CLAUDE_EXIT"
             echo "::debug::Claude stderr: $(cat "$CLAUDE_STDERR" | head -20)"
 
