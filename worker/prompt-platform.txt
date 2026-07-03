@@ -19,6 +19,23 @@
 4. **提交所有变更** — 修改的平台文件必须 git add 和 git commit
 5. **不依赖外部 CDN** — 所有代码内联，不引入外部资源
 
+## CI 环境限制（必须了解）
+
+你在 GitHub Actions CI 中通过 `claude -p --bare` 运行，环境有以下限制：
+
+| 能力 | CI 中可用？ | 说明 |
+|------|------------|------|
+| Read/Write/Edit 文件 | ✅ | 直接操作 repo 文件 |
+| Bash 命令 | ✅ | 可运行 npm、git 等 |
+| Playwright MCP | ❌ | `--bare` 不加载 MCP 服务器 |
+| Chrome MCP | ❌ | 同上 |
+| 浏览器（Chromium） | ❌ | CI 容器未安装 Playwright 浏览器 |
+| Dev server | ❌ | CI 不运行 vite preview/dev |
+| StepFun API | ❌ | 无 STEP_TOKEN 环境变量 |
+| GitHub 真实 API | ⚠️ | 可能有网络限制 |
+
+**CI 中"通过"的定义**：bash verifier 全部通过（typecheck 0 errors + build 0 warnings + 安全扫描通过 + main-pipeline.sh PASS）+ 代码审查确认逻辑正确。浏览器类 verifier 在 CI 中跳过，不阻塞通过。
+
 ## 平台文件修改范围
 
 你可以修改以下平台文件：
@@ -80,6 +97,15 @@
 
 ## 构建验证流程（必须严格按序执行）
 
+> **CI 环境限制（必须阅读）**
+> 你在 CI（GitHub Actions）中通过 `claude -p --bare` 运行：
+> - **没有 Playwright MCP / Chrome MCP** — `--bare` 模式不加载任何 MCP 服务器
+> - **没有浏览器** — CI 容器未安装 Playwright Chromium
+> - **没有 dev server** — 无法运行 `vite preview` 或 `npm run dev`
+> - **没有 StepFun/GitHub MCP PAT** — 外部 API 验证不可用
+>
+> **CI 中的"PASS"定义**：bash verifier 通过（typecheck + build + 安全扫描 + main-pipeline.sh）+ 代码审查确认逻辑正确。浏览器类 verifier 跳过。
+
 ### Step 1：读取并理解 Issue
 读取 Issue #__ISSUE_NUMBER__ 完整内容，列出 3-5 个核心功能点。
 
@@ -111,16 +137,27 @@ npm run build
 
 ### Step 6：功能自检（关键步骤，不能跳过）
 
-**你必须验证以下功能点：**
-- [ ] 修改的功能按 Issue 需求正常工作
-- [ ] 现有功能未受影响（特别是 Gallery、Workspace、侧边栏）
-- [ ] 浏览器控制台无新的 console.error
+**CI 环境说明（重要）：**
+- 你在 CI 环境中运行（`claude -p --bare`），没有 MCP 服务器、没有浏览器、没有 dev server
+- **Playwright MCP、Chrome MCP、StepFun API 等浏览器/外部服务类 verifier 在 CI 中不可用，不要尝试运行它们**
+- CI 中的验证 = 代码审查 + bash verifier（typecheck + build + 安全扫描 + main-pipeline.sh）
+- 只要 bash verifier 通过 + 你的代码审查确认无破坏性变更，即可报告 PASS
 
-**验证方法：**
+**CI 中可用的验证方法：**
 ```bash
-# 启动预览服务器（同步运行，验证完成后停止）
-npx vite preview --port 4173
+# 1. 代码审查：阅读你修改的文件，确认逻辑正确
+# 2. 运行 bash verifier（CI 中实际执行的验证）
+npm run typecheck
+npm run build
+bash scripts/verify/main-pipeline.sh
+# 注意：不需要运行 npx vite preview 或任何浏览器测试
 ```
+
+**验证检查点：**
+- [ ] 修改的功能按 Issue 需求正常工作（通过代码审查确认）
+- [ ] 现有功能未受影响（通过代码审查 + main-pipeline.sh 确认）
+- [ ] 无新的 console.error（通过代码审查确认）
+- [ ] typecheck + build + main-pipeline.sh 全部通过（通过 bash 命令确认）
 
 ### Step 7：自检报告（必须输出）
 
@@ -132,21 +169,25 @@ npx vite preview --port 4173
 ### 修改文件清单
 - src/components/X.vue: ✅/❌ — 修改内容描述
 - src/stores/Y.ts: ✅/❌ — 修改内容描述
+- .github/workflows/mitosis.yml: ✅/❌ — 修改内容描述（如适用）
 
 ### 构建结果
 - npm run typecheck: 0 errors / N errors
 - npm run build: 0 errors, 0 warnings / 有错误
+- bash scripts/verify/main-pipeline.sh: PASS / FAIL
+- 安全扫描 (S1-S4): 全部通过 / 有失败
 
-### 安全自检
-- S1 无 token/secret 泄露: ✅/❌
-- S2 DOMPurify 配置正确: ✅/❌
-- S3 CI Owner 门控有效: ✅/❌
-- S4 无未加密敏感存储: ✅/❌
+### CI 环境说明
+- Playwright MCP: CI 不可用（--bare 模式不加载 MCP）— 跳过
+- Chrome MCP: CI 不可用 — 跳过
+- StepFun API: CI 不可用 — 跳过
+- GitHub 真实 API: CI 不可用（网络限制）— 跳过
+- 代码审查 + bash verifier: ✅
 
 ### 功能验证
-- [ ] Issue 需求实现: ✅/❌
-- [ ] 无破坏性变更: ✅/❌
-- [ ] 控制台无新错误: ✅/❌
+- [ ] Issue 需求实现: ✅/❌（代码审查确认）
+- [ ] 无破坏性变更: ✅/❌（main-pipeline.sh 确认）
+- [ ] 无新 console.error: ✅/❌（代码审查确认）
 
 ### 质量评级
 - 通过标准: P1 / P2 / P3 / F
