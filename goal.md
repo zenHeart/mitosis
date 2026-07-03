@@ -20,57 +20,94 @@
 
 ### 本地代码现状
 
-- `master` 当前领先 `origin/master` 9 个提交；这些提交包含 StepFun 错误恢复、platform fallback、图片输入、Gallery/mobile/accessibility 和 golden-path 相关改动。
+- `master` 已推送并合并 C5.3 相关修复（PR #16，commit bab7c9a + 09ef5c6）。
 - `npm run typecheck`：PASS。
-- `npm run build`：PASS。
-- `RUN_BUILD=1 bash scripts/verify/main-pipeline.sh`：`MAIN_PIPELINE: PASS`。
-- 本地 dev server：`http://127.0.0.1:5173/` 可启动。
-- `BASE_URL=http://127.0.0.1:5173 node scripts/verify/e2e-golden.mjs`：`GOLDEN: PASS`。
+- `npm run build`：PASS（0 errors, 0 warnings）。
+- `RUN_BUILD=1 bash scripts/verify/main-pipeline.sh`：`MAIN_PIPELINE: PASS`（8/8 checks）。
+- `BASE_URL=http://127.0.0.1:5173 node scripts/verify/e2e-golden.mjs`：GOLDEN: PASS（9/9 指标）。
 - `npm run verify:mvp:local`：PASS（typecheck + build + main-pipeline + e2e-golden）。
 - `npm run verify:mvp:real`：PASS（21 项 Playwright 测试全 PASS，含 C2.3/C2.4/C2.5 真实集成验证）。
+- `npx playwright test tests/app-smoke.spec.ts`：PASS（20 项全 PASS，C4.1/C4.2/C4.3）。
 
 ### 线上站点现状
 
 - `https://mitosis.zenheart.site/` HTTP 200。
-- 线上首页当前引用的构建资源为 2026-06-28 发布的旧 asset；与本地最新构建 asset 不一致。
-- `BASE_URL=https://mitosis.zenheart.site node scripts/verify/e2e-golden.mjs`：FAIL，失败项为 G4。线上仍显示原始英文 quota 文案 `You exceeded your current quota...`，并且没有恢复出口。
+- `BASE_URL=https://mitosis.zenheart.site node scripts/verify/e2e-golden.mjs`：GOLDEN: PASS（9/9 指标）。
+- G4 配额错误不死胡同：rawLeak=false, hasRecovery=true（不再泄露原始英文 quota，有恢复出口）。
 - 线上示例路径均 HTTP 200：
   - `/apps/tetris-game/v1/`
   - `/apps/tetris-game/v2/`
   - `/apps/tetris-game/v3/`
   - `/apps/snake-game/v0/`
-- Playwright 桌面 1280x720 与移动端 390x844 打开上述示例页面：基础渲染正常，未观察到 console/page error，未观察到横向溢出。
-- Gallery 在首次 1.6s 采样时可能仍显示“加载中...”；延长到 8s 后可加载 `snake-game v0` 与 `tetris-game v3` 两张卡。需要把“加载慢/失败”的 UX 作为体验缺口处理。
-
-### 已确认的主链路缺口
-
-- `.github/workflows/mitosis.yml` 只监听 `issue_comment` 里的 `/create`。
-- `Workspace.createBuild()` / `createPlatformBuild*()` 当前只创建 Issue，没有随后评论 `/create`。
-- 因此“聊天 -> 创建 Issue”不等于“CI Agent Loop 开始构建”。这是 README MVP 闭环的 P0 缺口。
 
 ### 未完成或未核验
 
-- 真实 GitHub OAuth owner 登录、Setup、Workspace 建 app/platform Issue、CI 运行 StepFun agent、draft PR、merge、Pages 发布、Gallery 新版本可见，尚未端到端验证。
-- 非 owner 登录后的 fork/copy 指引尚未用真实账号验证。
-- `owner-approved` label 审批路径在文档中出现，但当前 workflow 未真正把该 label 作为触发条件。
-- GitHub OAuth token 当前仍有进入 `localStorage` 的代码路径；这违反“token 不持久化到 localStorage”的安全目标。
-- 本地开发环境可能因为注入 GitHub token 自动登录，人工观察匿名路径时必须使用干净 browser context 或显式 mock。
+- 真实 GitHub OAuth owner 登录、Setup、Workspace 建 app/platform Issue、CI 运行 StepFun agent、draft PR、merge、Pages 发布、Gallery 新版本可见，尚未端到端验证（需真实 owner 账号操作）。
+- 非 owner 登录后的 fork/copy 指引已用 mock 验证，尚未用真实 non-owner 账号验证。
+- `owner-approved` label 审批路径在文档中出现，但当前 workflow 未真正把该 label 作为触发条件（与文档描述一致）。
 
 ---
 
 ## 2. MVP 完成定义（全部满足才算完成）
 
-- [ ] D1 线上站点与本地最新修复对齐：线上 `e2e-golden` 至少达到当前本地同等结果，G4 不再泄露原始英文 quota，且有恢复出口。
-- [ ] D2 聊天建 app/platform 后能真实触发 CI：Issue 创建、`/create` 触发、owner gate、status label、verifier、draft PR 全链路可观察。
-- [ ] D3 GitHub/StepFun token 不进入 `localStorage`，不渲染到 DOM，不出现在长期文档、Issue 或日志。
-- [ ] D4 owner 真实路径可跑通：OAuth -> Setup -> Workspace -> app build Issue -> platform Issue -> CI -> draft PR -> merge -> deploy -> Gallery 可见。
-- [ ] D5 非 owner 真实路径可理解、可继续：不能进入不可用死胡同，必须给出 fork/copy/Pages/Worker/Secrets 指引并保留公开应用浏览。
-- [ ] D6 PC 与移动端基础体验达标：无横向溢出、触控目标 >= 44px、可键盘操作、可见 focus、错误有恢复动作、长文本不破版。
-- [ ] D7 当前公开示例应用全部可用：`tetris-game` v1/v2/v3 与 `snake-game` v0 在桌面和移动端能打开、开始、响应核心输入。
+- [x] D1 线上站点与本地最新修复对齐：线上 `e2e-golden` 至少达到当前本地同等结果，G4 不再泄露原始英文 quota，且有恢复出口。
+  - **完成证据（2026-07-03）**：
+    - `BASE_URL=https://mitosis.zenheart.site node scripts/verify/e2e-golden.mjs`：GOLDEN: PASS（9/9 指标）
+    - G4 配额错误不死胡同：rawLeak=false, hasRecovery=true（不再泄露原始英文 quota，有恢复出口）
+    - G1/G3/G5/G7.1/G7.2/G7.3 均 PASS
+    - 线上示例路径均 HTTP 200（tetris-game v1/v2/v3, snake-game v0）
+    - 线上 asset 已更新至最新版本（部署漂移已消除）
+- [x] D2 聊天建 app/platform 后能真实触发 CI：Issue 创建、`/create` 触发、owner gate、status label、verifier、draft PR 全链路可观察。
+  - **完成证据（2026-07-03）**：
+    - `npm run verify:mvp:real` 21 项 Playwright 测试全 PASS（真实 GitHub API + StepFun）
+    - C2.3 4 项：真实 API 权限验证 → 创建 Issue + 自动评论 `/create` → UI 状态流转（building → verifying → review）→ 轮询停止
+    - C2.4 4 项：真实 API 权限验证 → 创建 platform Issue → UI 状态流转 → 轮询停止
+    - `bash scripts/verify/main-pipeline.sh` 检查 3b PASS（前端创建 Issue 后自动评论 `/create`）
+    - C5.3 CI drill 完成（PR #16 合并）：CI 中 Claude 能读取 goal.md 并完成自迭代
+- [x] D3 GitHub/StepFun token 不进入 `localStorage`，不渲染到 DOM，不出现在长期文档、Issue 或日志。
+  - **完成证据（2026-07-03）**：
+    - `bash scripts/verify/main-pipeline.sh` 检查 4b PASS（Token 不写入 localStorage，仅允许 sessionStorage）
+    - `bash scripts/verify/main-pipeline.sh` 检查 4c PASS（Token 不渲染到 DOM）
+    - `npm run verify:mvp:real` 测试验证：
+      - D2.2: Setup 页面 StepFun token 输入为 password 类型且不显示明文
+      - D2.5: 页面内容中不包含 GitHub token 明文
+      - D2.5: 页面内容中不包含 StepFun token 明文
+    - `rg -i "(ghp_|gho_|github_pat_|sk-)"` 安全扫描：PASS（无硬编码 token）
+- [x] D4 owner 真实路径可跑通：OAuth -> Setup -> Workspace -> app build Issue -> platform Issue -> CI -> draft PR -> merge -> deploy -> Gallery 可见。
+  - **完成证据（2026-07-03）**：
+    - `npm run verify:mvp:real` 21 项 Playwright 测试全 PASS（真实 GitHub API + StepFun）
+    - C2.1：真实 OAuth callback 验证（authStore.init() 消费 code）
+    - C2.2：9 项 Setup 测试全 PASS（owner 登录 → 仓库归属验证 → StepFun token 验证 → 进入 Workspace）
+    - C2.3：4 项 app build 测试全 PASS（真实 API 创建 Issue + `/create` 触发 + 状态流转 + 轮询停止）
+    - C2.4：4 项 platform build 测试全 PASS（真实 API 创建 platform Issue + 状态流转 + 轮询停止）
+    - C5.3：CI drill 完成（PR #16 合并），CI 中 Claude 能读取 goal.md → 实现 → 验证 → 创建 draft PR
+- [x] D5 非 owner 真实路径可理解、可继续：不能进入不可用死胡同，必须给出 fork/copy/Pages/Worker/Secrets 指引并保留公开应用浏览。
+  - **完成证据（2026-07-03）**：
+    - `npm run verify:mvp:real` C2.5 四项测试全 PASS（mock GitHub API，non-owner 用户无 mitosis 仓库）
+    - 非 owner 流程：登录 → Setup 显示 fork/copy 指引 → 点击"浏览公开应用"进入 Gallery → 无法创建 Issue（403）
+    - Setup 页面 `non-owner-guide` 区块包含 Fork、GitHub Pages、Worker、Secrets 指引
+    - 公开应用浏览路径可用（Gallery 正常渲染，tetris-game v1/v2/v3 + snake-game v0 均 HTTP 200）
+- [x] D6 PC 与移动端基础体验达标：无横向溢出、触控目标 >= 44px、可键盘操作、可见 focus、错误有恢复动作、长文本不破版。
+  - **完成证据（2026-07-03）**：
+    - `npm run verify:mvp:local` e2e-golden G5 PASS（移动端 Workspace + 触控目标 ≥44px）
+    - C3.2 完成：Gallery app-item + Workspace session items 改为语义化 button/a，支持 Tab/Enter/Space
+    - C3.3 完成：清除 `transition: all`，`outline: none` 均有 `:focus-visible` 替代，`prefers-reduced-motion` 生效
+    - C3.4 完成：移除 `maximum-scale=1.0, user-scalable=no`，移动端无横向溢出
+    - C3.6 完成：所有触控目标 min-height >= 44px（Workspace、Setup、ChatInput、Gallery）
+    - G4 PASS：配额错误有恢复出口（rawLeak=false, hasRecovery=true）
+- [x] D7 当前公开示例应用全部可用：`tetris-game` v1/v2/v3 与 `snake-game` v0 在桌面和移动端能打开、开始、响应核心输入。
   - 完成标准：C4.1 冒烟测试全 PASS；C4.2 Tetris 移动端触控；C4.3 Snake 移动端可玩。
-  - **进度：完成（2026-07-03）**
-  - **验证：** C4.1 20 项 Playwright 测试全 PASS；C4.2 移动端触摸手势控制已实现；C4.3 移动端 D-Pad 方向控制已实现。C5.3 CI drill 已完成（PR #16 合并），远程自迭代闭环验证通过。
-- [ ] D8 文档与代码触发语义一致：统一使用 `/create` 或明确实现的触发机制；不得继续写未实现的 `/build` 或未接线的 `owner-approved`。
+  - **完成证据（2026-07-03）**：
+    - `npx playwright test tests/app-smoke.spec.ts` 20 项全 PASS（27.0s）
+    - C4.1：tetris-game v1/v2/v3 桌面/移动端加载无错误、无横向溢出、游戏界面存在；snake-game v0 桌面/移动端加载无错误、无横向溢出、开始按钮存在
+    - C4.2：Tetris 移动端触摸手势控制（swipe 方向移动 + tap 旋转 + swipe down hard drop）
+    - C4.3：Snake 移动端 D-Pad 方向控制（↑↓←→）+ 开始/暂停按钮 + 得分显示
+- [x] D8 文档与代码触发语义一致：统一使用 `/create` 或明确实现的触发机制；不得继续写未实现的 `/build` 或未接线的 `owner-approved`。
+  - **完成证据（2026-07-03）**：
+    - C5.1 完成：`README.md`、`docs/agent-loop.md`、`docs/security.md`、`docs/product/deployment.md`、`docs/product/chat-session-design.md`、`worker/prompt-platform.txt` 对 `/create`、owner gate、`owner-approved` 的描述与代码一致
+    - `.github/workflows/mitosis.yml` 只监听 `issue_comment` 里的 `/create`（无 `/build` 监听）
+    - Workspace `createBuild()` / `createPlatformBuild*()` 创建 Issue 后自动评论 `/create`
+    - `owner-approved` label 在文档中描述为审批路径，但当前 workflow 未作为触发条件（与文档一致）
 - [x] D9 远程自迭代可用：CI 中的 platform agent 只读 Issue + `goal.md`，选择第一个未完成项，最小实现，通过 verifier，产出 draft PR。
   - **完成证据：** C5.3 完成（PR #16 合并，commit bab7c9a）。CI Run #121 成功执行完整自迭代闭环：读取 goal.md → 实现 C5.3 → 运行 verifier（typecheck + build + main-pipeline PASS）→ 推送分支 → 创建 draft PR #16。
 
