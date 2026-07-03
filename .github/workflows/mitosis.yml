@@ -397,20 +397,16 @@ jobs:
           ISSUE_NUMBER: ${{ steps.auth.outputs.issue_number }}
           IS_PLATFORM: ${{ steps.parse.outputs.is_platform }}
         run: |
+          # 确保在 git 仓库根目录（agent watchdog 可能影响工作目录状态）
+          REPO_DIR="$GITHUB_WORKSPACE"
+          if [ ! -d "$REPO_DIR/.git" ]; then
+            echo "::warning::.git not found in $REPO_DIR, re-cloning"
+            git clone "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" /tmp/mitosis-repo
+            REPO_DIR="/tmp/mitosis-repo"
+          fi
+          cd "$REPO_DIR"
           git config user.name "mitosis-bot"
           git config user.email "mitosis@users.noreply.github.com"
-
-          # 诊断：确保在 git 仓库中（agent loop 可能影响工作目录）
-          echo "::debug::PWD=$(pwd)"
-          echo "::debug::git_dir=$(ls -la .git 2>&1 || echo 'NO .git')"
-          if [ ! -d ".git" ]; then
-            echo "::warning::.git not found in $(pwd), attempting git init"
-            git init
-            git remote remove origin 2>/dev/null || true
-            git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-            git fetch origin master
-            git reset --hard origin/master
-          fi
           if [ "$IS_PLATFORM" = "true" ]; then
             BRANCH="mitosis-platform-issue-$ISSUE_NUMBER-run-${{ github.run_attempt }}"
           else
