@@ -125,7 +125,7 @@ jobs:
           fi
 
       - name: Run Agent Loop
-        if: ${{ steps.parse.outputs.app_name != 'unknown' }}
+        if: ${{ steps.auth.outputs.authorized == 'true' && steps.auth.outputs.dedup_skip != 'true' && steps.parse.outputs.app_name != 'unknown' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.STEP_TOKEN }}
