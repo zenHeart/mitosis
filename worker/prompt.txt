@@ -158,8 +158,8 @@ npm run build
 **你必须运行应用并验证功能：**
 
 ```bash
-# 启动预览服务器
-npx vite preview --port 4173 &
+# 启动预览服务器（同步运行，验证完成后停止）
+npx vite preview --port 4173
 ```
 
 然后按应用类型执行对应的检查：

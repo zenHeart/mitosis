@@ -118,8 +118,8 @@ npm run build
 
 **验证方法：**
 ```bash
-# 启动预览服务器
-npx vite preview --port 4173 &
+# 启动预览服务器（同步运行，验证完成后停止）
+npx vite preview --port 4173
 ```
 
 ### Step 7：自检报告（必须输出）

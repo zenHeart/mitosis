@@ -179,6 +179,13 @@ jobs:
             gh issue comment "$ISSUE_NUMBER" --repo "${{ github.repository }}" --body "$MESSAGE"
           }
 
+          cleanup() {
+            # 杀掉可能残留的 vite preview 等后台进程
+            pkill -f "vite preview" 2>/dev/null || true
+            pkill -f "npx vite" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
           if [ "$IS_PLATFORM" = "true" ]; then
             set_status "status:building" "🔨 状态：平台构建中。Mitosis 正在根据 Issue 规格修改平台本身。"
           else
@@ -271,9 +278,9 @@ jobs:
                   SECURITY_FAILURES="${SECURITY_FAILURES}  - S1: 发现硬编码密钥/token\n"
                 fi
 
-                # S2: DOMPurify on* 事件检查
-                if rg "ALLOWED_ATTR" src/ -A 5 2>/dev/null | grep -i "onclick\|onerror\|onload"; then
-                  SECURITY_FAILURES="${SECURITY_FAILURES}  - S2: DOMPurify 白名单包含 on* 事件\n"
+                # S2: DOMPurify on* 事件检查 — 仅检查 ALLOWED_ATTR 白名单（FORBID_ATTR 含 on* 是正确行为）
+                if awk '/ALLOWED_ATTR *= *\[/{f=1} f{print} /\]/{if(f)f=0}' src/composables/useSanitize.ts 2>/dev/null | grep -qi "onclick\|onerror\|onload\|onmouse"; then
+                  SECURITY_FAILURES="${SECURITY_FAILURES}  - S2: DOMPurify ALLOWED_ATTR 白名单包含 on* 事件\n"
                 fi
 
                 # S3: CI Owner 门控检查 - 验证 workflow 中有 owner 授权逻辑
