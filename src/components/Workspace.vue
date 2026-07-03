@@ -12,6 +12,10 @@ import ChatInput from './ChatInput.vue'
 import type { BuildIssue, ChatSession } from '../types/app'
 import { REPO_FULL_NAME, userRepoFullName } from '../config/repo'
 
+const emit = defineEmits<{
+  (e: 'navigate', view: 'setup' | 'gallery' | 'workspace'): void
+}>()
+
 const authStore = useAuthStore()
 const sessionStore = useSessionStore()
 const { start, stopAll } = usePolling()
@@ -605,10 +609,13 @@ function cancelConfirmPlatform() {
 /** 恢复操作：更新 StepFun token */
 function handleUpdateToken() {
   lastErrorKind.value = null
-  // 导航到 Setup 页面（如果路由支持）
+  // 清除 setup 完成标记，让用户能重新进入 Setup 页面输入新 token
+  authStore.setupComplete = false
   if (typeof window !== 'undefined') {
-    window.location.hash = '#setup'
+    localStorage.removeItem('mitosis_setup_complete')
   }
+  // 通知父组件切换到 Setup 视图
+  emit('navigate', 'setup')
 }
 
 async function createBuild(appName: string, description: string, basedOn?: string, scenario?: 'platform' | 'app_create' | 'app_iterate'): Promise<BuildIssue | null> {

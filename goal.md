@@ -82,23 +82,23 @@
 - [x] C0.2 给 C0.1 增加 CI-runnable verifier。
   - 完成标准：脚本能静态或 mock 验证”Issue 创建后有 `/create` 触发或 workflow 监听对应事件”，并纳入 `scripts/verify/main-pipeline.sh` 或 `e2e-golden.mjs`。
 
-- [ ] C0.3 部署当前本地修复到线上，消除 deployment drift。
+- [x] C0.3 部署当前本地修复到线上，消除 deployment drift。
   - 完成标准：`origin/master`/部署分支包含本地修复；线上 asset 时间或内容已更新；`BASE_URL=https://mitosis.zenheart.site node scripts/verify/e2e-golden.mjs` 不再在 G4 失败。
 
-- [ ] C0.4 增加部署漂移检查。
-  - 完成标准：有可复现命令或脚本记录本地 HEAD、`origin/master`、`gh-pages`/线上 asset 的差异；后续 agent 能判断“本地 PASS 但线上 FAIL”是否由未部署导致。
+- [x] C0.4 增加部署漂移检查。
+  - 完成标准：有可复现命令或脚本记录本地 HEAD、`origin/master`、`gh-pages`/线上 asset 的差异；后续 agent 能判断”本地 PASS 但线上 FAIL”是否由未部署导致。
 
 ### Stage 1 — 安全与凭据边界
 
-- [ ] C1.1 移除 GitHub OAuth token/user 写入 `localStorage` 的路径。
+- [x] C1.1 移除 GitHub OAuth token/user 写入 `localStorage` 的路径。
   - 当前风险点：`src/stores/auth.ts` 仍写入/读取 `mitosis_token` 与 `mitosis_user` 的 localStorage fallback。
   - 完成标准：GitHub token 只在 session 级或更安全机制中保存；刷新/关闭标签页后的行为有清晰 UX；`rg "localStorage.*mitosis_(token|user)" src/` 不再命中敏感写入。
 
-- [ ] C1.2 强化安全 verifier。
+- [x] C1.2 强化安全 verifier。
   - 完成标准：`scripts/verify/main-pipeline.sh` 同时检查 GitHub token 与 StepFun token 不写 localStorage、不渲染 DOM；不误伤 theme/mock session 等非敏感本地数据。
 
-- [ ] C1.3 修复错误恢复中的 token 更新路径。
-  - 当前风险点：Workspace 的“更新 Token”只改 hash，不一定能回到 Setup 或打开可操作输入。
+- [x] C1.3 修复错误恢复中的 token 更新路径。
+  - 当前风险点：Workspace 的”更新 Token”只改 hash，不一定能回到 Setup 或打开可操作输入。
   - 完成标准：auth/quota 错误后，用户能在当前流程中更新 StepFun token 或明确回到可用的 Setup；无死链接。
 
 ### Stage 2 — 真实 owner / non-owner 闭环

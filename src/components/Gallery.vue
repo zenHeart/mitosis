@@ -76,6 +76,12 @@ onMounted(async () => {
   // 初始化暗黑模式
   initDarkMode()
 
+  // 显示 OAuth 错误（如果有）
+  if (authStore.oauthError) {
+    error.value = authStore.oauthError
+    authStore.oauthError = null
+  }
+
   // 加载会话列表
   if (isLoggedIn.value) {
     await sessionStore.loadSessions(authStore.token || '', REPO_FULL_NAME)

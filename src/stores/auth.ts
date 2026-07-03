@@ -13,6 +13,7 @@ export const useAuthStore = defineStore('auth', {
     isAuthenticated: false,
     setupComplete: false,
     _oauthProcessing: false,
+    oauthError: null,
   }),
 
   actions: {
@@ -53,16 +54,8 @@ export const useAuthStore = defineStore('auth', {
       let userStr = sessionStorage.getItem('mitosis_user')
       const setupComplete = localStorage.getItem('mitosis_setup_complete') === 'true'
 
-      // 如果 sessionStorage 为空，尝试从 localStorage 恢复（防止关闭标签页后丢失登录态）
-      if (!token && !userStr) {
-        token = localStorage.getItem('mitosis_token')
-        userStr = localStorage.getItem('mitosis_user')
-        if (token && userStr) {
-          // 恢复后同步回 sessionStorage（当前标签页）
-          sessionStorage.setItem('mitosis_token', token)
-          sessionStorage.setItem('mitosis_user', userStr)
-        }
-      }
+      // 不再从 localStorage 恢复 token/user（关闭标签页后需重新登录）
+      // 这确保敏感凭据只留在当前标签页的 sessionStorage 中
 
       if (token && userStr) {
         try {
@@ -99,17 +92,14 @@ export const useAuthStore = defineStore('auth', {
             name: githubUser.name || githubUser.login,
           }
           saveSession(access_token, user)
-          // 同时持久化到 localStorage，防止关闭标签页后丢失
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('mitosis_token', access_token)
-            localStorage.setItem('mitosis_user', JSON.stringify(user))
-          }
+          // Token 仅保存在 sessionStorage（当前标签页），关闭标签页后需重新登录
           this.token = access_token
           this.user = user
           this.isAuthenticated = true
           this.setupComplete = setupComplete
-        } catch {
+        } catch (e) {
           this.clearSession()
+          this.oauthError = e instanceof Error ? e.message : '登录失败，请稍后重试'
         } finally {
           this._oauthProcessing = false
         }

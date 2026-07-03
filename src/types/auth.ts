@@ -12,4 +12,5 @@ export interface AuthState {
   isAuthenticated: boolean
   setupComplete: boolean
   _oauthProcessing: boolean
+  oauthError: string | null
 }

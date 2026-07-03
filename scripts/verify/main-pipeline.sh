@@ -41,6 +41,17 @@ if rg -n 'v-html="[^"]*\b(msg|message)\.(text|content|body)\b' src/ 2>/dev/null 
   note "FAIL: 存在未 sanitize 的 v-html 用户内容"; FAIL=1
 else note "PASS"; fi
 
+echo "== 4b. Token 不写入 localStorage（仅允许 sessionStorage）=="
+# 检查代码中是否有 localStorage.setItem 写入 token/secret/password/api_key
+if rg -n "localStorage\.setItem.*(token|secret|password|api_key|access_token)" src/ -i 2>/dev/null | grep -v "// "; then
+  note "FAIL: 发现 localStorage 写入敏感字段"; FAIL=1
+else note "PASS"; fi
+
+echo "== 4c. Token 不渲染到 DOM =="
+if rg -n "(v-html|innerHTML|document\.write).*(token|secret|password|api_key|access_token)" src/ -i 2>/dev/null | grep -v "// "; then
+  note "FAIL: 发现敏感字段渲染到 DOM"; FAIL=1
+else note "PASS"; fi
+
 if [ "${RUN_BUILD:-0}" = "1" ]; then
   echo "== 5. typecheck + build =="
   if npm run typecheck >/tmp/mp-tc.log 2>&1 && npm run build >/tmp/mp-build.log 2>&1; then

@@ -83,7 +83,7 @@ const appIframeSrc = computed(() => {
   />
   <!-- Workspace always visible for sidebar; iframe overlay for app viewing -->
   <div v-if="view === 'workspace'" style="position: relative; width: 100%; height: 100vh;">
-    <Workspace />
+    <Workspace @navigate="(v) => { if (v === 'setup') (currentView as any).value = 'setup' }" />
     <iframe
       v-if="isAppPath"
       :src="appIframeSrc"
