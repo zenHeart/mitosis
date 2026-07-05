@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { Image } from '@lucide/vue'
 
 const props = defineProps<{
@@ -22,7 +22,17 @@ const inputText = computed({
 
 const images = ref<{ dataUrl: string; name: string }[]>([])
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const textareaEl = ref<HTMLTextAreaElement | null>(null)
 const imageError = ref('')
+
+watch(inputText, () => {
+  const el = textareaEl.value
+  if (!el) return
+  el.style.height = 'auto'
+  if (el.value) {
+    el.style.height = el.scrollHeight + 'px'
+  }
+})
 
 const sendTitle = computed(() => {
   if (!props.isOwner) return '仅仓库所有者可使用'
@@ -113,6 +123,7 @@ function removeImage(index: number) {
       <div v-if="imageError" class="image-error">{{ imageError }}</div>
       <div class="cursor-glow"></div>
       <textarea
+        ref="textareaEl"
         v-model="inputText"
         class="chat-input"
         :placeholder="thinking ? 'AI 思考中...' : '描述你想构建的应用...（可粘贴/选择图片）'"
