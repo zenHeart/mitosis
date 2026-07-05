@@ -1,0 +1,6 @@
+{
+  "app_name": "mitosis-平台",
+  "version": "v0",
+  "built_by": "zenHeart/mitosis",
+  "prompt_summary": "优化 mitosis 输入框移动端样式：横排布局(桌面+移动端)、移动端输入区内边距+安全区域、图片预览缩小、操作按钮适配、文字最小16px防止iOS缩放、min-height 44px触控友好"
+}
