@@ -1584,10 +1584,16 @@ function handleNewChat() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.5rem 1rem;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
+  padding: 0.6rem 1rem;
+  background: var(--accent-subtle);
+  border-bottom: 1px solid var(--accent-border);
   font-size: 0.85rem;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .app-nav-label {
@@ -1599,20 +1605,30 @@ function handleNewChat() {
 }
 
 .app-nav-open-btn {
-  padding: 0.35rem 0.75rem;
+  padding: 0.4rem 1rem;
   min-height: 44px;
-  background: transparent;
-  color: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  font-size: 0.8rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+  transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  box-shadow: 0 2px 8px rgba(88, 166, 255, 0.2);
 }
 
 .app-nav-open-btn:hover {
-  background: var(--accent);
-  color: #fff;
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(88, 166, 255, 0.3);
+}
+
+.app-nav-open-btn:active {
+  transform: translateY(0) scale(0.97);
 }
 
 .back-to-app-btn {
@@ -1653,7 +1669,21 @@ function handleNewChat() {
 .welcome {
   text-align: center;
   margin: auto;
-  padding: 2.5rem 1.5rem;
+  padding: 3rem 1.5rem;
+  animation: fadeInUp 0.5s ease-out;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.welcome h3 {
+  font-size: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: var(--text-primary);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .welcome.session-welcome {
@@ -1663,20 +1693,11 @@ function handleNewChat() {
 .welcome.session-welcome h3 {
   font-size: 1.15rem;
   margin-bottom: 0.5rem;
-  color: var(--text-primary);
-  font-weight: 600;
 }
 
 .welcome.session-welcome .hint-text {
   color: var(--text-secondary);
   font-size: 0.88rem;
-}
-
-.welcome h3 {
-  font-size: 1.35rem;
-  margin-bottom: 0.6rem;
-  color: var(--text-primary);
-  font-weight: 600;
 }
 
 .welcome > p {
@@ -1781,6 +1802,7 @@ function handleNewChat() {
   border-bottom-left-radius: 4px;
   font-size: 0.88rem;
   line-height: 1.6;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .message.system :deep(.message-content) {
@@ -1895,6 +1917,8 @@ function handleNewChat() {
 
 .message-content {
   margin-bottom: 0.25rem;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .message-time {
