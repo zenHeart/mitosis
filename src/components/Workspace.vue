@@ -482,7 +482,7 @@ async function handleSend() {
       }
     } else {
       // chat 降级：不阻断，提示用户可直接建任务
-      fallbackContent = `⚠️ 我暂时无法生成回复（${formatted.detail}），但你可以直接让我建任务。\n\n试试说：\n- 「帮我做一个 todo 应用」\n- 「优化 tetris-game 的计分系统」\n- 「优化 Mitosis 平台本身」\n\n💡 ${formatted.suggestion}`
+      fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n试试说：\n- 「帮我做一个 todo 应用」\n- 「优化 tetris-game 的计分系统」\n- 「优化 Mitosis 平台本身」\n\n💡 ${formatted.suggestion}`
     }
 
     sessionStore.addMessage({
@@ -1649,64 +1649,89 @@ function handleNewChat() {
 .welcome {
   text-align: center;
   margin: auto;
-  padding: 2rem;
+  padding: 2.5rem 1.5rem;
 }
 
 .welcome.session-welcome {
-  margin-top: 4rem;
+  margin-top: 3rem;
 }
 
 .welcome.session-welcome h3 {
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   margin-bottom: 0.5rem;
   color: var(--text-primary);
+  font-weight: 600;
 }
 
 .welcome.session-welcome .hint-text {
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: 0.88rem;
 }
 
 .welcome h3 {
-  font-size: 1.25rem;
-  margin-bottom: 0.5rem;
+  font-size: 1.35rem;
+  margin-bottom: 0.6rem;
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
-.welcome p {
+.welcome > p {
   color: var(--text-secondary);
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.75rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .examples {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.6rem;
   justify-content: center;
 }
 
 .examples button {
-  padding: 0.6rem 1.2rem;
+  padding: 0.65rem 1.2rem;
   min-height: 44px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: 22px;
   color: var(--text-primary);
   font-size: 0.85rem;
-  transition: border-color 0.2s, background 0.2s;
+  font-weight: 500;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  letter-spacing: 0.01em;
 }
 
 .examples button:hover {
   border-color: var(--accent);
   background: var(--bg-tertiary);
+  box-shadow: 0 2px 8px rgba(88, 166, 255, 0.1);
+}
+
+.examples button:active {
+  transform: scale(0.97);
+}
+
+.examples button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .message {
-  max-width: 80%;
-  padding: 0.75rem 1rem;
-  border-radius: 12px;
-  font-size: 0.9rem;
-  line-height: 1.5;
+  max-width: 78%;
+  padding: 0.85rem 1.1rem;
+  border-radius: 14px;
+  font-size: 0.92rem;
+  line-height: 1.65;
   white-space: pre-wrap;
+  letter-spacing: 0.01em;
 }
 
 .message.user {
@@ -1714,12 +1739,13 @@ function handleNewChat() {
   background: var(--user-msg-bg);
   color: #fff;
   border-bottom-right-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 /* 连续同角色消息：微妙区分 */
 .message.user + .message.user,
 .message.system + .message.system {
-  margin-top: -0.25rem;
+  margin-top: -0.3rem;
 }
 
 .message.user + .message.user {
@@ -1729,6 +1755,7 @@ function handleNewChat() {
 .message.system + .message.system {
   background: var(--bg-tertiary);
   border-color: var(--border-subtle);
+  border-left-color: var(--warning-border);
 }
 
 /* 移动端消息宽度限制 */
@@ -1746,7 +1773,27 @@ function handleNewChat() {
   align-self: flex-start;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
+  border-left: 3px solid var(--warning);
   border-bottom-left-radius: 4px;
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.message.system :deep(.message-content) {
+  color: var(--text-primary);
+}
+
+.message.system .message-content :deep(p) {
+  margin-bottom: 0.5rem;
+}
+
+.message.system .message-content :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.message.system .message-content :deep(strong) {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 /* 错误恢复操作栏 */
@@ -1754,51 +1801,90 @@ function handleNewChat() {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem 1rem;
   background: var(--warning-tint);
   border: 1px solid var(--warning-border);
-  border-radius: 8px;
-  margin-bottom: 0.5rem;
+  border-radius: 10px;
+  margin-bottom: 0.75rem;
   flex-wrap: wrap;
+  backdrop-filter: blur(4px);
 }
 .recovery-label {
   font-size: 0.8rem;
   color: var(--text-secondary);
   margin-right: 0.25rem;
+  font-weight: 500;
+  white-space: nowrap;
 }
 .recovery-btn {
-  padding: 0.35rem 0.7rem;
-  min-height: 44px;
-  font-size: 0.8rem;
+  padding: 0.4rem 0.85rem;
+  min-height: 40px;
+  font-size: 0.82rem;
+  font-weight: 500;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--bg-secondary);
   color: var(--text-primary);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
 }
 .recovery-btn:hover {
   background: var(--accent);
   color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(88, 166, 255, 0.25);
+}
+.recovery-btn:active {
+  transform: scale(0.97);
+}
+.recovery-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .retry-btn {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+.retry-btn:hover {
+  background: var(--accent);
+  color: #fff;
   border-color: var(--accent);
 }
 .direct-btn {
+  border-color: var(--success-border);
+  color: var(--success);
+}
+.direct-btn:hover {
+  background: var(--success);
+  color: #fff;
   border-color: var(--success);
+  box-shadow: 0 2px 8px rgba(63, 185, 80, 0.25);
 }
 .confirm-yes {
   border-color: var(--error);
   background: var(--error-tint);
+  color: var(--error);
+}
+.confirm-yes:hover {
+  background: var(--error);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(248, 81, 73, 0.25);
 }
 .confirm-no {
   border-color: var(--text-secondary);
+  color: var(--text-secondary);
+}
+.confirm-no:hover {
+  background: var(--text-secondary);
+  color: var(--bg-primary);
 }
 .recovery-confirm-text {
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   color: var(--warning);
   font-weight: 600;
 }

@@ -26,13 +26,14 @@ export interface TriageResult {
 export function triageByKeywords(text: string): TriageResult {
   const lower = text.toLowerCase()
 
-  // 平台关键词 — Mitosis 自身变更（动词在前或 mito 在后均可）
+  // 平台关键词 — Mitosis 自身变更（涉及代码架构、CI/CD、认证、部署、核心组件）
+  // 模式 1: 组件名 + 功能/逻辑动词 → 明确平台变更
   const isPlatform =
     /src\//i.test(text) ||
-    /mitosis\s*(支持|增加|去掉|删除|修改|优化|改进|加个|加上|升级|重构)/i.test(text) ||
-    /(?:给|帮|让)\s*mitosis\s*(加|增加|加个|去掉|删|改|优化|升级|支持)/i.test(text) ||
-    /(?:GitHub Actions|workflow|CI|OAuth|认证|deploy|gh-pages|composable|组件库|架构|核心逻辑|SSE|流式)/i.test(text) ||
-    /(?:Workspace|SetupPage|Gallery|ChatInput|平台|聊天|上传|页面|按钮|表单|路由|导航|侧边栏|消息|通知)/i.test(text)
+    /mitosis\s*(支持|增加|去掉|删除|修改|升级|重构|架构|核心逻辑)/i.test(text) ||
+    /(?:给|帮|让)\s*mitosis\s*(加|增加|加个|去掉|删|改|升级|支持|架构|重构)/i.test(text) ||
+    /(?:Workspace|Gallery|SetupPage|ChatInput|侧边栏)\s*(?:的)?\s*(?:体验|交互|性能|逻辑|功能|架构|导航|路由|上传|表单|消息|通知|样式|外观|布局)/i.test(text) ||
+    /(?:GitHub Actions|workflow|CI|OAuth|认证|deploy|gh-pages|composable|组件库|SSE|流式|token|权限)/i.test(text)
 
   // 询问关键词
   const isQuestion =

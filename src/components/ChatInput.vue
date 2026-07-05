@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Image } from '@lucide/vue'
+import { Image, Send } from '@lucide/vue'
 
 const props = defineProps<{
   isOwner: boolean
@@ -146,7 +146,7 @@ function removeImage(index: number) {
           :title="sendTitle"
         >
           <span v-if="thinking" class="spinner"></span>
-          <span v-else>▲</span>
+          <Send v-else :size="18" stroke-width="2.5" />
         </button>
       </div>
     </div>
@@ -168,9 +168,9 @@ function removeImage(index: number) {
   flex-direction: column;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 0.5rem;
-  transition: border-color 0.2s;
+  border-radius: 14px;
+  padding: 0.6rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .input-wrapper:focus-within {
@@ -314,25 +314,27 @@ function removeImage(index: number) {
 .send-btn {
   width: 44px;
   height: 44px;
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--accent);
   border: none;
   color: #fff;
-  font-size: 0.85rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 0.2s, transform 0.1s;
+  transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 .send-btn:hover:not(:disabled) {
-  opacity: 0.85;
+  opacity: 0.9;
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(88, 166, 255, 0.3);
 }
 
 .send-btn:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(0) scale(0.96);
+  box-shadow: 0 1px 4px rgba(88, 166, 255, 0.2);
 }
 
 .send-btn:focus-visible {
@@ -341,7 +343,7 @@ function removeImage(index: number) {
 }
 
 .send-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 

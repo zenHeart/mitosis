@@ -91,9 +91,11 @@ export function formatStepFunError(err: unknown): FormattedError {
     // 鉴权错误
     if (
       /401/.test(raw) ||
-      /invalid_api_key/.test(msg) ||
+      /invalid[_\s]api[_\s]key/.test(msg) ||
+      /incorrect[_\s]api[_\s]key/.test(msg) ||
       /unauthorized/.test(msg) ||
-      /authentication/.test(msg)
+      /authentication/.test(msg) ||
+      /auth.*fail|token.*invalid|token.*expired/.test(msg)
     ) {
       return {
         title: '🔑 Token 无效或已过期',
@@ -171,7 +173,12 @@ async function callStepFun(
     let errMsg = `StepFun API error: ${res.status}`
     try {
       const errJson = JSON.parse(errText)
-      errMsg = errJson.error?.message || errMsg
+      if (errJson.error?.message) {
+        // 保留状态码前缀，确保 formatStepFunError 能通过 /401/ 等模式识别鉴权错误
+        errMsg = `${res.status} — ${errJson.error.message}`
+      } else {
+        errMsg = `${errMsg} — ${errText.slice(0, 200)}`
+      }
     } catch {
       errMsg = `${errMsg} — ${errText.slice(0, 200)}`
     }
