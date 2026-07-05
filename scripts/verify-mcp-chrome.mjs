@@ -4,7 +4,7 @@
  */
 import { chromium } from '@playwright/test'
 
-const WS_URL = 'ws://127.0.0.1:9223/devtools/browser/2754604f-0d67-4c4f-b512-4c132762dc63'
+const WS_URL = 'ws://127.0.0.1:9223/devtools/browser/5b29ed49-fd1c-41ab-bd4c-2b531ee253d3'
 const TARGET_URL = 'https://mitosis.zenheart.site'
 const SCREENSHOT_DIR = '/Users/zenheart/code/github/mitosis/screenshots'
 const STEP_API = 'https://api.stepfun.com/v1/chat/completions'
