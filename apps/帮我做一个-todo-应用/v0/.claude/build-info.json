@@ -1,0 +1,6 @@
+{
+  "app_name": "帮我做一个-todo-应用",
+  "version": "v0",
+  "built_by": "zenHeart/mitosis",
+  "prompt_summary": "A fully functional todo application with add, toggle, delete, filter, and localStorage persistence"
+}
