@@ -318,6 +318,18 @@
     - Draft PR #16 已创建并合并（merge commit: bab7c9a）
     - **关键修复**：CI 环境需预先配置 `~/.claude.json` trust（`hasTrustDialogAccepted: true`），否则 Claude 会消耗 turns 在 trust dialog 上导致 "Reached max turns" 错误
 
+### Stage 6 — Workspace 聊天输入框性能优化
+
+- [x] C6.1 优化 ChatInput 输入性能，减少 Workspace re-render。
+  - 完成标准：输入框使用本地 ref 存储内容，通过 debounce 同步到父组件；基于本地 ref 即时计算按钮状态；`autoResize` 复用单一函数。
+  - **完成证据（2026-07-05）**：
+    - `npm run typecheck` PASS
+    - `npm run build` PASS（0 errors, 0 warnings）
+    - `bash scripts/verify/main-pipeline.sh` MAIN_PIPELINE: PASS（7/7 checks）
+    - 安全扫描 PASS
+    - 修改文件：`src/components/ChatInput.vue`
+    - 实现：`localInput` ref 替代直接 v-model → 150ms debounce emit `update:modelValue` → `canSend`/`sendTitle` 基于本地 ref 即时响应 → `autoResize` 单一函数在 @input 时调用
+
 ---
 
 ## UX 审计发现（2026-07-03 用户体验深度分析 + 2026-07-03 Playwright 截图审查）
