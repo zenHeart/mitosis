@@ -1,0 +1,6 @@
+{
+  "app_name": "帮我做一个-todo-应用",
+  "version": "v0",
+  "built_by": "zenHeart/mitosis",
+  "prompt_summary": "Todo 应用：新增/完成/删除/过滤/本地持久化，支持中英文"
+}
