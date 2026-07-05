@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { Image, Send } from '@lucide/vue'
 
 const props = defineProps<{
@@ -15,21 +15,61 @@ const emit = defineEmits<{
   (e: 'images', files: { dataUrl: string; name: string }[]): void
 }>()
 
-const inputText = computed({
-  get: () => props.modelValue,
-  set: (val: string) => emit('update:modelValue', val),
-})
-
+// ── 优化：本地 ref 替代 v-model，减少父组件不必要的 re-render ──
+const localInput = ref('')
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const images = ref<{ dataUrl: string; name: string }[]>([])
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const imageError = ref('')
 
+// 初始化：当 modelValue 从外部变化时（如快速操作按钮），同步到本地
+onMounted(() => {
+  localInput.value = props.modelValue
+  autoResize()
+})
+
+// 监听外部 modelValue 变化（如 Workspace.vue 快速操作按钮点击）
+watch(() => props.modelValue, (newVal) => {
+  if (newVal !== localInput.value) {
+    localInput.value = newVal
+    nextTick(autoResize)
+  }
+})
+
+// 防抖同步到父组件：减少 Workspace 的 re-render 频率
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+const DEBOUNCE_MS = 150
+
+watch(localInput, (val) => {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => {
+    emit('update:modelValue', val)
+    debounceTimer = null
+  }, DEBOUNCE_MS)
+  // 同步调整 textarea 高度
+  nextTick(autoResize)
+})
+
+// 自动调整 textarea 高度
+function autoResize() {
+  const el = textareaRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(el.scrollHeight, 120)}px`
+}
+
+// 基于本地 ref 计算发送按钮状态（即时响应，不等待 debounce）
 const sendTitle = computed(() => {
   if (!props.isOwner) return '仅仓库所有者可使用'
   if (props.thinking) return 'AI 思考中...'
   if (props.building) return '构建中，请稍候...'
-  if (!props.modelValue.trim() && images.value.length === 0) return '请输入内容或添加图片'
+  if (!localInput.value.trim() && images.value.length === 0) return '请输入内容或添加图片'
   return '发送'
+})
+
+const canSend = computed(() => {
+  if (!props.isOwner || props.thinking || props.building) return false
+  return localInput.value.trim().length > 0 || images.value.length > 0
 })
 
 function handleSend() {
@@ -113,7 +153,8 @@ function removeImage(index: number) {
       <div v-if="imageError" class="image-error">{{ imageError }}</div>
       <div class="cursor-glow"></div>
       <textarea
-        v-model="inputText"
+        ref="textareaRef"
+        v-model="localInput"
         class="chat-input"
         :placeholder="thinking ? 'AI 思考中...' : '描述你想构建的应用...（可粘贴/选择图片）'"
         :disabled="thinking || building"
@@ -121,6 +162,7 @@ function removeImage(index: number) {
         aria-label="输入消息"
         @keydown.enter.exact.prevent="handleSend"
         @paste="onPaste"
+        @input="autoResize"
       />
       <input
         ref="fileInputRef"
@@ -142,7 +184,7 @@ function removeImage(index: number) {
         <button
           @click="handleSend"
           class="send-btn"
-          :disabled="(!inputText.trim() && images.length === 0) || thinking || building"
+          :disabled="!canSend"
           :title="sendTitle"
         >
           <span v-if="thinking" class="spinner"></span>
@@ -267,6 +309,7 @@ function removeImage(index: number) {
   outline: none;
   max-height: 120px;
   line-height: 1.5;
+  overflow-y: auto;
 }
 
 .chat-input::placeholder {

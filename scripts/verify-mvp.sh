@@ -128,9 +128,9 @@ echo "-- 2.4 安全扫描（敏感信息） --"
 SECRET_PATTERNS='(ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z\-_]{35}|eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*)'
 
 # 扫描 src/, apps/, worker/, .github/ 下的代码文件，排除 markdown
-HITS=$(rg "$SECRET_PATTERNS" \
-  --type-add 'code:*.{ts,js,vue,json,yml,yaml,sh,env,md}' \
-  -g '*.ts' -g '*.js' -g '*.vue' -g '*.json' -g '*.yml' -g '*.yaml' -g '*.sh' -g '*.env' \
+HITS=$(grep -rniE "$SECRET_PATTERNS" \
+  --include='*.ts' --include='*.js' --include='*.vue' --include='*.json' \
+  --include='*.yml' --include='*.yaml' --include='*.sh' --include='*.env' \
   src/ apps/ worker/ .github/ 2>/dev/null | grep -v '\.md:' | grep -v 'node_modules' | grep -v 'dist/' | head -5 || true)
 
 if [ -z "$HITS" ]; then
