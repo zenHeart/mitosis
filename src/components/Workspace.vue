@@ -2132,6 +2132,20 @@ function handleNewChat() {
     padding: 0.5rem 0.75rem;
     font-size: 0.8rem;
   }
+
+  /* 移动端触控目标 ≥ 44px */
+  .session-open-btn,
+  .app-nav-open-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+  }
+
+  .back-to-app-btn {
+    min-height: 44px;
+    padding: 0.6rem 1.2rem;
+  }
 }
 
 @media (min-width: 641px) {
