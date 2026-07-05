@@ -2135,7 +2135,8 @@ function handleNewChat() {
 
   /* 移动端触控目标 ≥ 44px */
   .session-open-btn,
-  .app-nav-open-btn {
+  .app-nav-open-btn,
+  .logout-btn {
     min-width: 44px;
     min-height: 44px;
     padding: 0.5rem 1rem;
