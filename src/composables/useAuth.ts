@@ -9,7 +9,9 @@ const REDIRECT_URI = `${window.location.origin}/auth/callback`
 
 // Cloudflare Worker proxy URL — exchanges authorization code for access token
 // This is required because GitHub's /login/oauth/access_token does not support CORS
-const OAUTH_PROXY_URL = 'https://mitosis-oauth-proxy.zenheart1991.workers.dev'
+// 可通过 VITE_OAUTH_PROXY_URL 覆盖：*.workers.dev 在中国大陆被 DNS 污染 + SNI 阻断，
+// 国内用户需将 Worker 绑定自定义域名（见 docs/setup.md「国内网络访问」）
+const OAUTH_PROXY_URL = import.meta.env.VITE_OAUTH_PROXY_URL || 'https://mitosis-oauth-proxy.zenheart1991.workers.dev'
 
 // 开发模式：走 Vite proxy（解决本地网络不通问题）
 const IS_DEV = import.meta.env.DEV
@@ -30,11 +32,21 @@ export function getLoginUrl(): string {
 // ---- Token Exchange (via Cloudflare Worker proxy) ----
 
 export async function exchangeCodeForToken(code: string): Promise<{ access_token: string }> {
-  const res = await fetchWithTimeout(OAUTH_PROXY_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }),
-  }, 15000)
+  let res: Response
+  try {
+    res = await fetchWithTimeout(OAUTH_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    }, 15000)
+  } catch (e) {
+    // 网络层失败（超时/DNS/连接被重置）：国内直连 *.workers.dev 的典型表现
+    const isNetworkFailure = e instanceof Error && (e.name === 'AbortError' || e.name === 'TypeError')
+    if (isNetworkFailure) {
+      throw new Error('无法连接登录服务（Cloudflare Workers）。中国大陆网络通常无法直连 *.workers.dev，请开启代理后重试，或参考 docs/setup.md 配置自定义域名的 OAuth 代理。')
+    }
+    throw e
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Token exchange failed' }))
     throw new Error(err.error || err.detail || `HTTP ${res.status}`)

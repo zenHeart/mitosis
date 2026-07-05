@@ -39,6 +39,22 @@ npx wrangler deploy
 
 授权流程使用 Authorization Code Flow（`response_type=code`），Worker 代理负责用 `client_secret` 兑换 token。
 
+### 国内网络访问（重要）
+
+`*.workers.dev` 域名在中国大陆被 DNS 污染 + SNI 阻断，**国内用户不开代理时 OAuth 登录会卡在 token 兑换这一步**（GitHub 授权页和 GitHub Pages 站点本身可达，唯一被墙的一跳是浏览器 POST 到 workers.dev）。解决方案是给 Worker 绑定自定义域名（Cloudflare 自定义域名走 Cloudflare edge IP，国内可达）：
+
+1. 将域名（或一个专用子域的 zone）迁移到 Cloudflare DNS（Workers 自定义域名要求 zone 托管在 Cloudflare；当前 `zenheart.site` 的 DNS 在阿里云，需迁移 NS 或换一个托管在 Cloudflare 的域名）。
+2. 在 Cloudflare Dashboard → Workers → `mitosis-oauth-proxy` → Settings → Domains & Routes 添加自定义域名（如 `oauth.example.com`），或在 `worker/wrangler.jsonc` 配置 `routes` 后重新 `npx wrangler deploy`。
+3. 构建前端时设置：
+
+```text
+VITE_OAUTH_PROXY_URL=https://oauth.example.com
+```
+
+未设置 `VITE_OAUTH_PROXY_URL` 时，默认仍使用 `mitosis-oauth-proxy.zenheart1991.workers.dev`（需要代理才能在国内访问）。前端在 token 兑换网络失败时会向用户提示国内网络场景的原因和出路。
+
+> 迁移 DNS 后注意：`mitosis.zenheart.site` 的 CNAME（指向 `zenheart.github.io`）需要在 Cloudflare 中以 **DNS only**（灰云）模式重建，否则 GitHub Pages 的证书签发会失败。
+
 ## 1. GitHub OAuth App
 
 在 GitHub Developer settings 创建 OAuth App：

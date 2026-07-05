@@ -4,5 +4,11 @@
   "compatibility_date": "2025-06-19",
   "observability": {
     "enabled": true
-  }
+  },
+  // 自定义域名：*.workers.dev 在中国大陆被墙，国内用户经此域名访问（见 docs/setup.md）
+  "routes": [
+    { "pattern": "oauth.zenheart.site", "custom_domain": true }
+  ],
+  // 保留 workers.dev 路由：已发布的旧版前端仍指向该地址，双路由过渡
+  "workers_dev": true
 }

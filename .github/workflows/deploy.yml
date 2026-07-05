@@ -30,6 +30,8 @@ jobs:
         run: npm run build
         env:
           VITE_GITHUB_CLIENT_ID: ${{ secrets.VITE_GITHUB_CLIENT_ID }}
+          # 自定义域名 OAuth 代理：workers.dev 在中国大陆被墙（docs/setup.md「国内网络访问」）
+          VITE_OAUTH_PROXY_URL: https://oauth.zenheart.site
 
       - name: Build apps
         run: |

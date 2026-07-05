@@ -1,83 +1,158 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Inline the triage logic from Workspace.vue for testing
-function triageMessage(text: string) {
-  const lower = text.toLowerCase()
+// Mock StepFun：LLM 分拣走 chatWithStepFun，单测中不发真实请求
+vi.mock('../../src/composables/useStepFun', () => ({
+  chatWithStepFun: vi.fn(),
+}))
 
-  const isPlatform =
-    /src\//i.test(text) ||
-    /mitosis\s*(支持|增加|去掉|删除|修改|优化|改进|加个|加上|升级|重构)/i.test(text) ||
-    /(?:给|帮|让)\s*mitosis\s*(加|增加|加个|去掉|删|改|优化|升级|支持)/i.test(text) ||
-    /(?:GitHub Actions|workflow|CI|OAuth|认证|deploy|gh-pages|composable|组件库|架构|核心逻辑)/.test(text) ||
-    /(?:Workspace|SetupPage|Gallery|ChatInput)/.test(text)
+import { chatWithStepFun } from '../../src/composables/useStepFun'
+import { triageByKeywords, smartTriage } from '../../src/composables/useTriage'
 
-  const isQuestion =
-    /^(?:怎么|如何|为什么|是什么|能不能|可以|帮忙|help|how|what|why)/.test(lower) ||
-    /[?？]$/.test(text.trim()) ||
-    /(?:进度|状态|帮助|介绍|解释|说明|区别|是什么)/.test(text)
+const mockChat = vi.mocked(chatWithStepFun)
 
-  const isAppBuild =
-    /(?:做一个|创建.*应用|建.*应用|写.*应用|开发.*应用|实现.*应用|做个|搞个|弄个|做个游戏|做个工具|想做个|想做一个)/.test(text) ||
-    /(?:build|create.*app|make.*app|new app)/i.test(lower) ||
-    /^(?:俄罗斯方块|贪吃蛇|snake|tetris|todo|计算器|calculator|俄罗斯|打砖块|breakout|flappy|2048).*$/i.test(text.trim())
+beforeEach(() => {
+  mockChat.mockReset()
+})
 
-  const isSimpleTweak =
-    /(?:改.*颜色|改.*字体|改.*大小|调.*大|调.*小|加.*文字|改.*样式|换个.*图标|加.*按钮|改.*背景|字体|颜色|间距|圆角|阴影)/.test(text)
-
-  const isContinue = /(?:继续|上次|迭代|在.*基础上|基于.*继续)/.test(text)
-
-  if (isQuestion && !isAppBuild && !isPlatform && !isContinue) {
-    return { action: 'chat', scenario: 'app_create', intent: 'question', complexity: 'simple', scope: 'none' }
-  }
-  if (isPlatform) {
-    return { action: 'platform', scenario: 'platform', intent: 'modify_platform', complexity: 'medium', scope: 'platform' }
-  }
-  if (isSimpleTweak && !isAppBuild && !isContinue) {
-    return { action: 'chat', scenario: 'app_iterate', intent: 'create_app', complexity: 'simple', scope: 'apps-only' }
-  }
-  if (isAppBuild || isContinue) {
-    const scenario = 'app_create'
-    return {
-      action: 'build',
-      scenario,
-      intent: 'create_app',
-      complexity: isContinue ? 'medium' : 'complex',
-      scope: 'apps-only',
-    }
-  }
-  return { action: 'clarify', scenario: 'app_create', intent: 'unknown', complexity: 'simple', scope: 'none' }
-}
-
-describe('triageMessage', () => {
+// ================================================================
+// triageByKeywords — 正则快速通道（与 Workspace 共用同一实现，杜绝漂移）
+// ================================================================
+describe('triageByKeywords', () => {
   it('identifies app build requests directly', () => {
-    expect(triageMessage('帮我做一个俄罗斯方块游戏').action).toBe('build')
-    expect(triageMessage('做个贪吃蛇').action).toBe('build')
-    expect(triageMessage('俄罗斯方块').action).toBe('build')
-    expect(triageMessage('tetris').action).toBe('build')
-    expect(triageMessage('snake').action).toBe('build')
-    expect(triageMessage('todo').action).toBe('build')
-    expect(triageMessage('计算器').action).toBe('build')
-    expect(triageMessage('帮我做一个 todo 应用').action).toBe('build')
+    expect(triageByKeywords('帮我做一个俄罗斯方块游戏').action).toBe('build')
+    expect(triageByKeywords('做个贪吃蛇').action).toBe('build')
+    expect(triageByKeywords('俄罗斯方块').action).toBe('build')
+    expect(triageByKeywords('tetris').action).toBe('build')
+    expect(triageByKeywords('snake').action).toBe('build')
+    expect(triageByKeywords('todo').action).toBe('build')
+    expect(triageByKeywords('计算器').action).toBe('build')
+    expect(triageByKeywords('帮我做一个 todo 应用').action).toBe('build')
   })
 
   it('identifies platform changes', () => {
-    expect(triageMessage('优化 Workspace 性能').action).toBe('platform')
-    expect(triageMessage('修改 Gallery 样式').action).toBe('platform')
-    expect(triageMessage('Mitosis 支持更多的游戏类型').action).toBe('platform')
+    expect(triageByKeywords('优化 Workspace 性能').action).toBe('platform')
+    expect(triageByKeywords('修改 Gallery 样式').action).toBe('platform')
+    expect(triageByKeywords('Mitosis 支持更多的游戏类型').action).toBe('platform')
   })
 
   it('identifies questions', () => {
-    expect(triageMessage('Mitosis 是什么？').action).toBe('chat')
-    expect(triageMessage('怎么使用？').action).toBe('chat')
-    expect(triageMessage('介绍一下这个平台').action).toBe('chat')
+    expect(triageByKeywords('Mitosis 是什么？').action).toBe('chat')
+    expect(triageByKeywords('怎么使用？').action).toBe('chat')
+    expect(triageByKeywords('介绍一下这个平台').action).toBe('chat')
   })
 
   it('identifies simple tweaks as chat', () => {
-    expect(triageMessage('改一下颜色').action).toBe('chat')
-    expect(triageMessage('换个图标').action).toBe('chat')
+    expect(triageByKeywords('改一下颜色').action).toBe('chat')
+    expect(triageByKeywords('改一下字体大小').action).toBe('chat')
+  })
+
+  it('extracts basedOn from iteration requests', () => {
+    const r = triageByKeywords('在 tetris-game 的基础上继续加音效')
+    expect(r.action).toBe('build')
+    expect(r.basedOn).toBe('tetris-game')
   })
 
   it('falls back to clarify for unknown intent', () => {
-    expect(triageMessage('hello world').action).toBe('clarify')
+    expect(triageByKeywords('hello world').action).toBe('clarify')
+    expect(triageByKeywords('帮我写一个记账本').action).toBe('clarify')
+  })
+})
+
+// ================================================================
+// smartTriage — 正则命中直接返回，不调用 LLM
+// ================================================================
+describe('smartTriage — keyword fast path', () => {
+  it('returns keyword result without calling LLM when regex is decisive', async () => {
+    const r = await smartTriage('帮我做一个 todo 应用', { stepToken: 'sk-test' })
+    expect(r.action).toBe('build')
+    expect(r.source).toBe('keyword')
+    expect(mockChat).not.toHaveBeenCalled()
+  })
+
+  it('skips LLM when no stepToken and falls back to clarify', async () => {
+    const r = await smartTriage('帮我写一个记账本', {})
+    expect(r.action).toBe('clarify')
+    expect(r.source).toBe('fallback')
+    expect(mockChat).not.toHaveBeenCalled()
+  })
+})
+
+// ================================================================
+// smartTriage — LLM 语义分拣（正则未命中时）
+// ================================================================
+describe('smartTriage — LLM semantic triage', () => {
+  it('classifies ambiguous message as build via LLM', async () => {
+    mockChat.mockResolvedValue('{"action":"build","basedOn":null}')
+    const r = await smartTriage('帮我写一个记账本', { stepToken: 'sk-test' })
+    expect(r.action).toBe('build')
+    expect(r.source).toBe('llm')
+    expect(r.scope).toBe('apps-only')
+    expect(mockChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('classifies ambiguous message as platform via LLM', async () => {
+    mockChat.mockResolvedValue('{"action":"platform","basedOn":null}')
+    const r = await smartTriage('左边那一栏看着太乱了收拾一下', { stepToken: 'sk-test' })
+    expect(r.action).toBe('platform')
+    expect(r.source).toBe('llm')
+    expect(r.scope).toBe('platform')
+  })
+
+  it('passes basedOn from LLM result', async () => {
+    mockChat.mockResolvedValue('{"action":"build","basedOn":"snake-game"}')
+    const r = await smartTriage('给它加个排行榜吧', { stepToken: 'sk-test' })
+    expect(r.action).toBe('build')
+    expect(r.basedOn).toBe('snake-game')
+    expect(r.scenario).toBe('app_iterate')
+  })
+
+  it('tolerates extra prose around the JSON payload', async () => {
+    mockChat.mockResolvedValue('好的，分类结果如下：\n{"action":"chat","basedOn":null}\n希望有帮助')
+    const r = await smartTriage('今天天气不错啊', { stepToken: 'sk-test' })
+    expect(r.action).toBe('chat')
+    expect(r.source).toBe('llm')
+  })
+
+  it('falls back to clarify when LLM fails (e.g. 402 quota)', async () => {
+    mockChat.mockRejectedValue(new Error('StepFun API error: 402'))
+    const r = await smartTriage('帮我写一个记账本', { stepToken: 'sk-test' })
+    expect(r.action).toBe('clarify')
+    expect(r.source).toBe('fallback')
+  })
+
+  it('falls back to clarify when LLM returns garbage', async () => {
+    mockChat.mockResolvedValue('我不知道你在说什么')
+    const r = await smartTriage('帮我写一个记账本', { stepToken: 'sk-test' })
+    expect(r.action).toBe('clarify')
+    expect(r.source).toBe('fallback')
+  })
+
+  it('rejects invalid action values from LLM', async () => {
+    mockChat.mockResolvedValue('{"action":"rm -rf","basedOn":null}')
+    const r = await smartTriage('帮我写一个记账本', { stepToken: 'sk-test' })
+    expect(r.action).toBe('clarify')
+    expect(r.source).toBe('fallback')
+  })
+})
+
+// ================================================================
+// smartTriage — 澄清最多一次，不允许死循环
+// ================================================================
+describe('smartTriage — clarify at most once', () => {
+  it('never returns clarify when clarifyContext is present (LLM unavailable)', async () => {
+    const r = await smartTriage('新应用，记账工具', { clarifyContext: '帮我写一个记账本' })
+    expect(r.action).toBe('build')
+    expect(r.action).not.toBe('clarify')
+  })
+
+  it('never returns clarify when clarifyContext is present (LLM also says clarify)', async () => {
+    mockChat.mockResolvedValue('{"action":"clarify","basedOn":null}')
+    const r = await smartTriage('新应用，记账工具', { stepToken: 'sk-test', clarifyContext: '帮我写一个记账本' })
+    expect(r.action).toBe('build')
+  })
+
+  it('respects a decisive answer after clarification', async () => {
+    const r = await smartTriage('优化 Gallery 样式', { clarifyContext: '改一下那个页面' })
+    expect(r.action).toBe('platform')
   })
 })

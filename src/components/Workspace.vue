@@ -7,6 +7,7 @@ import { chatWithStepFun, formatStepFunError } from '../composables/useStepFun'
 import { getSystemPrompt } from '../composables/useSystemPrompts'
 import { sanitize } from '../composables/useSanitize'
 import { detectCreateCommand, detectStatusCommand, detectStopCommand, detectStartCommand } from '../composables/useMockGitHub'
+import { smartTriage, type TriageResult } from '../composables/useTriage'
 import { createIssue, createIssueComment, getIssue, updateIssue, getLatestAppVersion } from '../composables/useGitHubAPI'
 import ChatInput from './ChatInput.vue'
 import type { BuildIssue, ChatSession } from '../types/app'
@@ -188,94 +189,20 @@ function restoreBuildProgress(): { step: number; label: string; issueNumber: num
   }
 }
 
-// ─── 分流协议 ───────────────────────────────────────────
-type TriageAction = 'chat' | 'build' | 'platform' | 'clarify'
-
-interface TriageResult {
-  action: TriageAction
-  scenario: 'platform' | 'app_create' | 'app_iterate'
-  intent: 'question' | 'create_app' | 'modify_platform' | 'unknown'
-  complexity: 'simple' | 'medium' | 'complex'
-  scope: 'none' | 'apps-only' | 'platform'
-  basedOn?: string
-}
-
+// ─── 分流协议（逻辑在 useTriage composable，与单测共用同一实现）───
 const TRIAGE_LABELS: Record<string, string> = {
   chat: '直接回复', build: 'Agent Loop', platform: 'Issue+审核', clarify: '澄清',
 }
 const INTENT_LABELS: Record<string, string> = {
   question: '询问', create_app: '创建应用', modify_platform: '修改平台', unknown: '未知',
 }
-
-function triageMessage(text: string): TriageResult {
-  const lower = text.toLowerCase()
-
-  // 平台关键词 — Mitosis 自身变更（动词在前或 mito 在后均可）
-  const isPlatform =
-    /src\//i.test(text) ||
-    /mitosis\s*(支持|增加|去掉|删除|修改|优化|改进|加个|加上|升级|重构)/i.test(text) ||
-    /(?:给|帮|让)\s*mitosis\s*(加|增加|加个|去掉|删|改|优化|升级|支持)/i.test(text) ||
-    /(?:GitHub Actions|workflow|CI|OAuth|认证|deploy|gh-pages|composable|组件库|架构|核心逻辑|SSE|流式)/i.test(text) ||
-    /(?:Workspace|SetupPage|Gallery|ChatInput|平台|聊天|上传|页面|按钮|表单|路由|导航|侧边栏|消息|通知)/i.test(text)
-
-  // 询问关键词
-  const isQuestion =
-    /^(?:怎么|如何|为什么|是什么|能不能|可以|帮忙|help|how|what|why)/.test(lower) ||
-    /[?？]$/.test(text.trim()) ||
-    /(?:进度|状态|帮助|介绍|解释|说明|区别|是什么)/.test(text)
-
-  // 创建应用关键词（扩展：直接点名游戏/应用名也视为创建意图）
-  const isAppBuild =
-    /(?:做一个|创建.*应用|建.*应用|写.*应用|开发.*应用|实现.*应用|做个|搞个|弄个|做个游戏|做个工具|想做个|想做一个)/.test(text) ||
-    /(?:build|create.*app|make.*app|new app)/i.test(lower) ||
-    /^(?:俄罗斯方块|贪吃蛇|snake|tetris|todo|计算器|calculator|俄罗斯|打砖块|breakout|flappy|2048).*$/i.test(text.trim())
-
-  // 简单微调 + 优化/改进关键词（R2：直接回复，不创建 Issue）
-  const isSimpleTweak =
-    /(?:改|优化|改进|调整|调).{0,8}(?:颜色|字体|大小|样式|图标|按钮|背景|间距|圆角|阴影|体验|布局|交互|触控|移动端|动画|性能|速度|响应)/.test(text) ||
-    /(?:改|优化|改进).{0,8}(?:俄罗斯方块|贪吃蛇|snake|tetris|todo|计算器|calculator|打砖块|breakout|flappy|2048|画板|棋盘)/.test(text) ||
-    /(?:字体|颜色|间距|圆角|阴影)/.test(text)
-
-  // "继续迭代"关键词
-  const isContinue = /(?:继续|上次|迭代|在.*基础上|基于.*继续)/.test(text)
-
-  // 提取"基于哪个应用"
-  let basedOn: string | undefined
-  const m = text.match(/(?:在|基于)\s*([a-z0-9-]+)\s*(?:的?基础上|之上)/i)
-  if (m) basedOn = m[1].toLowerCase()
-
-  // R4/R5: 平台变更（优先于 question，避免 "mitosis 支持 xxx" 被误分类）
-  if (isPlatform) {
-    return { action: 'platform', scenario: 'platform', intent: 'modify_platform', complexity: 'medium', scope: 'platform' }
-  }
-  // R3: 应用构建（新建 or 复杂修改 or 继续迭代）
-  // 注意：isAppBuild 必须在 isQuestion 之前检查，避免 "做一个游戏" 被误判为问题
-  if (isAppBuild || isContinue) {
-    const scenario = basedOn ? 'app_iterate' : 'app_create'
-    return {
-      action: 'build',
-      scenario,
-      intent: 'create_app',
-      complexity: isContinue || basedOn ? 'medium' : 'complex',
-      scope: 'apps-only',
-      basedOn,
-    }
-  }
-  // R2: 已有应用的简单微调
-  if (isSimpleTweak && !isContinue) {
-    return { action: 'chat', scenario: 'app_iterate', intent: 'create_app', complexity: 'simple', scope: 'apps-only', basedOn }
-  }
-  // R1: 纯询问（无构建意图，无平台范围）
-  if (isQuestion && !isAppBuild && !isPlatform && !isContinue) {
-    return { action: 'chat', scenario: 'app_create', intent: 'question', complexity: 'simple', scope: 'none' }
-  }
-  // R6: 无法确定 → 澄清
-  return { action: 'clarify', scenario: 'app_create', intent: 'unknown', complexity: 'simple', scope: 'none' }
+const SOURCE_LABELS: Record<string, string> = {
+  keyword: '关键词', llm: 'AI 分拣', fallback: '降级',
 }
 
 function logTriage(text: string, t: TriageResult) {
   const summary = text.length > 30 ? text.slice(0, 30) + '…' : text
-  const log = `[TRIAGE] 消息: "${summary}" | 意图: ${INTENT_LABELS[t.intent]} | 决策: ${TRIAGE_LABELS[t.action]}${t.basedOn ? ' | based-on: ' + t.basedOn : ''}`
+  const log = `[TRIAGE] 消息: "${summary}" | 意图: ${INTENT_LABELS[t.intent]} | 决策: ${TRIAGE_LABELS[t.action]}${t.source ? ' | 来源: ' + SOURCE_LABELS[t.source] : ''}${t.basedOn ? ' | based-on: ' + t.basedOn : ''}`
   console.log(log)
   triageLog.value.push(log)
 }
@@ -445,9 +372,17 @@ async function handleSend() {
   thinking.value = true
 
   try {
-    // ── 1. 分流 ──
-    const triage = triageMessage(text)
+    // ── 1. 分流：关键词快速通道 → LLM 语义分拣 → 降级澄清（最多一次）──
+    const triage = await smartTriage(text, {
+      stepToken: stepToken.value || undefined,
+      clarifyContext: previousBuildContext || undefined,
+    })
     logTriage(text, triage)
+
+    // 分流已有明确去向时清掉澄清上下文，避免污染后续消息
+    if (triage.action !== 'clarify') {
+      pendingBuildContext.value = ''
+    }
 
     // ── 2. 澄清（R6）──
     if (triage.action === 'clarify') {

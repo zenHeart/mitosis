@@ -548,8 +548,9 @@ rg -i "(ghp_|gho_|github_pat_|sk-|AKIA|AIza|eyJ)" \
 
 | # | 阻塞项 | 阻塞原因 | 所需操作 | 影响的条件 |
 |---|--------|----------|----------|------------|
-| B1 | StepFun 真实聊天链路 | 账户 quota 耗尽（402: `You exceeded your current quota`） | 充值 StepFun 账户 | #6 |
+| B1 | ~~StepFun 真实聊天链路~~ **已解除（2026-07-05）** | ~~账户 quota 耗尽（402）~~ 真实 chat completion 返回 HTTP 200（step-3.7-flash） | 无 | #6 |
 | B2 | 最终 approve/merge/publish | 条件 #10 明确要求人类决定 | 人类最终确认 | #10 |
+| B3 | 国内用户 OAuth 登录 | token 兑换走 `*.workers.dev`，该域名被 GFW DNS 污染 + SNI 阻断（`zenheart.site` DNS 在阿里云，无法直接绑 Worker 自定义域名） | 人工将域名 zone 迁移到 Cloudflare 并给 Worker 绑定自定义域名，然后设置 `VITE_OAUTH_PROXY_URL` 重新构建（见 docs/setup.md「国内网络访问」） | C2.1 国内可用性 |
 
 ### B1 详细说明
 

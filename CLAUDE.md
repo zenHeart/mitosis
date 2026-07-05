@@ -109,7 +109,7 @@ bash ../../../worker/verify-build.sh
 - Never read, copy, or commit `.claude/settings.local.json`, `.env*`, real tokens, keys, or secrets.
 - Do not claim completion without fresh command output and a verifier PASS in the transcript.
 - Platform SPA uses Vite `base: '/'`; generated apps use Vite `base: './'`.
-- CI uses `claude -p --bare`; it does not auto-load local `.claude` rules, hooks, MCP, plugins, skills, auto memory, or `CLAUDE.md`.
+- CI uses `claude -p`（非 bare，工作区已预信任）: it loads the repo's `CLAUDE.md`, `.claude/settings.json`, and `.claude/skills/*` in headless mode; developer-machine `~/.claude` personal config does not exist on the runner. Agent Loop 详见 `docs/agent-loop.md`（Plan→Execute 两阶段 + 自举循环）.
 - **Security**: 每轮 setgoal 必须执行 security-audit skill（Phase C），发现 FAIL 必须修复。
 - **GitHub OAuth**: state 参数防 CSRF，token 不存入 GitHub Issues。
 - **GitHub Issues**: 视为公开数据，不存储密码/token/secret。
