@@ -616,9 +616,13 @@ async function createBuild(appName: string, description: string, basedOn?: strin
     const encodedBody = encodeURIComponent(`## 需求描述\n\n${description}${basedOn ? `\n\n## 基于现有应用\n\n基于应用: ${basedOn}` : ''}`)
     const fallbackUrl = `https://github.com/${repoFull}/issues/new?title=${encodeURIComponent(title)}&body=${encodedBody}&labels=app/${appName}`
 
+    // 网络错误分类（Failed to fetch / NetworkError / timeout）
+    const isNetworkError = /failed to fetch|networkerror|network\s*error|timeout|cors|typeerror/i.test(err.message)
     const fallbackMsg = status === '403'
       ? `⚠️ 当前 Token 无仓库写入权限（403），无法自动创建构建任务。\n\n请点击下方链接手动创建 Issue（已预填内容），创建后 CI 将自动构建：\n[在 GitHub 上创建构建任务](${fallbackUrl})`
-      : `❌ 创建任务失败: ${err.message}`
+      : isNetworkError
+        ? `🌐 网络连接失败，无法创建构建任务。\n\n可能原因：\n- 当前网络无法访问 GitHub API\n- 浏览器扩展（广告拦截/隐私保护）拦截了请求\n- 移动端网络不稳定\n\n请检查网络后重试，或点击下方链接手动创建：\n[在 GitHub 上创建构建任务](${fallbackUrl})`
+        : `❌ 创建任务失败: ${err.message}`
 
     sessionStore.addMessage({
       role: 'system',
