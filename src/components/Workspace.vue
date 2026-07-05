@@ -53,6 +53,40 @@ onMounted(() => {
   }
 })
 
+/**
+ * 格式化用户可见的错误消息
+ * - 提取 HTTP 状态码
+ * - 移除原始 JSON/API 响应体
+ * - 提供用户友好的中文提示
+ * - 完整错误保留在 console.error 中供调试
+ */
+function formatUserError(err: unknown): string {
+  const e = err instanceof Error ? err : new Error('未知错误')
+  const statusMatch = e.message.match(/(\d{3})/)
+  const status = statusMatch?.[1]
+
+  // 已知状态码映射
+  if (status === '401') return '认证失败：Token 无效或已过期，请前往 Setup 页面更新。'
+  if (status === '403') return '权限不足：当前 Token 无权访问该资源，请检查仓库权限。'
+  if (status === '404') return '资源未找到：请求的资源不存在，请检查后重试。'
+  if (status === '429') return '请求过于频繁：GitHub API 限流，请稍后再试。'
+  if (status === '500') return 'GitHub 服务暂时不可用，请稍后重试。'
+  if (status === '502') return 'GitHub 服务暂时不可用，请稍后重试。'
+  if (status === '503') return 'GitHub 服务暂时不可用，请稍后重试。'
+
+  // 网络错误
+  if (/failed to fetch|networkerror|network\s*error|timeout|cors|typeerror/i.test(e.message)) {
+    return '网络连接失败，请检查网络后重试。'
+  }
+
+  // 未知错误：只取第一行，避免暴露 JSON 堆栈
+  const firstLine = e.message.split('\n')[0].trim()
+  if (firstLine.length > 100) {
+    return '操作失败，请稍后重试或联系支持。'
+  }
+  return `操作失败：${firstLine}`
+}
+
 // Map store messages to template shape
 const displayMessages = computed(() =>
   sessionStore.messages.map(m => ({
@@ -618,11 +652,12 @@ async function createBuild(appName: string, description: string, basedOn?: strin
 
     // 网络错误分类（Failed to fetch / NetworkError / timeout）
     const isNetworkError = /failed to fetch|networkerror|network\s*error|timeout|cors|typeerror/i.test(err.message)
+    console.error('[createBuild] 错误详情:', err)
     const fallbackMsg = status === '403'
       ? `⚠️ 当前 Token 无仓库写入权限（403），无法自动创建构建任务。\n\n请点击下方链接手动创建 Issue（已预填内容），创建后 CI 将自动构建：\n[在 GitHub 上创建构建任务](${fallbackUrl})`
       : isNetworkError
         ? `🌐 网络连接失败，无法创建构建任务。\n\n可能原因：\n- 当前网络无法访问 GitHub API\n- 浏览器扩展（广告拦截/隐私保护）拦截了请求\n- 移动端网络不稳定\n\n请检查网络后重试，或点击下方链接手动创建：\n[在 GitHub 上创建构建任务](${fallbackUrl})`
-        : `❌ 创建任务失败: ${err.message}`
+        : `❌ 创建任务失败: ${formatUserError(err)}`
 
     sessionStore.addMessage({
       role: 'system',
@@ -686,7 +721,7 @@ async function createPlatformBuild(originalText: string, description: string) {
 
     const fallbackMsg = status === '403'
       ? `⚠️ 当前 Token 无仓库写入权限（403），无法自动创建平台构建任务。\n\n请点击下方链接手动创建：\n[在 GitHub 上创建 Issue](${fallbackUrl})`
-      : `❌ 创建平台构建失败: ${err.message}`
+      : `❌ 创建平台构建失败: ${formatUserError(err)}`
 
     sessionStore.addMessage({
       role: 'system',
@@ -748,9 +783,10 @@ async function createPlatformBuildDirect(originalText: string): Promise<BuildIss
     const encodedBody = encodeURIComponent(`## 需求描述\n\n${originalText}\n\n## 构建信息\n\n- 触发方式: Web 界面（LLM 不可用，直连兜底）`)
     const fallbackUrl = `https://github.com/${repoFull}/issues/new?title=${encodeURIComponent(title)}&body=${encodedBody}&labels=platform`
 
+    console.error('[createPlatformBuildDirect] 错误详情:', err)
     const fallbackMsg = status === '403'
       ? `⚠️ 当前 Token 无仓库写入权限（403），无法自动创建平台构建任务。\n\n请点击下方链接手动创建：\n[在 GitHub 上创建 Issue](${fallbackUrl})`
-      : `❌ 创建平台构建失败: ${err.message}`
+      : `❌ 创建平台构建失败: ${formatUserError(err)}`
 
     sessionStore.addMessage({
       role: 'system',
