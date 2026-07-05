@@ -15,7 +15,7 @@ import {
   Dna, Smartphone, MessageSquare, PanelLeft,
   Gamepad, FileText, Calculator, Settings,
   CircleCheckBig, ClipboardList, Hammer,
-  RefreshCw, Key, Search, Star,
+  RefreshCw, Key, Search, Star, Sparkles, Wand2,
 } from '@lucide/vue'
 import { REPO_FULL_NAME, userRepoFullName } from '../config/repo'
 
@@ -1083,15 +1083,36 @@ function handleNewChat() {
           </button>
         </div>
         <div v-else-if="displayMessages.length === 0 && isOwner" class="welcome">
-          <h3>👋 你好，{{ authStore.user?.login }}</h3>
-          <p>描述你想做的事情，AI 会自动判断是构建应用还是平台变更。</p>
+          <div class="welcome-icon">
+            <Sparkles :size="48" stroke-width="1.5" />
+          </div>
+          <h3 class="welcome-title">👋 你好，{{ authStore.user?.login }}</h3>
+          <p class="welcome-subtitle">描述你想做的事情，AI 会自动判断是构建应用还是平台变更。</p>
           <div class="examples">
-            <button @click="inputText = '帮我做一个俄罗斯方块游戏，支持消行和计分'"><Gamepad :size="16" stroke-width="2" /> 俄罗斯方块</button>
-            <button @click="inputText = '帮我做一个 todo 应用，支持添加、删除和标记完成'"><FileText :size="16" stroke-width="2" /> Todo 应用</button>
-            <button @click="inputText = '帮我做一个计算器，支持加减乘除'"><Calculator :size="16" stroke-width="2" /> 计算器</button>
-            <button @click="inputText = '在 tetris-game 的基础上加一个关卡系统'"><Dna :size="16" stroke-width="2" /> 继续迭代</button>
-            <button @click="inputText = '优化 Workspace 的聊天界面性能'"><Settings :size="16" stroke-width="2" /> 平台优化</button>
-            <button @click="inputText = 'Mitosis 目前的技术栈是什么？'"><MessageSquare :size="16" stroke-width="2" /> 咨询问题</button>
+            <button @click="inputText = '帮我做一个俄罗斯方块游戏，支持消行和计分'" class="example-btn">
+              <Gamepad :size="16" stroke-width="2" />
+              <span>游戏</span>
+            </button>
+            <button @click="inputText = '帮我做一个 todo 应用，支持添加、删除和标记完成'" class="example-btn">
+              <FileText :size="16" stroke-width="2" />
+              <span>Todo 应用</span>
+            </button>
+            <button @click="inputText = '帮我做一个计算器，支持加减乘除'" class="example-btn">
+              <Calculator :size="16" stroke-width="2" />
+              <span>计算器</span>
+            </button>
+            <button @click="inputText = '在 tetris-game 的基础上加一个关卡系统'" class="example-btn highlight">
+              <Wand2 :size="16" stroke-width="2" />
+              <span>继续迭代</span>
+            </button>
+            <button @click="inputText = '优化 Workspace 的聊天界面性能'" class="example-btn">
+              <Settings :size="16" stroke-width="2" />
+              <span>平台优化</span>
+            </button>
+            <button @click="inputText = 'Mitosis 目前的技术栈是什么？'" class="example-btn">
+              <MessageSquare :size="16" stroke-width="2" />
+              <span>咨询问题</span>
+            </button>
           </div>
         </div>
         <div v-else-if="displayMessages.length === 0 && !isOwner" class="welcome">
@@ -1670,54 +1691,85 @@ function handleNewChat() {
   text-align: center;
   margin: auto;
   padding: 3rem 1.5rem;
-  animation: fadeInUp 0.5s ease-out;
+  animation: fadeInUp 0.6s ease-out;
 }
 
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.welcome h3 {
-  font-size: 1.5rem;
+.welcome-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  margin-bottom: 1.25rem;
+  background: var(--accent-subtle);
+  border: 1px solid var(--accent-border);
+  border-radius: 20px;
+  color: var(--accent);
+  box-shadow: 0 0 24px var(--accent-glow);
+  animation: iconGlow 3s ease-in-out infinite;
+}
+
+@keyframes iconGlow {
+  0%, 100% { box-shadow: 0 0 24px var(--accent-glow); }
+  50% { box-shadow: 0 0 40px var(--accent-glow), 0 0 60px rgba(88, 166, 255, 0.15); }
+}
+
+.welcome-title {
+  font-size: 1.75rem;
   margin-bottom: 0.75rem;
-  color: var(--text-primary);
+  background: linear-gradient(135deg, var(--text-primary), var(--accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
+}
+
+.welcome-subtitle {
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .welcome.session-welcome {
   margin-top: 3rem;
 }
 
-.welcome.session-welcome h3 {
-  font-size: 1.15rem;
+.welcome.session-welcome .welcome-icon {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 1rem;
+}
+
+.welcome.session-welcome .welcome-title {
+  font-size: 1.25rem;
   margin-bottom: 0.5rem;
 }
 
-.welcome.session-welcome .hint-text {
-  color: var(--text-secondary);
+.welcome.session-welcome .welcome-subtitle {
   font-size: 0.88rem;
-}
-
-.welcome > p {
-  color: var(--text-secondary);
-  margin-bottom: 1.75rem;
-  font-size: 0.95rem;
-  line-height: 1.6;
-  max-width: 420px;
-  margin-left: auto;
-  margin-right: auto;
+  margin-bottom: 1.25rem;
 }
 
 .examples {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem;
+  gap: 0.75rem;
   justify-content: center;
+  max-width: 600px;
+  margin: 0 auto;
 }
 
-.examples button {
+.example-btn {
   padding: 0.65rem 1.2rem;
   min-height: 44px;
   background: var(--bg-secondary);
@@ -1726,27 +1778,55 @@ function handleNewChat() {
   color: var(--text-primary);
   font-size: 0.85rem;
   font-weight: 500;
-  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   cursor: pointer;
   letter-spacing: 0.01em;
+  position: relative;
+  overflow: hidden;
 }
 
-.examples button:hover {
-  border-color: var(--accent);
-  background: var(--bg-tertiary);
-  box-shadow: 0 2px 8px rgba(88, 166, 255, 0.1);
+.example-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--accent-subtle), transparent);
+  opacity: 0;
+  transition: opacity 0.25s;
 }
 
-.examples button:active {
-  transform: scale(0.97);
+.example-btn:hover::before {
+  opacity: 1;
 }
 
-.examples button:focus-visible {
+.example-btn:hover {
+  border-color: var(--accent-border);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(88, 166, 255, 0.15);
+}
+
+.example-btn:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.example-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.example-btn.highlight {
+  background: var(--accent-subtle);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.example-btn.highlight:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 4px 16px rgba(88, 166, 255, 0.3);
 }
 
 .message {
@@ -1764,7 +1844,13 @@ function handleNewChat() {
   background: var(--user-msg-bg);
   color: #fff;
   border-bottom-right-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  animation: userSlideIn 0.3s ease-out;
+}
+
+@keyframes userSlideIn {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 /* 连续同角色消息：微妙区分 */
@@ -1803,6 +1889,24 @@ function handleNewChat() {
   font-size: 0.88rem;
   line-height: 1.6;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* AI assistant response */
+.message.assistant {
+  align-self: flex-start;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-bottom-left-radius: 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.message.assistant:first-child {
+  animation: assistantFadeIn 0.5s ease-out;
+}
+
+@keyframes assistantFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .message.system :deep(.message-content) {
