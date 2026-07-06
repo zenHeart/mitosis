@@ -4,7 +4,7 @@
  * 三级策略：
  * 1. 正则关键词快速通道（零延迟、零成本，覆盖高频明确表达）
  * 2. 正则未命中时用 StepFun LLM 做语义分拣（解决"每次都被要求选择任务类型"）
- * 3. LLM 不可用/失败时降级澄清；澄清最多一次，回答后强制路由避免死循环
+ * 3. LLM 不可用/失败时只对疑似任务请求澄清；闲聊保持本地临时聊天
  */
 import { chatWithStepFun } from './useStepFun'
 
@@ -30,20 +30,23 @@ export function triageByKeywords(text: string): TriageResult {
   // 模式 1: 组件名 + 功能/逻辑动词 → 明确平台变更
   const isPlatform =
     /src\//i.test(text) ||
-    /mitosis\s*(支持|增加|去掉|删除|修改|升级|重构|架构|核心逻辑)/i.test(text) ||
-    /(?:给|帮|让)\s*mitosis\s*(加|增加|加个|去掉|删|改|升级|支持|架构|重构)/i.test(text) ||
+    /mitosis\s*(?:平台)?\s*(支持|增加|去掉|删除|修改|升级|重构|架构|核心逻辑|优化|改进|调整|修复)/i.test(text) ||
+    /mitosis\s*平台/i.test(text) ||
+    /(?:优化|改进|调整|修复|修改).{0,20}mitosis/i.test(text) ||
+    /mitosis.{0,20}(?:输入框|移动端|样式|页面|体验|交互|功能|逻辑)/i.test(text) ||
+    /(?:给|帮|让)\s*mitosis\s*(加|增加|加个|去掉|删|改|升级|支持|架构|重构|优化|改进|调整|修复)/i.test(text) ||
     /(?:Workspace|Gallery|SetupPage|ChatInput|侧边栏)\s*(?:的)?\s*(?:体验|交互|性能|逻辑|功能|架构|导航|路由|上传|表单|消息|通知|样式|外观|布局)/i.test(text) ||
     /(?:GitHub Actions|workflow|CI|OAuth|认证|deploy|gh-pages|composable|组件库|SSE|流式|token|权限)/i.test(text)
 
   // 询问关键词
   const isQuestion =
-    /^(?:怎么|如何|为什么|是什么|能不能|可以|帮忙|help|how|what|why)/.test(lower) ||
+    /^(?:怎么|如何|为什么|是什么|能不能|可以|能否|是否|有没有|请问|帮忙|help|how|what|why)/.test(lower) ||
     /[?？]$/.test(text.trim()) ||
-    /(?:进度|状态|帮助|介绍|解释|说明|区别|是什么)/.test(text)
+    /(?:进度|状态|帮助|介绍|解释|说明|区别|是什么|什么模型|用的什么|你.*什么|哪[个种款]?|多少|几[个次]?)/.test(text)
 
   // 创建应用关键词（扩展：直接点名游戏/应用名也视为创建意图）
   const isAppBuild =
-    /(?:做一个|创建.*应用|建.*应用|写.*应用|开发.*应用|实现.*应用|做个|搞个|弄个|做个游戏|做个工具|想做个|想做一个)/.test(text) ||
+    /(?:做一个|创建.*应用|建.*应用|写一个|写个|写.*应用|开发.*应用|实现.*应用|做个|搞个|弄个|做个游戏|做个工具|想做个|想做一个|新应用|记账本|记账工具)/.test(text) ||
     /(?:build|create.*app|make.*app|new app)/i.test(lower) ||
     /^(?:俄罗斯方块|贪吃蛇|snake|tetris|todo|计算器|calculator|俄罗斯|打砖块|breakout|flappy|2048).*$/i.test(text.trim())
 
@@ -55,6 +58,13 @@ export function triageByKeywords(text: string): TriageResult {
 
   // "继续迭代"关键词
   const isContinue = /(?:继续|上次|迭代|在.*基础上|基于.*继续)/.test(text)
+
+  const isTaskLike =
+    isPlatform ||
+    isAppBuild ||
+    isSimpleTweak ||
+    isContinue ||
+    /(?:帮我|给它|给这个|把它|加个|加一个|改一下|改下|修一下|修复|优化|调整|实现|开发|创建|生成|收拾一下|弄一下|应用|游戏|工具|页面|功能|平台|需求|issue|任务|输入框|侧边栏|侧栏|左边|右边|那一栏)/i.test(text)
 
   // 提取"基于哪个应用"
   let basedOn: string | undefined
@@ -88,7 +98,12 @@ export function triageByKeywords(text: string): TriageResult {
   if (isSimpleTweak && !isContinue) {
     return { action: 'chat', scenario: 'app_iterate', intent: 'create_app', complexity: 'simple', scope: 'apps-only', basedOn, source: 'keyword' }
   }
-  // R6: 无法确定 → 交给上层（LLM 或澄清）
+  // 非任务闲聊/探测输入不追问，也不升级为 Issue。
+  if (!isTaskLike) {
+    return { action: 'chat', scenario: 'app_create', intent: 'question', complexity: 'simple', scope: 'none', source: 'keyword' }
+  }
+
+  // R6: 疑似任务但目标不清 → 交给上层（LLM 或澄清）
   return { action: 'clarify', scenario: 'app_create', intent: 'unknown', complexity: 'simple', scope: 'none', source: 'keyword' }
 }
 
@@ -162,9 +177,9 @@ export interface SmartTriageOptions {
   clarifyContext?: string
 }
 
-/** 澄清后仍无法判断时的兜底：按应用构建处理（Issue 走人工审查，成本可控） */
-function clarifiedFallbackBuild(): TriageResult {
-  return { action: 'build', scenario: 'app_create', intent: 'create_app', complexity: 'complex', scope: 'apps-only', source: 'fallback' }
+/** 澄清后仍无法判断时保持聊天，不得自动升级为 Issue。 */
+function fallbackChat(): TriageResult {
+  return { action: 'chat', scenario: 'app_create', intent: 'question', complexity: 'simple', scope: 'none', source: 'fallback' }
 }
 
 export async function smartTriage(text: string, opts: SmartTriageOptions = {}): Promise<TriageResult> {
@@ -188,9 +203,9 @@ export async function smartTriage(text: string, opts: SmartTriageOptions = {}): 
     }
   }
 
-  // 3. 降级：澄清最多一次 —— 已经澄清过就按 build 处理，杜绝死循环
+  // 3. 降级：澄清最多一次。仍无法判断时保持临时聊天，不创建 Issue。
   if (opts.clarifyContext) {
-    return clarifiedFallbackBuild()
+    return fallbackChat()
   }
   return { action: 'clarify', scenario: 'app_create', intent: 'unknown', complexity: 'simple', scope: 'none', source: 'fallback' }
 }

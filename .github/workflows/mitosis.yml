@@ -138,8 +138,14 @@ jobs:
           # 使用 gh CLI 获取 label 名称列表（可靠）
           LABEL_NAMES=$(gh issue view "$ISSUE_NUMBER" --repo "${{ github.repository }}" --json labels --jq '.labels[].name' 2>/dev/null || true)
 
-          # 检查是否有 platform label → 平台构建模式
-          if echo "$LABEL_NAMES" | grep -q '^platform$'; then
+          # 检查是否有 platform label → 平台构建模式。
+          # 历史兼容：前端曾把“mitosis 平台”误标成 app/mitosis-平台。
+          # 这些保留名称必须兜底走平台构建，避免在 apps/ 下生成伪应用。
+          PLATFORM_APP_LABEL=$(printf '%s\n' "$LABEL_NAMES" | sed -n 's/^app\///p' | grep -E '^(mitosis|mitosis-platform|mitosis-平台|platform)$' | head -1 || true)
+          if printf '%s\n' "$LABEL_NAMES" | grep -q '^platform$' || [ -n "$PLATFORM_APP_LABEL" ]; then
+            if [ -n "$PLATFORM_APP_LABEL" ]; then
+              echo "::warning::Reserved app label app/$PLATFORM_APP_LABEL interpreted as platform build."
+            fi
             echo "is_platform=true" >> "$GITHUB_OUTPUT"
             echo "app_name=platform" >> "$GITHUB_OUTPUT"
             echo "version=root" >> "$GITHUB_OUTPUT"
@@ -644,33 +650,51 @@ jobs:
               -f state=closed >/dev/null 2>&1 || true
           fi
 
-          if [ "$IS_PLATFORM" = "true" ]; then
-            printf '%s\n' '## Summary' "- Platform changes from Issue #$ISSUE_NUMBER." "- Agent Loop verifier passed before this PR was created." "- Merge to \`master\` to deploy platform changes." '' '## Review' "- [ ] Review all platform file changes." "- [ ] Confirm the changes satisfy the Issue requirements." "- [ ] Confirm no unintended changes were made." > /tmp/mitosis-pr-body.md
+          redact_pr_error() {
+            if [ ! -s "$1" ]; then
+              printf '%s\n' 'gh pr create exited without stderr.'
+              return
+            fi
+            sed -E \
+              -e 's#https://x-access-token:[^@[:space:]]+@github.com/#https://x-access-token:[redacted]@github.com/#g' \
+              -e 's/(gh[opsu]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|[A-Za-z0-9_=-]{40,})/[redacted]/g' \
+              "$1" | tail -20
+          }
 
+          create_review_pr() {
+            PR_ERR_FILE=$(mktemp)
+            set +e
             PR_URL=$(gh pr create \
               --repo "$REPO_PATH" \
-              --title "feat: platform changes (issue #$ISSUE_NUMBER)" \
+              --title "$1" \
               --head "$BRANCH" \
               --base "master" \
               --draft \
-              --body "$(cat /tmp/mitosis-pr-body.md)" 2>/dev/null || true)
-            if [ -z "$PR_URL" ]; then
+              --body "$(cat /tmp/mitosis-pr-body.md)" 2>"$PR_ERR_FILE")
+            PR_CREATE_STATUS=$?
+            set -e
+            if [ "$PR_CREATE_STATUS" -ne 0 ] || [ -z "$PR_URL" ]; then
+              PR_CREATE_ERROR=$(redact_pr_error "$PR_ERR_FILE")
+              rm -f "$PR_ERR_FILE"
+              return 1
+            fi
+            rm -f "$PR_ERR_FILE"
+            return 0
+          }
+
+          if [ "$IS_PLATFORM" = "true" ]; then
+            printf '%s\n' '## Summary' "- Platform changes from Issue #$ISSUE_NUMBER." "- Agent Loop verifier passed before this PR was created." "- Merge to \`master\` to deploy platform changes." '' '## Review' "- [ ] Review all platform file changes." "- [ ] Confirm the changes satisfy the Issue requirements." "- [ ] Confirm no unintended changes were made." > /tmp/mitosis-pr-body.md
+
+            if ! create_review_pr "feat: platform changes (issue #$ISSUE_NUMBER)"; then
               PR_URL="https://github.com/$REPO_PATH/compare/master...$BRANCH"
-              FALLBACK_NOTE="⚠️ 自动创建 PR 失败（可能是 GITHUB_TOKEN 权限限制），请点击上方链接手动创建审查 PR。"
+              FALLBACK_NOTE=$(printf '⚠️ 自动创建 PR 失败，请手动创建审查 PR。\n\n错误（已脱敏）：\n```text\n%s\n```' "$PR_CREATE_ERROR")
             fi
           else
             printf '%s\n' '## Summary' "- Builds \`$APP_NAME\` \`$NEXT_VERSION\` from Issue #$ISSUE_NUMBER." "- Agent Loop verifier passed before this PR was created." "- Merge to \`master\` to publish through the deploy workflow." '' '## Review' "- [ ] Open and inspect the generated app after deployment." "- [ ] Confirm the app satisfies the Issue requirements." "- [ ] Confirm the app includes the Mitosis iteration entry." > /tmp/mitosis-pr-body.md
 
-            PR_URL=$(gh pr create \
-              --repo "$REPO_PATH" \
-              --title "feat: build $APP_NAME $NEXT_VERSION" \
-              --head "$BRANCH" \
-              --base "master" \
-              --draft \
-              --body "$(cat /tmp/mitosis-pr-body.md)" 2>/dev/null || true)
-            if [ -z "$PR_URL" ]; then
+            if ! create_review_pr "feat: build $APP_NAME $NEXT_VERSION"; then
               PR_URL="https://github.com/$REPO_PATH/compare/master...$BRANCH"
-              FALLBACK_NOTE="⚠️ 自动创建 PR 失败（可能是 GITHUB_TOKEN 权限限制），请点击上方链接手动创建审查 PR。"
+              FALLBACK_NOTE=$(printf '⚠️ 自动创建 PR 失败，请手动创建审查 PR。\n\n错误（已脱敏）：\n```text\n%s\n```' "$PR_CREATE_ERROR")
             fi
           fi
 
@@ -683,7 +707,12 @@ jobs:
 
           echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
           # 修复：FALLBACK_NOTE 此前从未写入 GITHUB_OUTPUT，handoff 步骤永远读到空值
-          echo "fallback_note=${FALLBACK_NOTE:-}" >> "$GITHUB_OUTPUT"
+          FALLBACK_NOTE_DELIMITER="MITOSIS_FALLBACK_NOTE_${RANDOM}_${RANDOM}"
+          {
+            echo "fallback_note<<$FALLBACK_NOTE_DELIMITER"
+            printf '%s\n' "${FALLBACK_NOTE:-}"
+            echo "$FALLBACK_NOTE_DELIMITER"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Comment review handoff
         if: ${{ steps.auth.outputs.authorized == 'true' && steps.auth.outputs.dedup_skip != 'true' && steps.parse.outputs.app_name != 'unknown' }}
@@ -700,21 +729,21 @@ jobs:
             if [ -n "$FALLBACK_NOTE" ]; then
               gh issue comment "$ISSUE_NUMBER" \
                 --repo ${{ github.repository }} \
-                --body "$FALLBACK_NOTE\n\nPR: $PR_URL\n\n合入 master 后，平台变更将自动部署。"
+                --body "$(printf '%s\n\nPR: %s\n\n合入 master 后，平台变更将自动部署。' "$FALLBACK_NOTE" "$PR_URL")"
             else
               gh issue comment "$ISSUE_NUMBER" \
                 --repo ${{ github.repository }} \
-                --body "🧪 平台变更已通过自动验证，进入人工审查。\n\nPR: $PR_URL\n\n合入 master 后，平台变更将自动部署。"
+                --body "$(printf '🧪 平台变更已通过自动验证，进入人工审查。\n\nPR: %s\n\n合入 master 后，平台变更将自动部署。' "$PR_URL")"
             fi
           else
             if [ -n "$FALLBACK_NOTE" ]; then
               gh issue comment "$ISSUE_NUMBER" \
                 --repo ${{ github.repository }} \
-                --body "$FALLBACK_NOTE\n\nPR: $PR_URL\n\n合入 master 后，部署 workflow 会发布到 https://mitosis.zenheart.site/apps/$APP_NAME/$NEXT_VERSION/"
+                --body "$(printf '%s\n\nPR: %s\n\n合入 master 后，部署 workflow 会发布到 https://mitosis.zenheart.site/apps/%s/%s/' "$FALLBACK_NOTE" "$PR_URL" "$APP_NAME" "$NEXT_VERSION")"
             else
               gh issue comment "$ISSUE_NUMBER" \
                 --repo ${{ github.repository }} \
-                --body "🧪 $APP_NAME $NEXT_VERSION 已通过自动验证，进入人工审查。\n\nPR: $PR_URL\n\n合入 master 后，部署 workflow 会发布到 https://mitosis.zenheart.site/apps/$APP_NAME/$NEXT_VERSION/"
+                --body "$(printf '🧪 %s %s 已通过自动验证，进入人工审查。\n\nPR: %s\n\n合入 master 后，部署 workflow 会发布到 https://mitosis.zenheart.site/apps/%s/%s/' "$APP_NAME" "$NEXT_VERSION" "$PR_URL" "$APP_NAME" "$NEXT_VERSION")"
             fi
           fi
 

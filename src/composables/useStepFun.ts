@@ -4,6 +4,7 @@ const DEFAULT_MODEL = 'step-3.7-flash'
 const DEFAULT_TIMEOUT = 15000
 const MAX_RETRIES = 1
 const RETRY_BASE_DELAY = 1000
+export const STEP_PLAN_CHAT_COMPLETIONS_URL = 'https://api.stepfun.com/step_plan/v1/chat/completions'
 
 export interface StepFunMessage {
   role: 'system' | 'user' | 'assistant'
@@ -95,6 +96,7 @@ export function formatStepFunError(err: unknown): FormattedError {
       /incorrect[_\s]api[_\s]key/.test(msg) ||
       /unauthorized/.test(msg) ||
       /authentication/.test(msg) ||
+      /token.*required|missing.*token/.test(msg) ||
       /auth.*fail|token.*invalid|token.*expired/.test(msg)
     ) {
       return {
@@ -156,7 +158,7 @@ async function callStepFun(
   }
 
   const res = await fetchWithTimeout(
-    'https://api.stepfun.com/v1/chat/completions',
+    STEP_PLAN_CHAT_COMPLETIONS_URL,
     {
       method: 'POST',
       headers: {
@@ -194,6 +196,10 @@ export async function chatWithStepFun(
   messages: StepFunMessage[],
   options: StepFunOptions = {},
 ): Promise<string> {
+  if (!token.trim()) {
+    throw new Error('StepFun token required')
+  }
+
   let lastErr: Error | undefined
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {

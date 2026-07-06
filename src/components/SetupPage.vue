@@ -53,7 +53,7 @@ async function handleSubmit() {
   error.value = ''
 
   try {
-    const res = await fetch('https://api.stepfun.com/v1/models', {
+    const res = await fetch('https://api.stepfun.com/step_plan/v1/models', {
       headers: {
         Authorization: `Bearer ${stepToken.value}`,
       },

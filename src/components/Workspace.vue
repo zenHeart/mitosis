@@ -404,6 +404,7 @@ async function handleSend() {
   })
   inputText.value = ''
   thinking.value = true
+  triageAction.value = 'unknown'
 
   try {
     // ── 1. 分流：关键词快速通道 → LLM 语义分拣 → 降级澄清（最多一次）──
@@ -412,6 +413,7 @@ async function handleSend() {
       clarifyContext: previousBuildContext || undefined,
     })
     logTriage(text, triage)
+    triageAction.value = triage.action
 
     // 分流已有明确去向时清掉澄清上下文，避免污染后续消息
     if (triage.action !== 'clarify') {
@@ -456,7 +458,6 @@ async function handleSend() {
     // R4/R5 platform + R1/R2 chat：调用 StepFun 生成回复
     const history = getConversationHistory()
     const systemPrompt = getSystemPrompt(triage, authStore.user?.login)
-    triageAction.value = triage.action
 
     const response = await chatWithStepFun(stepToken.value, history, { system: systemPrompt })
     const trimmed = response.trim()
@@ -474,13 +475,7 @@ async function handleSend() {
         await createPlatformBuild(text, platformMatch[1].trim())
       }
     }
-    // chat/其他：如果 AI 输出 BUILD_APP 标记，自动创建构建任务
-    const buildMatch = trimmed.match(/BUILD_APP:\s*(.+)/i)
-    if (buildMatch) {
-      const appName = extractAppName(buildMatch[1].trim())
-      await createBuild(appName, buildMatch[1].trim())
-    }
-    // chat (R1/R2): 直接回复，无需进一步操作
+    // chat (R1/R2): 直接回复。Issue 只能由明确 build/platform 分流或 /create 创建。
   } catch (e) {
     const formatted = formatStepFunError(e)
     lastErrorKind.value = formatted.kind
