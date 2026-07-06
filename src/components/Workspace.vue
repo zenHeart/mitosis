@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useSessionStore } from '../stores/session'
 import { usePolling } from '../composables/usePolling'
-import { chatWithStepFun, formatStepFunError } from '../composables/useStepFun'
+import { chatWithStepFun, formatStepFunError, generateImage, buildLogoPrompt } from '../composables/useStepFun'
 import { getSystemPrompt } from '../composables/useSystemPrompts'
 import { sanitize } from '../composables/useSanitize'
 import { detectCreateCommand, detectStatusCommand, detectStopCommand, detectStartCommand } from '../composables/useMockGitHub'
@@ -307,7 +307,7 @@ async function handleSend() {
   const images = [...pendingImages.value]
   pendingImages.value = []
   const imageSuffix = images.length > 0
-    ? `\n\n## 上传图片（${images.length} 张）\n\n用户上传了 ${images.length} 张参考图片，文件名：${images.map(i => i.name).join('、')}。`
+    ? `\n\n## 上传图片（${images.length} 张）\n\n${images.map(i => `![${i.name}](${i.dataUrl})`).join('\n')}`
     : ''
 
   // ── /create 命令：直接触发构建，跳过 StepFun ──
@@ -423,22 +423,26 @@ async function handleSend() {
     // ── 2. 澄清（R6）──
     if (triage.action === 'clarify') {
       clarifying.value = true
-      // 保存原始上下文，澄清回答时合并使用
-      if (!pendingBuildContext.value && text) {
-        pendingBuildContext.value = text
-      }
-      clarifyingMsg.value = `我需要确认一下你的意图：
+      // 防止重复展示相同澄清消息
+      const last = sessionStore.messages.at(-1)
+      if (!last || !last.content?.startsWith('我需要确认一下你的意图')) {
+        // 保存原始上下文，澄清回答时合并使用
+        if (!pendingBuildContext.value && text) {
+          pendingBuildContext.value = text
+        }
+        clarifyingMsg.value = `我需要确认一下你的意图：
 
 1. **你是想创建一个新应用，还是修改已有的应用？**
    - 新应用：请告诉我类型（游戏/工具/编辑器）和核心功能
    - 修改已有应用：请告诉我应用名称和具体要改什么
 
 2. **这个改动是在 Mitosis 平台本身，还是在某个已部署的应用上？**`
-      sessionStore.addMessage({
-        role: 'assistant',
-        content: clarifyingMsg.value,
-        createdAt: new Date().toISOString(),
-      })
+        sessionStore.addMessage({
+          role: 'assistant',
+          content: clarifyingMsg.value,
+          createdAt: new Date().toISOString(),
+        })
+      }
       return
     }
 
@@ -632,6 +636,33 @@ async function createBuild(appName: string, description: string, basedOn?: strin
       createdAt: new Date().toISOString(),
     })
 
+    // 使用 Step Plan Image API 生成应用 logo 并追加到 Issue body
+    const stepTokenVal = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('mitosis_step_token') : '') || ''
+    if (stepTokenVal) {
+      try {
+        const logoPrompt = buildLogoPrompt(appName, description)
+        const logoResult = await generateImage(stepTokenVal, { prompt: logoPrompt })
+        if (logoResult.b64_json) {
+          const logoMarkdown = `\n\n## 应用 Logo\n\n![${appName} logo](data:image/png;base64,${logoResult.b64_json})\n`
+          const currentBody = issue.body || body
+          // 使用 raw GitHub API 更新 issue body（updateIssue 可能不支持 body 参数）
+          const updateRes = await fetch(`https://api.github.com/repos/${repo.value}/issues/${issue.number}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ body: currentBody + logoMarkdown }),
+          })
+          if (!updateRes.ok) {
+            console.warn('[createBuild] 更新 Issue body 添加 logo 失败:', updateRes.status)
+          }
+        }
+      } catch (logoErr) {
+        console.warn('[createBuild] 生成 logo 失败（不影响构建流程）:', logoErr)
+      }
+    }
+
     start(issue.number, () => getIssue(token, repo.value, issue.number), onIssueUpdate)
     // 刷新会话列表
     await sessionStore.loadSessions(authStore.token!, repo.value)
@@ -660,6 +691,7 @@ async function createBuild(appName: string, description: string, basedOn?: strin
       createdAt: new Date().toISOString(),
     })
     building.value = false
+    buildProgress.value = null
     return null
   }
 }
@@ -1158,13 +1190,6 @@ function handleNewChat() {
         >
           <div class="message-content" v-html="sanitize(msg.text)"></div>
           <div class="message-time">{{ msg.time }}</div>
-        </div>
-        <!-- 错误恢复操作栏 -->
-        <div v-if="lastErrorKind && !thinking && !building" class="recovery-bar">
-          <span class="recovery-label">恢复操作：</span>
-          <button @click="handleRetry" class="recovery-btn retry-btn"><RefreshCw :size="16" stroke-width="2" /> 重试</button>
-          <button v-if="lastErrorKind === 'auth'" @click="handleUpdateToken" class="recovery-btn"><Key :size="16" stroke-width="2" /> 更新 Token</button>
-          <button @click="handleCreateDirectIssue" class="recovery-btn direct-btn"><FileText :size="16" stroke-width="2" /> 直接建 Issue</button>
         </div>
         <div v-if="thinking" class="message system">
           <div class="typing-indicator">

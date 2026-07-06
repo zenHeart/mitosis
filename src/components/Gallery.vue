@@ -138,6 +138,8 @@ watch(
 
 <template>
   <div class="gallery">
+    <!-- 移动端侧边栏遮罩层 -->
+    <div v-if="sidebarOpen" class="sidebar-overlay" @click="sidebarOpen = false"></div>
     <!-- 会话侧边栏（登录后可见）────────────────────────────── -->
     <aside v-if="isLoggedIn" class="session-sidebar" :class="{ open: sidebarOpen }">
       <div class="sidebar-header">
@@ -679,6 +681,15 @@ watch(
 
 .session-sidebar.open {
   transform: translateX(0);
+}
+
+/* 侧边栏遮罩层（移动端抽屉模式） */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 99;
+  transition: opacity 0.3s ease;
 }
 
 .sidebar-header {
