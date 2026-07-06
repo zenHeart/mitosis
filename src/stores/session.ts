@@ -65,7 +65,9 @@ export const useSessionStore = defineStore('session', {
         const remoteSessions = await listUserIssues(token, repo)
         // 合并远程 sessions 与本地缓存（去重：以 issueNumber 为准）
         const cached = this._readCache()
-        const merged = this._mergeSessions(remoteSessions, cached)
+        // 清除缓存中"同时带 platform + appLabel"的脏数据（旧版本遗留）
+        const cleaned = cached.filter(s => !(s.labels?.includes('platform') && s.appLabel))
+        const merged = this._mergeSessions(remoteSessions, cleaned)
         this.sessions = merged
         this._writeCache(merged)
       } catch (e) {
@@ -173,16 +175,20 @@ export const useSessionStore = defineStore('session', {
 
     _mergeSessions(remote: ChatSession[], cached: ChatSession[]): ChatSession[] {
       const map = new Map<number, ChatSession>()
-      // 优先远程数据（更新），补充本地独有数据
-      for (const s of [...cached, ...remote]) {
+      // 先载入远程数据（权威来源），再用本地缓存补充
+      for (const s of remote) {
+        map.set(s.issueNumber, { ...s })
+      }
+      // 合并本地缓存的消息计数等本地属性
+      for (const s of cached) {
         const existing = map.get(s.issueNumber)
         if (!existing) {
-          map.set(s.issueNumber, s)
+          map.set(s.issueNumber, { ...s })
         } else {
-          // 合并：远程数据覆盖，但保留本地消息计数
+          // 远程数据覆盖 appLabel/scenario/labels，只保留本地消息计数
           map.set(s.issueNumber, {
-            ...s,
-            messageCount: Math.max(s.messageCount, existing.messageCount),
+            ...existing,
+            messageCount: Math.max(existing.messageCount || 0, s.messageCount || 0),
           })
         }
       }
