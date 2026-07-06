@@ -191,6 +191,111 @@ async function callStepFun(
   return data.choices?.[0]?.message?.content || '(empty response)'
 }
 
+export const STEP_PLAN_IMAGE_GENERATION_URL = 'https://api.stepfun.com/step_plan/v1/images/generations'
+
+export interface GenerateImageOptions {
+  prompt: string
+  /** 模型名称，默认 step-image-edit-2 */
+  model?: string
+  /** 输出格式：b64_json（默认）或 url */
+  response_format?: 'b64_json' | 'url'
+  /** 分类器自由引导比例，默认 1.0 */
+  cfg_scale?: number
+  /** 扩散步数，默认 8 */
+  steps?: number
+  /** 随机种子，默认随机 */
+  seed?: number
+  /** 是否启用文字渲染模式，默认 false */
+  text_mode?: boolean
+}
+
+export interface GeneratedImage {
+  /** base64 编码的图片数据（不含 data:image/...;base64, 前缀） */
+  b64_json?: string
+  /** 图片 URL（当 response_format=url 时返回） */
+  url?: string
+  /** 原始 MIME 类型 */
+  contentType?: string
+}
+
+/**
+ * 调用 Step Plan Image API 生成图片
+ * 需要有效的 Step Plan token（与 chat completions 使用相同的认证）
+ */
+export async function generateImage(
+  token: string,
+  options: GenerateImageOptions,
+): Promise<GeneratedImage> {
+  const {
+    prompt,
+    model = 'step-image-edit-2',
+    response_format = 'b64_json',
+    cfg_scale = 1.0,
+    steps = 8,
+    seed = Math.floor(Math.random() * 2147483647),
+    text_mode = false,
+  } = options
+
+  const body: Record<string, unknown> = {
+    model,
+    prompt,
+    response_format,
+    cfg_scale,
+    steps,
+    seed,
+    text_mode,
+  }
+
+  const res = await fetchWithTimeout(
+    STEP_PLAN_IMAGE_GENERATION_URL,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    },
+    30000,
+  )
+
+  if (!res.ok) {
+    const errText = await res.text()
+    let errMsg = `Image API error: ${res.status}`
+    try {
+      const errJson = JSON.parse(errText)
+      if (errJson.error?.message) {
+        errMsg = `${res.status} — ${errJson.error.message}`
+      }
+    } catch {
+      errMsg = `${errMsg} — ${errText.slice(0, 200)}`
+    }
+    throw new Error(errMsg)
+  }
+
+  const data = await res.json()
+  const imageData = data.data?.[0]
+
+  if (!imageData) {
+    throw new Error('Image API 返回空数据')
+  }
+
+  return {
+    b64_json: imageData.b64_json,
+    url: imageData.url,
+    contentType: imageData.content_type || 'image/png',
+  }
+}
+
+/**
+ * 为应用生成 logo 的 prompt 构建器
+ * 根据应用类型和描述生成适合 Step Plan Image API 的 prompt
+ */
+export function buildLogoPrompt(appName: string, description: string): string {
+  const appTypeHint = description.length > 0 ? description.slice(0, 50) : '通用应用'
+  return `一个简洁的现代应用图标/logo，应用名称"${appName}"，风格：${appTypeHint}。要求：纯色背景，中心有一个简洁的几何图标，无文字，扁平化设计，高对比度，适合用作 favicon 和 app icon。颜色方案：蓝色系或根据应用主题色。`
+}
+
 export async function chatWithStepFun(
   token: string,
   messages: StepFunMessage[],

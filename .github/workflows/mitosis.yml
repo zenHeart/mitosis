@@ -714,38 +714,113 @@ jobs:
             echo "$FALLBACK_NOTE_DELIMITER"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Deploy preview
+        if: always()
+        id: deploy_preview
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ steps.auth.outputs.issue_number }}
+          IS_PLATFORM: ${{ steps.parse.outputs.is_platform }}
+          APP_NAME: ${{ steps.parse.outputs.app_name }}
+          NEXT_VERSION: ${{ steps.parse.outputs.version }}
+        run: |
+          # 仅在授权且非 unknown app 时部署
+          if [ "${{ steps.auth.outputs.authorized }}" != "true" ] || [ "${{ steps.parse.outputs.app_name }}" = "unknown" ]; then
+            echo "Skipping preview deploy (unauthorized or unknown app)"
+            echo "preview_url=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          cd "$GITHUB_WORKSPACE"
+
+          PREVIEW_DIR="/tmp/mitosis-pview"
+          rm -rf "$PREVIEW_DIR"
+          mkdir -p "$PREVIEW_DIR/preview/$ISSUE_NUMBER"
+
+          if [ "$IS_PLATFORM" = "true" ]; then
+            # 平台构建：确保 dist/ 存在（agent loop 已运行 npm run build 或兜底重建）
+            if [ ! -d "dist" ]; then
+              echo "Platform dist/ not found, rebuilding..."
+              npm run build 2>&1 | tail -3
+            fi
+            cp -r dist/* "$PREVIEW_DIR/preview/$ISSUE_NUMBER/"
+            # 从根路径部署到子路径：必须将 base 改为相对路径
+            sed -i 's|<base href="/">|<base href="./">|' "$PREVIEW_DIR/preview/$ISSUE_NUMBER/index.html"
+          else
+            # 应用构建：安装依赖并构建（验证器已验证构建通过）
+            APP_DIR="apps/$APP_NAME/$NEXT_VERSION"
+            if [ -d "$APP_DIR" ] && [ -f "$APP_DIR/package.json" ]; then
+              cd "$APP_DIR"
+              npm ci --silent 2>/dev/null || npm install --silent 2>/dev/null || true
+              npm run build 2>&1 | tail -3
+              cd "$GITHUB_WORKSPACE"
+              if [ -d "$APP_DIR/dist" ]; then
+                mkdir -p "$PREVIEW_DIR/preview/$ISSUE_NUMBER/apps/$APP_NAME/$NEXT_VERSION"
+                cp -r "$APP_DIR/dist"/* "$PREVIEW_DIR/preview/$ISSUE_NUMBER/apps/$APP_NAME/$NEXT_VERSION/"
+              fi
+            fi
+          fi
+
+          # 部署到 gh-pages 分支
+          git clone --depth 1 --branch gh-pages \
+            "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" \
+            "$PREVIEW_DIR/gh-pages" 2>/dev/null || true
+
+          if [ -d "$PREVIEW_DIR/gh-pages" ]; then
+            cd "$PREVIEW_DIR/gh-pages"
+            rm -rf "preview/$ISSUE_NUMBER"
+            cp -r "$PREVIEW_DIR/preview/$ISSUE_NUMBER" .
+            git config user.name "mitosis-bot"
+            git config user.email "mitosis@users.noreply.github.com"
+            git add -A
+            git commit -m "feat: preview for issue #$ISSUE_NUMBER" || true
+            git push origin HEAD:gh-pages 2>&1 | tail -2
+            echo "preview_url=https://mitosis.zenheart.site/preview/$ISSUE_NUMBER/" >> "$GITHUB_OUTPUT"
+          else
+            echo "preview_url=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Comment review handoff
-        if: ${{ steps.auth.outputs.authorized == 'true' && steps.auth.outputs.dedup_skip != 'true' && steps.parse.outputs.app_name != 'unknown' }}
+        if: ${{ steps.auth.outputs.authorized == 'true' && steps.parse.outputs.app_name != 'unknown' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APP_NAME: ${{ steps.parse.outputs.app_name }}
           NEXT_VERSION: ${{ steps.parse.outputs.version }}
           ISSUE_NUMBER: ${{ steps.auth.outputs.issue_number }}
           PR_URL: ${{ steps.review_pr.outputs.pr_url }}
+          PREVIEW_URL: ${{ steps.deploy_preview.outputs.preview_url }}
           IS_PLATFORM: ${{ steps.parse.outputs.is_platform }}
           FALLBACK_NOTE: ${{ steps.review_pr.outputs.fallback_note }}
         run: |
+          ISSUE_URL="https://github.com/${{ github.repository }}/issues/$ISSUE_NUMBER"
+
           if [ "$IS_PLATFORM" = "true" ]; then
+            PREVIEW_SECTION=""
+            if [ -n "$PREVIEW_URL" ]; then
+              PREVIEW_SECTION="预览: $PREVIEW_URL\n"
+            fi
             if [ -n "$FALLBACK_NOTE" ]; then
-              gh issue comment "$ISSUE_NUMBER" \
-                --repo ${{ github.repository }} \
-                --body "$(printf '%s\n\nPR: %s\n\n合入 master 后，平台变更将自动部署。' "$FALLBACK_NOTE" "$PR_URL")"
+              BODY=$(printf '%s\n\nPR: %s\n\n%s\n\n合入 master 后，平台变更将自动部署。\n\n## 本地验证\n\`\`\`bash\ngit checkout %s\nnpm run dev\n# 浏览器打开 http://localhost:5173/\`\`\`' \
+                "$FALLBACK_NOTE" "$PR_URL" "$PREVIEW_SECTION" "${{ steps.review_pr.outputs.branch }}")
             else
-              gh issue comment "$ISSUE_NUMBER" \
-                --repo ${{ github.repository }} \
-                --body "$(printf '🧪 平台变更已通过自动验证，进入人工审查。\n\nPR: %s\n\n合入 master 后，平台变更将自动部署。' "$PR_URL")"
+              BODY=$(printf '🧪 平台变更已通过自动验证，进入人工审查。\n\nPR: %s\n\n%s\n\n合入 master 后，平台变更将自动部署。\n\n## 本地验证\n\`\`\`bash\ngit checkout %s\nnpm run dev\n# 浏览器打开 http://localhost:5173/\`\`\`' \
+                "$PR_URL" "$PREVIEW_SECTION" "${{ steps.review_pr.outputs.branch }}")
             fi
           else
+            PREVIEW_SECTION=""
+            if [ -n "$PREVIEW_URL" ]; then
+              PREVIEW_SECTION="预览: ${PREVIEW_URL}apps/${APP_NAME}/${NEXT_VERSION}/\n"
+            fi
             if [ -n "$FALLBACK_NOTE" ]; then
-              gh issue comment "$ISSUE_NUMBER" \
-                --repo ${{ github.repository }} \
-                --body "$(printf '%s\n\nPR: %s\n\n合入 master 后，部署 workflow 会发布到 https://mitosis.zenheart.site/apps/%s/%s/' "$FALLBACK_NOTE" "$PR_URL" "$APP_NAME" "$NEXT_VERSION")"
+              BODY=$(printf '%s\n\nPR: %s\n\n%s合入 master 后，部署 workflow 会发布到 https://mitosis.zenheart.site/apps/%s/%s/\n\n## 本地验证\n\`\`\`bash\ngit checkout %s\nnpm run dev\n# 浏览器打开 http://localhost:5173/apps/%s/%s/\`\`\`' \
+                "$FALLBACK_NOTE" "$PR_URL" "$PREVIEW_SECTION" "$APP_NAME" "$NEXT_VERSION" "${{ steps.review_pr.outputs.branch }}" "$APP_NAME" "$NEXT_VERSION")
             else
-              gh issue comment "$ISSUE_NUMBER" \
-                --repo ${{ github.repository }} \
-                --body "$(printf '🧪 %s %s 已通过自动验证，进入人工审查。\n\nPR: %s\n\n合入 master 后，部署 workflow 会发布到 https://mitosis.zenheart.site/apps/%s/%s/' "$APP_NAME" "$NEXT_VERSION" "$PR_URL" "$APP_NAME" "$NEXT_VERSION")"
+              BODY=$(printf '🧪 %s %s 已通过自动验证，进入人工审查。\n\nPR: %s\n\n%s合入 master 后，部署 workflow 会发布到 https://mitosis.zenheart.site/apps/%s/%s/\n\n## 本地验证\n\`\`\`bash\ngit checkout %s\nnpm run dev\n# 浏览器打开 http://localhost:5173/apps/%s/%s/\`\`\`' \
+                "$APP_NAME" "$NEXT_VERSION" "$PR_URL" "$PREVIEW_SECTION" "$APP_NAME" "$NEXT_VERSION" "${{ steps.review_pr.outputs.branch }}" "$APP_NAME" "$NEXT_VERSION")
             fi
           fi
+
+          gh issue comment "$ISSUE_NUMBER" --repo "${{ github.repository }}" --body "$BODY"
 
       # ── 自举循环：成功后自动触发下一轮（仅 platform 构建 + owner 显式开启多轮时）──
       # 停止条件（任一满足即停）：rounds_left 耗尽 / Issue 已关闭 / 有 status:stopped 标签。
