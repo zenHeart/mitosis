@@ -103,7 +103,7 @@ export function formatStepFunError(err: unknown): FormattedError {
         title: '🔑 Token 无效或已过期',
         detail: 'StepFun API 返回鉴权失败，token 可能已过期或被撤销。',
         kind: 'auth',
-        suggestion: '请更新你的 StepFun token 后重试。前往 Setup 页面重新输入。',
+        suggestion: '请点击下方的「更新 Token」按钮前往 Setup 页面重新输入。',
       }
     }
 

@@ -601,7 +601,11 @@ async function createBuild(appName: string, description: string, basedOn?: strin
   persistBuildProgress(buildProgress.value)
   const version = basedOn ? 'v1' : 'v0'
   const effectiveScenario = scenario || (basedOn ? 'app_iterate' : 'app_create')
-  const labels = effectiveScenario === 'app_iterate' ? [`app/${appName}`, 'update'] : [`app/${appName}`]
+  const labels = effectiveScenario === 'platform'
+    ? ['platform']
+    : effectiveScenario === 'app_iterate'
+      ? [`app/${appName}`, 'update']
+      : [`app/${appName}`]
   const basedOnLine = basedOn ? `\n- 基于: ${basedOn}` : ''
   const body = `## 需求描述\n\n${description}${basedOn ? `\n\n## 基于现有应用\n\n基于应用: ${basedOn}` : ''}\n\n## 构建信息\n\n- 应用名称: ${appName}\n- 版本: ${version}\n- 触发方式: Web 界面${basedOnLine}`
 
@@ -970,6 +974,8 @@ async function loadSession(session: ChatSession, autoOpenApp = false) {
 async function openAppSession(session: ChatSession) {
   const appName = session.appLabel?.replace('app/', '') || ''
   if (!appName) return
+  // 平台构建不生成应用目录，跳过
+  if (session.labels?.includes('platform')) return
   // 优先从 GitHub apps 目录获取真实最新版本（不依赖 issue 标题）
   const latestVer = await getLatestAppVersion(authStore.token!, repo.value, appName)
   const version = latestVer > 0 ? `v${latestVer}` : 'v0'

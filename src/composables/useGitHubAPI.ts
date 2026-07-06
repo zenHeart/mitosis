@@ -150,6 +150,9 @@ export async function listApps(token: string, repo: string): Promise<AppInfo[]> 
  * 不依赖 issue 标题中的版本信息，避免 CI 不更新标题导致版本错误
  */
 export async function getLatestAppVersion(token: string, repo: string, appName: string): Promise<number> {
+  // GitHub apps 目录只包含 ASCII slug（如 tetris-game），非 ASCII 或含空格的名称直接跳过
+  if (!/^[a-z0-9-]+$/.test(appName)) return 0
+
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
   }
