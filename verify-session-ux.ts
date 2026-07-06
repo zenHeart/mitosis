@@ -4,6 +4,7 @@
  */
 
 import { chromium } from 'playwright'
+import { STEP_PLAN_CHAT_COMPLETIONS_URL } from './src/composables/useStepFun'
 
 const BASE_URL = 'http://localhost:5174'
 
@@ -53,7 +54,7 @@ async function main() {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
 
   // Intercept StepFun API calls and return mock triage response
-  await context.route('https://api.stepfun.com/v1/chat/completions', (route) => {
+  await context.route(STEP_PLAN_CHAT_COMPLETIONS_URL, (route) => {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
