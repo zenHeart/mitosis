@@ -156,7 +156,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends bubblewrap socat
+          sudo apt-get install -y --no-install-recommends acl bubblewrap socat
           if [[ $(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0') == 1 ]]; then
             sudo tee /etc/apparmor.d/bwrap >/dev/null <<'APPARMOR'
           abi <abi/4.0>,
@@ -236,6 +236,32 @@ jobs:
             --metadata /opt/mitosis-ci/request-metadata.json \
             --user mitosis-agent \
             --group mitosis-agent
+
+          # sudo preserves the runner checkout as cwd, but the unprivileged
+          # account must still be able to traverse every absolute parent when
+          # Claude's file tools resolve /proc/self/cwd to the real path.
+          sudo setfacl -m u:mitosis-agent:r-x "$GITHUB_WORKSPACE"
+          runner_workspace=$(dirname "$GITHUB_WORKSPACE")
+          for parent in "$runner_workspace" "$(dirname "$runner_workspace")" "$HOME"; do
+            sudo setfacl -m u:mitosis-agent:--x "$parent"
+          done
+
+          kind=$(ruby -rjson -e 'print JSON.parse(File.read(ARGV[0])).fetch("kind")' /opt/mitosis-ci/request-metadata.json)
+          if [[ "$kind" == platform ]]; then
+            probe_dir="$GITHUB_WORKSPACE/src"
+          else
+            target_prefix=$(ruby -rjson -e 'print JSON.parse(File.read(ARGV[0])).fetch("target_prefix")' /opt/mitosis-ci/request-metadata.json)
+            probe_dir="$GITHUB_WORKSPACE/$target_prefix"
+          fi
+          sudo -u mitosis-agent env PROBE_DIR="$probe_dir" ruby <<'RUBY'
+          dir = File.realpath(ENV.fetch('PROBE_DIR'))
+          probe = File.join(dir, ".mitosis-write-probe-#{Process.pid}")
+          begin
+            File.open(probe, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write('ok') }
+          ensure
+            File.unlink(probe) if File.exist?(probe)
+          end
+          RUBY
           sudo install -d -o mitosis-agent -g mitosis-agent -m 0700 /home/mitosis-agent/.claude
 
       - name: StepPlan decomposition (no fallback)
@@ -260,7 +286,8 @@ jobs:
             DISABLE_TELEMETRY=1 \
             DISABLE_ERROR_REPORTING=1 \
             claude --print \
-              --bare \
+              --safe-mode \
+              --setting-sources '' \
               --disable-slash-commands \
               --no-session-persistence \
               --no-chrome \
@@ -282,12 +309,15 @@ jobs:
               > "$RUNNER_TEMP/plan-result.json" \
               2> "$RUNNER_TEMP/plan-stderr.log"
           then
-            echo 'StepPlan decomposition failed; sanitized provider diagnostics:' >&2
-            sed -E 's/(sk-[A-Za-z0-9_-]+|Bearer[[:space:]]+[A-Za-z0-9._-]+)/[REDACTED]/g' "$RUNNER_TEMP/plan-stderr.log" >&2 || true
+            echo 'StepPlan decomposition failed; bounded diagnostics:' >&2
+            failure_class=unknown
+            grep -q 'ETIMEDOUT' "$RUNNER_TEMP/plan-stderr.log" && failure_class=network_timeout
+            grep -q 'ENETUNREACH' "$RUNNER_TEMP/plan-stderr.log" && failure_class=network_unreachable
+            grep -qE '(^|[^0-9])429([^0-9]|$)' "$RUNNER_TEMP/plan-stderr.log" && failure_class=rate_limited
+            printf 'provider_failure_class=%s\n' "$failure_class" >&2
             if [[ -s "$RUNNER_TEMP/plan-result.json" ]]; then
-              echo 'Claude structured result (sanitized):' >&2
-              sed -E 's/(sk-[A-Za-z0-9_-]+|Bearer[[:space:]]+[A-Za-z0-9._-]+)/[REDACTED]/g' "$RUNNER_TEMP/plan-result.json" | head -c 4000 >&2 || true
-              printf '\n' >&2
+              jq -c '{type,subtype,is_error,num_turns,stop_reason,terminal_reason,permission_denial_count:((.permission_denials // []) | length)}' \
+                "$RUNNER_TEMP/plan-result.json" >&2 || echo 'result_envelope=invalid' >&2
             fi
             exit 1
           fi
@@ -322,7 +352,8 @@ jobs:
             DISABLE_TELEMETRY=1 \
             DISABLE_ERROR_REPORTING=1 \
             claude --print \
-              --bare \
+              --safe-mode \
+              --setting-sources '' \
               --disable-slash-commands \
               --no-session-persistence \
               --no-chrome \
@@ -343,22 +374,23 @@ jobs:
               > "$RUNNER_TEMP/execution-result.json" \
               2> "$RUNNER_TEMP/execution-stderr.log"
           then
-            echo 'Candidate generation failed; sanitized provider diagnostics:' >&2
-            sed -E 's/(sk-[A-Za-z0-9_-]+|Bearer[[:space:]]+[A-Za-z0-9._-]+)/[REDACTED]/g' "$RUNNER_TEMP/execution-stderr.log" >&2 || true
+            echo 'Candidate generation failed; bounded diagnostics:' >&2
+            failure_class=unknown
+            grep -q 'ETIMEDOUT' "$RUNNER_TEMP/execution-stderr.log" && failure_class=network_timeout
+            grep -q 'ENETUNREACH' "$RUNNER_TEMP/execution-stderr.log" && failure_class=network_unreachable
+            grep -qE '(^|[^0-9])429([^0-9]|$)' "$RUNNER_TEMP/execution-stderr.log" && failure_class=rate_limited
+            printf 'provider_failure_class=%s\n' "$failure_class" >&2
             if [[ -s "$RUNNER_TEMP/execution-result.json" ]]; then
-              echo 'Claude structured result (sanitized):' >&2
-              sed -E 's/(sk-[A-Za-z0-9_-]+|Bearer[[:space:]]+[A-Za-z0-9._-]+)/[REDACTED]/g' "$RUNNER_TEMP/execution-result.json" | head -c 6000 >&2 || true
-              printf '\n' >&2
+              jq -c '{type,subtype,is_error,num_turns,stop_reason,terminal_reason,permission_denial_count:((.permission_denials // []) | length)}' \
+                "$RUNNER_TEMP/execution-result.json" >&2 || echo 'result_envelope=invalid' >&2
             fi
             exit 1
           fi
 
           if [[ -s "$RUNNER_TEMP/execution-result.json" ]]; then
             echo 'Claude execution metadata:'
-            jq -c '{type,subtype,is_error,num_turns,stop_reason,permission_denials,terminal_reason}' "$RUNNER_TEMP/execution-result.json" || true
-            echo 'Claude final result summary:'
-            jq -r '.result // empty' "$RUNNER_TEMP/execution-result.json" | head -c 2000 || true
-            printf '\n'
+            jq -c '{type,subtype,is_error,num_turns,stop_reason,terminal_reason,permission_denial_count:((.permission_denials // []) | length)}' \
+              "$RUNNER_TEMP/execution-result.json" || true
           fi
 
           sudo ruby /opt/mitosis-ci/ci-artifact.rb assert-result \

@@ -128,7 +128,7 @@ echo "-- 2.4 安全扫描（敏感信息） --"
 SECRET_PATTERNS='(ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z\-_]{35}|eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*)'
 
 # 扫描 src/, apps/, worker/, .github/ 下的代码文件，排除 markdown
-HITS=$(grep -rniE "$SECRET_PATTERNS" \
+HITS=$(grep -rnE "$SECRET_PATTERNS" \
   --include='*.ts' --include='*.js' --include='*.vue' --include='*.json' \
   --include='*.yml' --include='*.yaml' --include='*.sh' --include='*.env' \
   src/ apps/ worker/ .github/ 2>/dev/null | grep -v '\.md:' | grep -v 'node_modules' | grep -v 'dist/' | head -5 || true)
@@ -160,7 +160,7 @@ else
 fi
 
 # 检查 worker/prompt.txt 要求生成应用使用 base: './'
-PROMPT_BASE=$(grep -oP "base:\s*['\"][^'\"]+['\"]" worker/prompt.txt 2>/dev/null | head -1 | grep -oP "'[^']+'" | tr -d "'" || echo "")
+PROMPT_BASE=$(grep -Eo "base:[[:space:]]*['\"][^'\"]+['\"]" worker/prompt.txt 2>/dev/null | head -1 | sed -E "s/.*['\"]([^'\"]+)['\"].*/\\1/" || echo "")
 if [ "$PROMPT_BASE" = "./" ]; then
   log_pass "生成应用要求 vite base: './' (prompt.txt)"
 else
@@ -217,24 +217,26 @@ else
   log_warn "未在 .claude/ 下找到规则文件"
 fi
 
-# ── 2.8 CI --bare 检查 ─────────────────────────────────────
+# ── 2.8 CI 安全模式检查 ───────────────────────────────────
 echo ""
-echo "-- 2.8 CI --bare 检查 --"
+echo "-- 2.8 CI 安全模式检查 --"
 
-if grep -q "\-\-bare" .github/workflows/mitosis.yml; then
-  log_pass "CI 使用 --bare 模式"
+SAFE_MODE_COUNT=$(grep -c -- '--safe-mode' .github/workflows/mitosis.yml 2>/dev/null || true)
+if [ "$SAFE_MODE_COUNT" = "2" ] && ! grep -q -- '--bare' .github/workflows/mitosis.yml; then
+  log_pass "CI 使用 --safe-mode 并保留显式受限文件工具"
 else
-  log_fail "CI 未使用 --bare 模式"
+  log_fail "CI 必须使用两处 --safe-mode，且不能使用会移除 Write/Glob/Grep 的 --bare"
 fi
 
 # ── 2.9 CI verify-build.sh 检查 ────────────────────────────
 echo ""
 echo "-- 2.9 CI verifier 检查 --"
 
-if grep -q "verify-build.sh" .github/workflows/mitosis.yml; then
-  log_pass "CI 显式运行 verify-build.sh"
+if grep -qF "ci-verify-candidate.sh" .github/workflows/mitosis.yml &&
+   grep -qF 'worker/verify-build.sh' worker/ci-verify-candidate.sh; then
+  log_pass "CI 通过受信候选 verifier 运行 verify-build.sh"
 else
-  log_fail "CI 未显式运行 verify-build.sh"
+  log_fail "CI 未通过受信候选 verifier 运行 verify-build.sh"
 fi
 
 # ── 结果汇总 ──────────────────────────────────────────────
