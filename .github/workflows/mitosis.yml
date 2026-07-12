@@ -182,7 +182,9 @@ jobs:
           sudo install -o root -g root -m 0444 .github/claude-ci-settings.json /opt/mitosis-ci/settings.json
           sudo install -o root -g root -m 0444 worker/ci-system-prompt.txt /opt/mitosis-ci/system-prompt.txt
           sudo install -o root -g root -m 0555 worker/ci-artifact.rb /opt/mitosis-ci/ci-artifact.rb
-          printf '{}\n' | sudo tee /opt/mitosis-ci/empty-mcp.json >/dev/null
+          # Claude Code 2.x requires the MCP root object to contain mcpServers,
+          # even when the allow-list is intentionally empty.
+          printf '{"mcpServers":{}}\n' | sudo tee /opt/mitosis-ci/empty-mcp.json >/dev/null
           sudo chown root:root /opt/mitosis-ci/empty-mcp.json
           sudo chmod 0444 /opt/mitosis-ci/empty-mcp.json
 
