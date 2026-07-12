@@ -88,7 +88,18 @@ jobs:
         run: |
           set -Eeuo pipefail
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends bubblewrap
+          sudo apt-get install --yes --no-install-recommends bubblewrap iproute2
+
+          probe="mitosis-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup_probe() {
+            sudo ip netns delete "$probe" 2>/dev/null || true
+          }
+          trap cleanup_probe EXIT
+          sudo ip netns add "$probe"
+          sudo ip -n "$probe" link set lo up
+          test "$(sudo ip -n "$probe" -o link show | wc -l | tr -d ' ')" = 1
+          test -z "$(sudo ip -n "$probe" route show default)"
+          sudo ip netns exec "$probe" ip route get 127.0.0.1 | grep -q 'dev lo'
 
           if [[ $(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0') == 1 ]]; then
             sudo tee /etc/apparmor.d/bwrap >/dev/null <<'APPARMOR'

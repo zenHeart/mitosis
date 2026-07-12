@@ -44,7 +44,12 @@ def parse_options(argv, names)
   names.each do |name|
     parser.on("--#{name.tr('_', '-')} VALUE") { |value| options[name] = value }
   end
-  parser.parse!(argv)
+  begin
+    parser.parse!(argv)
+  rescue OptionParser::ParseError => e
+    fail!("Option parsing failed: #{e.message}")
+  end
+  fail!("Unexpected positional arguments: #{argv.length}") unless argv.empty?
   missing = names.reject { |name| options.key?(name) }
   fail!("Missing required options: #{missing.join(', ')}") unless missing.empty?
   options
