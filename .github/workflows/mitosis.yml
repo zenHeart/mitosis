@@ -356,6 +356,9 @@ jobs:
           if [[ -s "$RUNNER_TEMP/execution-result.json" ]]; then
             echo 'Claude execution metadata:'
             jq -c '{type,subtype,is_error,num_turns,stop_reason,permission_denials,terminal_reason}' "$RUNNER_TEMP/execution-result.json" || true
+            echo 'Claude final result summary:'
+            jq -r '.result // empty' "$RUNNER_TEMP/execution-result.json" | head -c 2000 || true
+            printf '\n'
           fi
 
           sudo ruby /opt/mitosis-ci/ci-artifact.rb assert-result \
