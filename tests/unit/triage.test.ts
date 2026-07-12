@@ -42,7 +42,8 @@ describe('triageByKeywords', () => {
     expect(triageByKeywords('Mitosis 是什么？').action).toBe('chat')
     expect(triageByKeywords('怎么使用？').action).toBe('chat')
     expect(triageByKeywords('介绍一下这个平台').action).toBe('chat')
-    expect(triageByKeywords('你用的什么模型').action).toBe('chat')
+  expect(triageByKeywords('你用的什么模型').action).toBe('chat')
+  expect(triageByKeywords('请说明平台如何工作，不要创建应用、任务或修改平台').action).toBe('chat')
   })
 
   it('identifies simple tweaks as chat', () => {

@@ -44,8 +44,11 @@ export function triageByKeywords(text: string): TriageResult {
     /[?？]$/.test(text.trim()) ||
     /(?:进度|状态|帮助|介绍|解释|说明|区别|是什么|什么模型|用的什么|你.*什么|哪[个种款]?|多少|几[个次]?)/.test(text)
 
+  // 否定语义优先于任务关键词：例如“不要创建应用，只说明原理”仍是询问。
+  const isNegatedTask = /(?:不要|无需|不需要|不想|请勿).{0,12}(?:创建|做|开发|修改|生成).{0,12}(?:应用|任务|平台)/i.test(text)
+
   // 创建应用关键词（扩展：直接点名游戏/应用名也视为创建意图）
-  const isAppBuild =
+  const isAppBuild = !isNegatedTask &&
     /(?:做一个|创建.*应用|建.*应用|写一个|写个|写.*应用|开发.*应用|实现.*应用|做个|搞个|弄个|做个游戏|做个工具|想做个|想做一个|新应用|记账本|记账工具)/.test(text) ||
     /(?:build|create.*app|make.*app|new app)/i.test(lower) ||
     /^(?:俄罗斯方块|贪吃蛇|snake|tetris|todo|计算器|calculator|俄罗斯|打砖块|breakout|flappy|2048).*$/i.test(text.trim())
