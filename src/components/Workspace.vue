@@ -329,10 +329,10 @@ function getConversationHistory() {
     }))
 }
 
-async function handleSend() {
+async function handleSend(submittedText = '') {
   if (!isOwner.value) return
   if (sessionStore.activeSession?.status === 'closed') return
-  const text = inputText.value.trim()
+  const text = (submittedText || inputText.value).trim()
   if (!text || building.value || !authStore.token) return
   lastRetryInput.value = text
   const images = [...pendingImages.value]

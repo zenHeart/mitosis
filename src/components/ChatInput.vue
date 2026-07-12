@@ -11,7 +11,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
-  (e: 'send'): void
+  (e: 'send', value: string): void
   (e: 'images', files: { dataUrl: string; name: string }[]): void
 }>()
 
@@ -69,7 +69,7 @@ function handleSend() {
   if (!props.isOwner || props.thinking || props.building) return
   imageError.value = ''
   emit('images', images.value)
-  emit('send')
+  emit('send', localInput.value)
   images.value = [] // 发送后清空图片
 }
 
