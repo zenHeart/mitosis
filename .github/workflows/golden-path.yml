@@ -145,8 +145,7 @@ jobs:
           let upstreamAssistant = ''
           try {
             const context = await browser.newContext()
-            await context.addInitScript(({ origin, login }) => {
-              if (location.origin !== origin) return
+            await context.addInitScript(({ login }) => {
               sessionStorage.setItem('mitosis_token', 'online-golden-github-isolated')
               sessionStorage.setItem('mitosis_user', JSON.stringify({
                 login,
@@ -157,7 +156,7 @@ jobs:
               }))
               sessionStorage.setItem('mitosis_step_token', 'online-golden-proxy-isolated')
               localStorage.setItem('mitosis_setup_complete', 'true')
-            }, { origin: expectedOrigin, login: owner })
+            }, { login: owner })
 
             const page = await context.newPage()
             await page.route('**/*', async (route) => {
@@ -280,6 +279,13 @@ jobs:
 
             const input = page.locator('textarea.chat-input')
             const send = page.locator('button.send-btn')
+            await page.waitForFunction(() =>
+              sessionStorage.getItem('mitosis_token') === 'online-golden-github-isolated' &&
+              sessionStorage.getItem('mitosis_step_token') === 'online-golden-proxy-isolated' &&
+              localStorage.getItem('mitosis_setup_complete') === 'true',
+              undefined,
+              { timeout: 15_000 },
+            )
             await input.waitFor({ state: 'visible', timeout: 15_000 })
             await send.waitFor({ state: 'visible', timeout: 15_000 })
             const assistantCountBefore = await page.locator('.message.assistant').count()
