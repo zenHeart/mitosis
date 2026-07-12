@@ -1,0 +1,203 @@
+name: Pull request CI
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    name: Trust root and MVP regression gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout untrusted change with no persisted credential
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '22.23.1'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Enforce workflow trust-root policy
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          workflow_dir = Path('.github/workflows')
+          paths = sorted([*workflow_dir.glob('*.yml'), *workflow_dir.glob('*.yaml')])
+          failures = []
+          uses_pattern = re.compile(r'^\s*uses:\s*([^\s#]+)')
+          full_sha = re.compile(r'^[0-9a-f]{40}$')
+
+          if not paths:
+              failures.append('no workflow files found')
+
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              if re.search(r'^\s*pull_request_target\s*:', text, re.MULTILINE):
+                  failures.append(f'{path}: pull_request_target is forbidden')
+              if re.search(r'^\s*permissions\s*:\s*write-all\s*$', text, re.MULTILINE):
+                  failures.append(f'{path}: permissions: write-all is forbidden')
+
+              for line_number, line in enumerate(text.splitlines(), 1):
+                  match = uses_pattern.match(line)
+                  if not match:
+                      continue
+                  spec = match.group(1).strip('"\'')
+                  if spec.startswith('./'):
+                      continue
+                  if '@' not in spec:
+                      failures.append(f'{path}:{line_number}: action has no immutable ref: {spec}')
+                      continue
+                  action, ref = spec.rsplit('@', 1)
+                  if not action or not full_sha.fullmatch(ref):
+                      failures.append(f'{path}:{line_number}: action is not pinned to a full commit SHA: {spec}')
+
+          if failures:
+              for failure in failures:
+                  print(f'::error::{failure}')
+              sys.exit(1)
+
+          print(f'Workflow trust root: PASS ({len(paths)} files)')
+          PY
+
+      - name: Install sandbox and locked dependencies without lifecycle scripts
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends bubblewrap
+
+          if [[ $(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0') == 1 ]]; then
+            sudo tee /etc/apparmor.d/bwrap >/dev/null <<'APPARMOR'
+          abi <abi/4.0>,
+          include <tunables/global>
+
+          profile bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+            include if exists <local/bwrap>
+          }
+          APPARMOR
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          fi
+
+          sandbox_path="$(dirname "$(command -v node)"):/usr/local/bin:/usr/bin:/bin"
+          npm_home="$RUNNER_TEMP/mitosis-npm-home"
+          mkdir -p "$npm_home"
+          env -i \
+            PATH="$sandbox_path" \
+            HOME="$npm_home" \
+            CI=true \
+            npm ci --ignore-scripts --no-audit --no-fund
+
+          bwrap \
+            --unshare-user \
+            --unshare-net \
+            --unshare-pid \
+            --die-with-parent \
+            --ro-bind / / \
+            --proc /proc \
+            --dev /dev \
+            /usr/bin/true
+
+      - name: Run all required checks inside the no-network sandbox
+        run: |
+          set -Eeuo pipefail
+          workspace="$GITHUB_WORKSPACE"
+          sandbox_path="$(dirname "$(command -v node)"):/usr/local/bin:/usr/bin:/bin"
+
+          while IFS='=' read -r name _; do
+            case "$name" in
+              GH_*|GITHUB_*|STEP_*|ANTHROPIC_*|ACTIONS_*) unset "$name" ;;
+            esac
+          done < <(env)
+
+          env -i \
+            PATH="$sandbox_path" \
+            HOME=/tmp/mitosis-home \
+            CI=true \
+            bwrap \
+              --unshare-user \
+              --unshare-net \
+              --unshare-pid \
+              --unshare-uts \
+              --unshare-ipc \
+              --die-with-parent \
+              --new-session \
+              --cap-drop ALL \
+              --ro-bind / / \
+              --tmpfs /home \
+              --tmpfs /root \
+              --tmpfs /run \
+              --tmpfs /tmp \
+              --dir /tmp/mitosis-home \
+              --dir /tmp/workspace \
+              --bind "$workspace" /tmp/workspace \
+              --proc /proc \
+              --dev /dev \
+              --chdir /tmp/workspace \
+              bash -s <<'SANDBOX'
+          set -uo pipefail
+
+          for name in \
+            GH_TOKEN GITHUB_TOKEN STEP_TOKEN ANTHROPIC_API_KEY \
+            ACTIONS_RUNTIME_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN \
+            ACTIONS_CACHE_URL ACTIONS_RESULTS_URL; do
+            if [ -n "${!name-}" ]; then
+              echo "sandbox secret-environment check failed for $name"
+              exit 1
+            fi
+          done
+
+          if env | grep -Eq '^(GH_|GITHUB_|STEP_|ANTHROPIC_|ACTIONS_)'; then
+            echo 'sandbox inherited a forbidden runtime environment variable'
+            exit 1
+          fi
+
+          failed=0
+          run_check() {
+            local label="$1"
+            shift
+            echo "::group::$label"
+            if "$@"; then
+              echo "$label: PASS"
+            else
+              local status=$?
+              echo "::error::$label failed with exit code $status"
+              failed=1
+            fi
+            echo "::endgroup::"
+          }
+
+          run_check typecheck npm run typecheck
+          run_check build npm run build
+          run_check unit-tests npm test -- --reporter=verbose
+          run_check main-pipeline env RUN_BUILD=0 bash scripts/verify/main-pipeline.sh
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::One or more required PR checks failed"
+            exit 1
+          fi
+          SANDBOX
