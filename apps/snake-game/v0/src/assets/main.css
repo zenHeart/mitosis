@@ -27,6 +27,7 @@ body {
   background: var(--bg-primary);
   color: var(--text-primary);
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -46,6 +47,7 @@ body {
 }
 
 .game-header {
+  order: 1;
   text-align: center;
   width: 100%;
 }
@@ -64,6 +66,7 @@ body {
 }
 
 .score-panel {
+  order: 2;
   display: flex;
   justify-content: space-between;
   width: 100%;
@@ -94,6 +97,7 @@ body {
 }
 
 .game-board-wrapper {
+  order: 4;
   background: var(--bg-card);
   border: 2px solid var(--border);
   border-radius: 16px;
@@ -141,6 +145,7 @@ body {
 }
 
 .controls {
+  order: 5;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -165,7 +170,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease, transform 0.15s ease;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
@@ -183,6 +189,7 @@ body {
 }
 
 .action-buttons {
+  order: 6;
   display: flex;
   gap: 12px;
   width: 100%;
@@ -196,7 +203,7 @@ body {
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, transform 0.15s ease;
   text-align: center;
 }
 
@@ -296,6 +303,7 @@ body {
 }
 
 .start-screen {
+  order: 3;
   text-align: center;
   padding: 40px 20px;
 }
@@ -362,8 +370,10 @@ body {
 }
 
 .continue-btn {
+  order: 7;
   display: inline-flex;
   align-items: center;
+  min-height: 44px;
   gap: 6px;
   margin-top: 20px;
   padding: 10px 16px;
@@ -373,7 +383,7 @@ body {
   color: var(--text-secondary);
   font-size: 0.85rem;
   text-decoration: none;
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease, color 0.2s ease;
 }
 
 .continue-btn:hover {
@@ -383,6 +393,23 @@ body {
 }
 
 @media (max-width: 400px) {
+  body {
+    align-items: flex-start;
+    padding: 8px;
+  }
+
+  .game-container {
+    gap: 12px;
+  }
+
+  .game-container:has(.start-screen) .game-board-wrapper {
+    display: none;
+  }
+
+  .continue-btn {
+    margin-top: 4px;
+  }
+
   .cell {
     width: 14px;
     height: 14px;
@@ -394,5 +421,25 @@ body {
 
   .score-item .value {
     font-size: 1.2rem;
+  }
+}
+
+button {
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

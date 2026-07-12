@@ -7,3 +7,25 @@ body {
   overflow: hidden;
 }
 #app { width: 100%; height: 100vh; }
+
+button {
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid #00e5ff;
+  outline-offset: 3px;
+}
+
+@media (max-width: 768px) {
+  body {
+    overflow-y: auto;
+  }
+
+  #app {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+}

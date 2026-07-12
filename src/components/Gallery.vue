@@ -272,6 +272,7 @@ watch(
 <style scoped>
 .gallery {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
@@ -495,7 +496,7 @@ watch(
 
 .apps-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1rem;
 }
 
@@ -570,7 +571,7 @@ watch(
   background: var(--bg-primary);
   padding: 0.1rem 0.4rem;
   border-radius: 4px;
-  align-self: fit-content;
+  align-self: flex-start;
 }
 
 .app-action {
@@ -670,6 +671,7 @@ watch(
   left: 0;
   width: 280px;
   height: 100vh;
+  height: 100dvh;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   z-index: 100;
@@ -948,6 +950,8 @@ watch(
   }
 
   .session-sidebar {
+    grid-column: 1;
+    grid-row: 1 / -1;
     transform: translateX(0);
     position: sticky;
     top: 0;
@@ -959,7 +963,15 @@ watch(
   }
 
   .gallery {
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .gallery-header,
+  .gallery-main,
+  .gallery-footer {
+    grid-column: 2;
   }
 }
 </style>

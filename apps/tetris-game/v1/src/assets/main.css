@@ -18,5 +18,12 @@ body {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
+  min-height: 100dvh;
   width: 100vw;
+}
+
+@media (max-width: 640px) {
+  #app {
+    align-items: flex-start;
+  }
 }

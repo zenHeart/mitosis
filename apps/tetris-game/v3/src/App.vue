@@ -608,6 +608,7 @@ watch(dropInterval, () => {
   flex-direction: column;
   align-items: center;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .game-header {
@@ -856,7 +857,9 @@ watch(dropInterval, () => {
 }
 
 .mitosis-btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: 8px 20px;
   font-size: 0.85rem;
   background: transparent;
@@ -879,26 +882,97 @@ watch(dropInterval, () => {
 
 /* Responsive */
 @media (max-width: 500px) {
+  .game-container {
+    --mobile-cell-size: clamp(
+      14px,
+      min(calc((100vw - 72px) / 10), calc((100dvh - 380px) / 20)),
+      24px
+    );
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 8px;
+  }
+
+  .game-header {
+    margin-bottom: 8px;
+  }
+
+  .game-title {
+    font-size: 1.5rem;
+  }
+
   .game-layout {
     flex-direction: column;
     align-items: center;
+    gap: 8px;
   }
 
   .side-panel {
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: center;
-    min-width: unset;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
   }
 
   .panel-section {
-    flex: 1;
-    min-width: 80px;
+    min-width: 0;
+    padding: 6px;
+    text-align: center;
+  }
+
+  .panel-section h3 {
+    margin-bottom: 4px;
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+  }
+
+  .score-value,
+  .level-value,
+  .lines-value {
+    font-size: 1rem;
+  }
+
+  .next-cell {
+    width: 12px;
+    height: 12px;
+  }
+
+  .controls-section {
+    grid-column: 1 / -1;
+    padding: 6px;
+  }
+
+  .control-buttons {
+    grid-template-columns: repeat(6, 44px);
+    gap: 6px;
+    justify-content: center;
+  }
+
+  .ctrl-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .pause-btn {
+    grid-column: auto;
   }
 
   .cell {
-    width: calc((100vw - 80px) / 10);
-    height: calc((100vw - 80px) / 10);
+    width: var(--mobile-cell-size);
+    height: var(--mobile-cell-size);
+  }
+
+  .start-screen,
+  .game-over-screen,
+  .paused-screen {
+    width: calc(var(--mobile-cell-size) * 10 + 2px * 9 + 8px);
+    height: calc(var(--mobile-cell-size) * 20 + 2px * 19 + 8px);
+    padding: 12px;
+  }
+
+  .mitosis-link {
+    margin-top: 12px;
   }
 }
 </style>

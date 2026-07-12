@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useSessionStore } from '../stores/session'
 import { usePolling } from '../composables/usePolling'
@@ -15,7 +15,7 @@ import {
   Dna, Smartphone, MessageSquare, PanelLeft,
   Gamepad, FileText, Calculator, Settings,
   CircleCheckBig, ClipboardList, Hammer,
-  RefreshCw, Key, Search, Star, Sparkles, Wand2,
+  RefreshCw, Key, Search, Star, Sparkles, Wand2, X,
 } from '@lucide/vue'
 import { REPO_FULL_NAME, userRepoFullName } from '../config/repo'
 
@@ -44,9 +44,36 @@ const confirmingPlatformTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const triageAction = ref<'build' | 'platform' | 'chat' | 'clarify' | 'unknown'>('unknown')
 const sidebarOpen = ref(false)
 const sessionSearch = ref('')
+const collapsedGroups = ref<Record<'quick' | 'platform' | 'apps' | 'closed', boolean>>({
+  quick: false,
+  platform: false,
+  apps: false,
+  closed: true,
+})
+
+function toggleSessionGroup(group: keyof typeof collapsedGroups.value) {
+  collapsedGroups.value[group] = !collapsedGroups.value[group]
+  try {
+    localStorage.setItem('mitosis_sidebar_groups', JSON.stringify(collapsedGroups.value))
+  } catch {
+    // Persistence is optional; the sidebar remains usable when storage is unavailable.
+  }
+}
+
+function isSessionGroupCollapsed(group: keyof typeof collapsedGroups.value): boolean {
+  return collapsedGroups.value[group]
+}
 
 // 恢复持久化的构建进度
 onMounted(() => {
+  try {
+    const savedGroups = JSON.parse(localStorage.getItem('mitosis_sidebar_groups') || '{}')
+    for (const group of ['quick', 'platform', 'apps', 'closed'] as const) {
+      if (typeof savedGroups?.[group] === 'boolean') collapsedGroups.value[group] = savedGroups[group]
+    }
+  } catch {
+    // Ignore malformed or unavailable local UI preferences.
+  }
   const restored = restoreBuildProgress()
   if (restored) {
     buildProgress.value = restored
@@ -287,6 +314,10 @@ watch(sidebarOpen, (open) => {
     }
   }
 }, { flush: 'post' })
+
+onBeforeUnmount(() => {
+  if (typeof document !== 'undefined') document.body.style.overflow = ''
+})
 
 function getConversationHistory() {
   return sessionStore.messages
@@ -954,6 +985,7 @@ function extractAppName(input: string): string {
 }
 
 async function navigateToSession(session: ChatSession) {
+  sidebarOpen.value = false
   // RESTful: URL query 参数记录会话状态
   const url = new URL(window.location.href)
   url.searchParams.set('session', String(session.issueNumber))
@@ -979,10 +1011,11 @@ async function openAppSession(session: ChatSession) {
   // 优先从 GitHub apps 目录获取真实最新版本（不依赖 issue 标题）
   const latestVer = await getLatestAppVersion(authStore.token!, repo.value, appName)
   const version = latestVer > 0 ? `v${latestVer}` : 'v0'
-  window.open(`/apps/${appName}/${version}/`, '_blank')
+  window.open(`/apps/${appName}/${version}/`, '_blank', 'noopener,noreferrer')
 }
 
 function handleNewChat() {
+  sidebarOpen.value = false
   stopAll()
   const prevIssueNumber = activeIssue.value?.number
   sessionStore.setActiveSession(null)
@@ -1066,72 +1099,96 @@ function handleNewChat() {
         <template v-else>
           <!-- 快捷访问（最近使用的应用） -->
           <template v-if="quickAccessApps.length">
-            <div class="session-group-label"><Star :size="14" stroke-width="2" /> 快捷访问</div>
-            <a
-              v-for="group in quickAccessApps"
-              :key="'qa-' + group.appName"
-              href="#"
-              class="session-item app-group quick-access-item"
-              @click.prevent="navigateToSession(group.latest)"
-            >
-              <component :is="Smartphone" :size="16" stroke-width="2" />
-              <span class="session-title">{{ group.appName }}</span>
-              <span class="session-time">{{ relativeTime(group.latest.updatedAt) }}</span>
-              <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
-            </a>
+            <button class="session-group-label" :aria-expanded="!isSessionGroupCollapsed('quick')" @click="toggleSessionGroup('quick')">
+              <Star :size="14" stroke-width="2" /> 快捷访问
+              <span class="session-count">{{ quickAccessApps.length }}</span>
+              <span class="group-chevron" aria-hidden="true">{{ isSessionGroupCollapsed('quick') ? '＋' : '－' }}</span>
+            </button>
+            <div v-show="!isSessionGroupCollapsed('quick')" class="session-group-items">
+              <a
+                v-for="group in quickAccessApps"
+                :key="'qa-' + group.appName"
+                href="#"
+                class="session-item app-group quick-access-item"
+                @click.prevent="navigateToSession(group.latest)"
+              >
+                <component :is="Smartphone" :size="16" stroke-width="2" />
+                <span class="session-title">{{ group.appName }}</span>
+                <span class="session-time">{{ relativeTime(group.latest.updatedAt) }}</span>
+                <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
+              </a>
+            </div>
           </template>
 
           <!-- 平台会话（open only） -->
           <template v-if="platformSessions.length">
-            <div class="session-group-label"><Dna :size="14" stroke-width="2" /> 平台</div>
-            <a
-              v-for="session in platformSessions"
-              :key="session.issueNumber"
-              href="#"
-              class="session-item"
-              :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber }"
-              @click.prevent="navigateToSession(session)"
-            >
-              <span class="session-title">{{ session.title }}</span>
-              <span class="session-status" :class="statusClass(session)">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
-            </a>
+            <button class="session-group-label" :aria-expanded="!isSessionGroupCollapsed('platform')" @click="toggleSessionGroup('platform')">
+              <Dna :size="14" stroke-width="2" /> 平台
+              <span class="session-count">{{ platformSessions.length }}</span>
+              <span class="group-chevron" aria-hidden="true">{{ isSessionGroupCollapsed('platform') ? '＋' : '－' }}</span>
+            </button>
+            <div v-show="!isSessionGroupCollapsed('platform')" class="session-group-items">
+              <a
+                v-for="session in platformSessions"
+                :key="session.issueNumber"
+                href="#"
+                class="session-item"
+                :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber }"
+                @click.prevent="navigateToSession(session)"
+              >
+                <span class="session-title">{{ session.title }}</span>
+                <span class="session-status" :class="statusClass(session)">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
+              </a>
+            </div>
           </template>
 
           <!-- 应用会话：按 app name 聚类，只显示 open -->
           <template v-if="clusteredAppGroups.length">
-            <div class="session-group-label"><Smartphone :size="14" stroke-width="2" /> 我的应用</div>
-            <a
-              v-for="group in clusteredAppGroups"
-              :key="group.appName"
-              href="#"
-              class="session-item app-group"
-              :class="{ active: sessionStore.activeSession?.issueNumber === group.latest.issueNumber }"
-              @click.prevent="navigateToSession(group.latest)"
-            >
-              <component :is="Smartphone" :size="16" stroke-width="2" />
-              <span class="session-title app-name-title" :title="group.appName">{{ group.appName }}</span>
-              <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
-            </a>
+            <button class="session-group-label" :aria-expanded="!isSessionGroupCollapsed('apps')" @click="toggleSessionGroup('apps')">
+              <Smartphone :size="14" stroke-width="2" /> 我的应用
+              <span class="session-count">{{ clusteredAppGroups.length }}</span>
+              <span class="group-chevron" aria-hidden="true">{{ isSessionGroupCollapsed('apps') ? '＋' : '－' }}</span>
+            </button>
+            <div v-show="!isSessionGroupCollapsed('apps')" class="session-group-items">
+              <a
+                v-for="group in clusteredAppGroups"
+                :key="group.appName"
+                href="#"
+                class="session-item app-group"
+                :class="{ active: sessionStore.activeSession?.issueNumber === group.latest.issueNumber }"
+                @click.prevent="navigateToSession(group.latest)"
+              >
+                <component :is="Smartphone" :size="16" stroke-width="2" />
+                <span class="session-title app-name-title" :title="group.appName">{{ group.appName }}</span>
+                <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
+              </a>
+            </div>
           </template>
 
           <!-- 最近关闭的会话 -->
           <template v-if="recentClosedSessions.length">
-            <div class="session-group-label closed-group-label"><ClipboardList :size="14" stroke-width="2" /> 最近关闭</div>
-            <a
-              v-for="session in recentClosedSessions"
-              :key="'closed-' + session.issueNumber"
-              href="#"
-              class="session-item closed-session-item"
-              :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber }"
-              @click.prevent="navigateToSession(session)"
-            >
-              <Dna v-if="session.labels?.includes('platform')" :size="16" stroke-width="2" />
-              <Smartphone v-else-if="session.appLabel" :size="16" stroke-width="2" />
-              <MessageSquare v-else :size="16" stroke-width="2" />
-              <span class="session-title">{{ session.title }}</span>
-              <span class="session-time">{{ relativeTime(session.updatedAt) }}</span>
-              <span class="session-status" :class="statusClass(session)">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
-            </a>
+            <button class="session-group-label closed-group-label" :aria-expanded="!isSessionGroupCollapsed('closed')" @click="toggleSessionGroup('closed')">
+              <ClipboardList :size="14" stroke-width="2" /> 最近关闭
+              <span class="session-count">{{ recentClosedSessions.length }}</span>
+              <span class="group-chevron" aria-hidden="true">{{ isSessionGroupCollapsed('closed') ? '＋' : '－' }}</span>
+            </button>
+            <div v-show="!isSessionGroupCollapsed('closed')" class="session-group-items">
+              <a
+                v-for="session in recentClosedSessions"
+                :key="'closed-' + session.issueNumber"
+                href="#"
+                class="session-item closed-session-item"
+                :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber }"
+                @click.prevent="navigateToSession(session)"
+              >
+                <Dna v-if="session.labels?.includes('platform')" :size="16" stroke-width="2" />
+                <Smartphone v-else-if="session.appLabel" :size="16" stroke-width="2" />
+                <MessageSquare v-else :size="16" stroke-width="2" />
+                <span class="session-title">{{ session.title }}</span>
+                <span class="session-time">{{ relativeTime(session.updatedAt) }}</span>
+                <span class="session-status" :class="statusClass(session)">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
+              </a>
+            </div>
           </template>
         </template>
       </div>
@@ -1268,6 +1325,7 @@ function handleNewChat() {
 .workspace {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -1278,6 +1336,8 @@ function handleNewChat() {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar-header {
@@ -1394,8 +1454,13 @@ function handleNewChat() {
 }
 
 .sessions-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0 0.75rem;
   margin-top: 0.25rem;
+  scrollbar-gutter: stable;
 }
 
 .sessions-list h3 {
@@ -1473,6 +1538,12 @@ function handleNewChat() {
 }
 
 .session-group-label {
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
   font-size: 0.7rem;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -1481,6 +1552,22 @@ function handleNewChat() {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.session-group-label:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.group-chevron {
+  margin-left: auto;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text-secondary);
+}
+
+.session-group-items {
+  display: block;
 }
 
 .closed-group-label {
@@ -1840,7 +1927,11 @@ function handleNewChat() {
   color: var(--text-primary);
   font-size: 0.85rem;
   font-weight: 500;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -2091,6 +2182,10 @@ function handleNewChat() {
   font-size: 0.7rem;
   opacity: 0.7;
   text-align: right;
+  color: var(--text-secondary);
+}
+
+.message.user .message-time {
   color: rgba(255, 255, 255, 0.65);
 }
 
