@@ -77,6 +77,9 @@ expect_package_failure() {
 }
 
 expect_package_failure "$WORKSPACE" "$BASE_SHA" "$METADATA" "$TMP_ROOT/unchanged-iteration"
+printf 'not imported\n' > "$WORKSPACE/apps/tetris-game/v4/src/notes.txt"
+expect_package_failure "$WORKSPACE" "$BASE_SHA" "$METADATA" "$TMP_ROOT/unreachable-iteration"
+rm "$WORKSPACE/apps/tetris-game/v4/src/notes.txt"
 printf '<template><p>Press P to pause</p></template>\n' > "$WORKSPACE/apps/tetris-game/v4/src/App.vue"
 ruby "$ROOT/worker/ci-artifact.rb" package \
   --workspace "$WORKSPACE" \
@@ -141,6 +144,11 @@ ruby "$ROOT/worker/ci-artifact.rb" execution-prompt \
   --output "$EXECUTION_PROMPT"
 grep -qF 'apps/tetris-game/v3/' "$EXECUTION_PROMPT"
 grep -qF 'src/assets/main.css' "$EXECUTION_PROMPT"
+grep -qF 'already initialized by the trusted platform' "$EXECUTION_PROMPT"
+if grep -qF 'create every required file' "$EXECUTION_PROMPT"; then
+  echo 'CI_ARTIFACT_TEST: FAIL — execution prompt still asks the Agent to rebuild the scaffold' >&2
+  exit 1
+fi
 
 SUCCESS_RESULT="$TMP_ROOT/success.json"
 printf '%s\n' \
