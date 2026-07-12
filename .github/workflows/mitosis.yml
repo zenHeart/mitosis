@@ -332,7 +332,7 @@ jobs:
               --system-prompt-file /opt/mitosis-ci/system-prompt.txt \
               --model "$STEP_MODEL" \
               --effort high \
-              --permission-mode dontAsk \
+              --permission-mode acceptEdits \
               --tools "Read,Write,Edit,Glob,Grep" \
               --allowedTools "Read,Write,Edit,Glob,Grep" \
               --disallowed-tools "Bash,WebFetch,WebSearch,Task,Agent,Skill,NotebookEdit" \
