@@ -159,6 +159,9 @@ jobs:
             }, { login: owner })
 
             const page = await context.newPage()
+            page.on('console', (message) => {
+              if (message.text().includes('[MVP_SEND]')) console.log(`PAGE ${message.type()}: ${message.text()}`)
+            })
             await page.route('**/*', async (route) => {
               const request = route.request()
               const url = new URL(request.url())
