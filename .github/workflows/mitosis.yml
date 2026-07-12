@@ -44,7 +44,6 @@ jobs:
       - name: Validate command without logging comment content
         id: request
         env:
-          EVENT_PATH: ${{ github.event_path }}
           EVENT_NAME: ${{ github.event_name }}
           INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
         shell: bash
@@ -53,7 +52,7 @@ jobs:
           ruby <<'RUBY'
           require 'json'
 
-          event = JSON.parse(File.read(ENV.fetch('EVENT_PATH')))
+          event = JSON.parse(File.read(ENV.fetch('GITHUB_EVENT_PATH')))
           authorized = false
           issue_number = nil
 
