@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "disableBypassPermissionsMode": "disable",
+    "allow": [
+      "Read(./**)",
+      "Glob(./**)",
+      "Grep(./**)",
+      "Write(./**)",
+      "Edit(./**)"
+    ],
+    "deny": [
+      "Bash",
+      "WebFetch",
+      "WebSearch",
+      "Task",
+      "Agent",
+      "Skill",
+      "NotebookEdit",
+      "Read(/proc/**)",
+      "Read(/sys/**)",
+      "Read(/dev/**)",
+      "Read(/etc/**)",
+      "Read(/opt/**)",
+      "Read(/home/**/.ssh/**)",
+      "Read(/home/**/.config/gh/**)",
+      "Read(./.git/**)",
+      "Write(./.git/**)",
+      "Edit(./.git/**)",
+      "Read(./.github/**)",
+      "Write(./.github/**)",
+      "Edit(./.github/**)",
+      "Read(./.claude/**)",
+      "Write(./.claude/**)",
+      "Edit(./.claude/**)",
+      "Write(./worker/ci-artifact.rb)",
+      "Edit(./worker/ci-artifact.rb)",
+      "Write(./worker/ci-verify-candidate.sh)",
+      "Edit(./worker/ci-verify-candidate.sh)",
+      "Write(./worker/ci-system-prompt.txt)",
+      "Edit(./worker/ci-system-prompt.txt)",
+      "Write(./worker/prompt.txt)",
+      "Edit(./worker/prompt.txt)",
+      "Write(./worker/prompt-platform.txt)",
+      "Edit(./worker/prompt-platform.txt)",
+      "Write(./worker/verify-build.sh)",
+      "Edit(./worker/verify-build.sh)",
+      "Write(./worker/package.json)",
+      "Edit(./worker/package.json)",
+      "Write(./worker/package-lock.json)",
+      "Edit(./worker/package-lock.json)",
+      "Write(./scripts/**)",
+      "Edit(./scripts/**)",
+      "Write(./package.json)",
+      "Edit(./package.json)",
+      "Write(./package-lock.json)",
+      "Edit(./package-lock.json)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": false,
+    "allowUnsandboxedCommands": false,
+    "failIfUnavailable": true,
+    "network": {
+      "allowedDomains": [
+        "api.stepfun.com"
+      ],
+      "allowUnixSockets": [],
+      "allowAllUnixSockets": false
+    }
+  },
+  "env": {
+    "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1"
+  }
+}
