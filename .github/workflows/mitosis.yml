@@ -247,7 +247,7 @@ jobs:
 
           # Claude appends /v1/messages to the base below, yielding the required
           # https://api.stepfun.com/step_plan/v1/messages endpoint.
-          sudo -u mitosis-agent env -i \
+          if ! sudo -u mitosis-agent env -i \
             HOME=/home/mitosis-agent \
             PATH="$PATH" \
             ANTHROPIC_API_KEY="$STEP_TOKEN" \
@@ -279,6 +279,11 @@ jobs:
               < /opt/mitosis-ci/plan-prompt.txt \
               > "$RUNNER_TEMP/plan-result.json" \
               2> "$RUNNER_TEMP/plan-stderr.log"
+          then
+            echo 'StepPlan decomposition failed; sanitized provider diagnostics:' >&2
+            sed -E 's/(sk-[A-Za-z0-9_-]+|Bearer[[:space:]]+[A-Za-z0-9._-]+)/[REDACTED]/g' "$RUNNER_TEMP/plan-stderr.log" >&2 || true
+            exit 1
+          fi
 
           sudo ruby /opt/mitosis-ci/ci-artifact.rb normalize-plan \
             --result "$RUNNER_TEMP/plan-result.json" \
@@ -299,7 +304,7 @@ jobs:
           umask 077
           # Claude appends /v1/messages to the base below, yielding the required
           # https://api.stepfun.com/step_plan/v1/messages endpoint.
-          sudo -u mitosis-agent env -i \
+          if ! sudo -u mitosis-agent env -i \
             HOME=/home/mitosis-agent \
             PATH="$PATH" \
             ANTHROPIC_API_KEY="$STEP_TOKEN" \
@@ -330,6 +335,11 @@ jobs:
               < /opt/mitosis-ci/execution-prompt.txt \
               > "$RUNNER_TEMP/execution-result.json" \
               2> "$RUNNER_TEMP/execution-stderr.log"
+          then
+            echo 'Candidate generation failed; sanitized provider diagnostics:' >&2
+            sed -E 's/(sk-[A-Za-z0-9_-]+|Bearer[[:space:]]+[A-Za-z0-9._-]+)/[REDACTED]/g' "$RUNNER_TEMP/execution-stderr.log" >&2 || true
+            exit 1
+          fi
 
           sudo ruby /opt/mitosis-ci/ci-artifact.rb assert-result \
             --result "$RUNNER_TEMP/execution-result.json"
