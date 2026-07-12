@@ -330,6 +330,12 @@ function getConversationHistory() {
 }
 
 async function handleSend(submittedText = '') {
+  console.log('[MVP_SEND] entered', {
+    submitted: Boolean(submittedText.trim()),
+    owner: isOwner.value,
+    auth: Boolean(authStore.token),
+    step: Boolean(stepToken.value),
+  })
   if (!isOwner.value) return
   if (sessionStore.activeSession?.status === 'closed') return
   const text = (submittedText || inputText.value).trim()
@@ -444,6 +450,7 @@ async function handleSend(submittedText = '') {
       clarifyContext: previousBuildContext || undefined,
     })
     logTriage(text, triage)
+    console.log('[MVP_SEND] triage', triage.action)
     triageAction.value = triage.action
 
     // 分流已有明确去向时清掉澄清上下文，避免污染后续消息
@@ -494,6 +501,7 @@ async function handleSend(submittedText = '') {
     const history = getConversationHistory()
     const systemPrompt = getSystemPrompt(triage, authStore.user?.login)
 
+    console.log('[MVP_SEND] chat-call')
     const response = await chatWithStepFun(stepToken.value, history, { system: systemPrompt })
     const trimmed = response.trim()
 
