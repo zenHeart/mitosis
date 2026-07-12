@@ -254,7 +254,7 @@ jobs:
             PATH="$PATH" \
             ANTHROPIC_API_KEY="$STEP_TOKEN" \
             ANTHROPIC_BASE_URL=https://api.stepfun.com/step_plan \
-            CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 \
+            CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 \
             CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 \
             CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
             DISABLE_TELEMETRY=1 \
@@ -316,7 +316,7 @@ jobs:
             PATH="$PATH" \
             ANTHROPIC_API_KEY="$STEP_TOKEN" \
             ANTHROPIC_BASE_URL=https://api.stepfun.com/step_plan \
-            CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 \
+            CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 \
             CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 \
             CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
             DISABLE_TELEMETRY=1 \
