@@ -298,6 +298,10 @@ jobs:
             )
 
             await input.fill(prompt)
+            await page.waitForTimeout(300)
+            if (!(await send.isEnabled())) {
+              throw new Error('Online Golden send button remained disabled after input')
+            }
             await send.click()
             const [request, response] = await Promise.all([requestPromise, responsePromise])
 
