@@ -286,6 +286,7 @@ jobs:
               undefined,
               { timeout: 15_000 },
             )
+            await page.locator('main.chat-area[data-mitosis-ready="true"]').waitFor({ state: 'attached', timeout: 15_000 })
             await input.waitFor({ state: 'visible', timeout: 15_000 })
             await send.waitFor({ state: 'visible', timeout: 15_000 })
             const assistantCountBefore = await page.locator('.message.assistant').count()

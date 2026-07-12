@@ -1193,7 +1193,7 @@ function handleNewChat() {
         </template>
       </div>
     </aside>
-    <main class="chat-area">
+    <main class="chat-area" :data-mitosis-ready="isOwner && !!authStore.token && !!stepToken ? 'true' : 'false'">
       <div class="messages" role="log" aria-live="polite" aria-label="对话消息">
         <!-- 有活跃会话且没有消息时显示会话标题 -->
         <div v-if="displayMessages.length === 0 && sessionStore.activeSession" class="welcome session-welcome">
