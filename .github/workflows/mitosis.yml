@@ -274,7 +274,7 @@ jobs:
               --tools "Read,Glob,Grep" \
               --allowedTools "Read,Glob,Grep" \
               --disallowed-tools "Bash,WebFetch,WebSearch,Task,Agent,Skill,NotebookEdit" \
-              --max-turns 12 \
+              --max-turns 30 \
               --max-budget-usd 8 \
               --output-format json \
               --json-schema "$PLAN_SCHEMA" \
