@@ -58,6 +58,17 @@ else
   FAIL=1
 fi
 
+echo "== 0f. 独立 verifier 可读边界与日志隐私守卫 =="
+if grep -qF 'setfacl -m u:mitosis-verifier:r-x "$ROOT"' worker/ci-verify-candidate.sh 2>/dev/null &&
+   grep -qF 'failure_class=' worker/ci-verify-candidate.sh 2>/dev/null &&
+   ! grep -qF '[preview-base64]' worker/ci-verify-candidate.sh 2>/dev/null &&
+   grep -qF 'acl iproute2' .github/workflows/mitosis.yml 2>/dev/null; then
+  note "PASS"
+else
+  note "FAIL: verifier 可能无法读取 checkout 或泄露候选日志原文"
+  FAIL=1
+fi
+
 echo "== 1. 无硬编码 token/secret（仅扫描发往浏览器的 app 代码）=="
 # 仅扫 src/ 与 worker/src/（真正会打包/运行的代码）；排除文档与 detection 脚本本身
 if grep -rniE "(ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})" \

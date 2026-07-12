@@ -29,12 +29,21 @@ cleanup() {
 }
 trap cleanup EXIT
 
-show_encoded_log() {
+show_log_diagnostics() {
   local path=$1
+  local bytes=0
+  local failure_class=unknown
+  local present=false
   if [[ -f "$path" ]]; then
-    printf '%s\n' '--- preview log tail (maximum 64 KiB, Base64) ---' >&2
-    tail -c 65536 "$path" | base64 | fold -w 76 | sed 's/^/[preview-base64] /' >&2
+    present=true
+    bytes=$(wc -c < "$path" | tr -d ' ')
+    if grep -q 'EACCES' "$path"; then failure_class=filesystem_permission; fi
+    if grep -q 'ETIMEDOUT' "$path"; then failure_class=network_timeout; fi
+    if grep -q 'ENETUNREACH' "$path"; then failure_class=network_unreachable; fi
+    if grep -qE '(^|[^0-9])429([^0-9]|$)' "$path"; then failure_class=rate_limited; fi
   fi
+  printf 'UNTRUSTED_LOG: present=%s bytes=%s failure_class=%s\n' \
+    "$present" "$bytes" "$failure_class" >&2
 }
 
 cd "$ROOT"
@@ -87,6 +96,7 @@ export NODE_ENV=test
 export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/ms-playwright"
 
 prepare_unprivileged_runtime() {
+  local root_parent
   if ! id mitosis-verifier >/dev/null 2>&1; then
     sudo useradd --user-group --create-home --shell /usr/sbin/nologin mitosis-verifier
   fi
@@ -94,6 +104,11 @@ prepare_unprivileged_runtime() {
   sudo install -d -o root -g root -m 0700 "$RUNNER_TEMP/base-verifier"
   sudo chown -R root:root "$ROOT" "$RUNNER_TEMP/base-verifier"
   sudo chmod -R go-w "$ROOT" "$RUNNER_TEMP/base-verifier"
+  sudo setfacl -m u:mitosis-verifier:r-x "$ROOT"
+  root_parent=$(dirname "$ROOT")
+  for parent in "$root_parent" "$(dirname "$root_parent")" "$HOME"; do
+    sudo setfacl -m u:mitosis-verifier:--x "$parent"
+  done
   sudo install -d -o mitosis-verifier -g mitosis-verifier -m 0700 /home/mitosis-verifier
   sudo install -d -o root -g mitosis-verifier -m 0750 /opt/mitosis-verifier
   for writable in "$@"; do
@@ -132,7 +147,7 @@ run_checked_untrusted() {
     rm -f "$log_path"
     printf 'UNTRUSTED_CHECK: %s PASS\n' "$label"
   else
-    show_encoded_log "$log_path"
+    show_log_diagnostics "$log_path"
     rm -f "$log_path"
     fail "$label failed"
   fi
@@ -171,7 +186,7 @@ if [[ "$KIND" == platform ]]; then
   start_untrusted_preview platform-preview npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
   for _ in $(seq 1 60); do
     kill -0 "$PREVIEW_PID" 2>/dev/null || {
-      show_encoded_log "$RUNNER_TEMP/platform-preview.log"
+      show_log_diagnostics "$RUNNER_TEMP/platform-preview.log"
       fail "platform preview exited early"
     }
     if run_untrusted curl --fail --silent --show-error --output /dev/null http://127.0.0.1:5173/; then
@@ -181,7 +196,7 @@ if [[ "$KIND" == platform ]]; then
   done
   run_untrusted curl --fail --silent --show-error --output /dev/null http://127.0.0.1:5173/ \
     || {
-      show_encoded_log "$RUNNER_TEMP/platform-preview.log"
+      show_log_diagnostics "$RUNNER_TEMP/platform-preview.log"
       fail "platform preview did not become ready"
     }
   run_checked_untrusted platform-browser env BASE_URL=http://127.0.0.1:5173 node scripts/verify/e2e-golden.mjs
@@ -211,7 +226,7 @@ else
 
   if ! PORT=$(run_untrusted node -e 'const n=require("node:net"),s=n.createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})' \
       2> "$RUNNER_TEMP/port-probe.log"); then
-    show_encoded_log "$RUNNER_TEMP/port-probe.log"
+    show_log_diagnostics "$RUNNER_TEMP/port-probe.log"
     rm -f "$RUNNER_TEMP/port-probe.log"
     fail "isolated port probe failed"
   fi
@@ -220,7 +235,7 @@ else
   start_untrusted_preview app-preview npm run preview -- --host 127.0.0.1 --port "$PORT" --strictPort
   for _ in $(seq 1 60); do
     kill -0 "$PREVIEW_PID" 2>/dev/null || {
-      show_encoded_log "$RUNNER_TEMP/app-preview.log"
+      show_log_diagnostics "$RUNNER_TEMP/app-preview.log"
       fail "app preview exited early"
     }
     if run_untrusted curl --fail --silent --show-error --output /dev/null "http://127.0.0.1:$PORT/"; then
@@ -230,7 +245,7 @@ else
   done
   run_untrusted curl --fail --silent --show-error --output /dev/null "http://127.0.0.1:$PORT/" \
     || {
-      show_encoded_log "$RUNNER_TEMP/app-preview.log"
+      show_log_diagnostics "$RUNNER_TEMP/app-preview.log"
       fail "app preview did not become ready"
     }
 
