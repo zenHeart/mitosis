@@ -1268,6 +1268,7 @@ function handleNewChat() {
 .workspace {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -1840,7 +1841,11 @@ function handleNewChat() {
   color: var(--text-primary);
   font-size: 0.85rem;
   font-weight: 500;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -2091,6 +2096,10 @@ function handleNewChat() {
   font-size: 0.7rem;
   opacity: 0.7;
   text-align: right;
+  color: var(--text-secondary);
+}
+
+.message.user .message-time {
   color: rgba(255, 255, 255, 0.65);
 }
 

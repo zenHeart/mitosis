@@ -840,6 +840,7 @@ onUnmounted(() => {
   align-items: center;
   padding: 16px;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .game-header {
@@ -954,7 +955,7 @@ onUnmounted(() => {
   border-radius: 3px;
   background: #1a1a2e;
   border: 1px solid #222;
-  transition: all 0.2s;
+  transition: border-color 0.2s, opacity 0.2s;
 }
 
 .hold-cell.filled {
@@ -992,7 +993,7 @@ onUnmounted(() => {
   border-radius: 3px;
   background: #1a1a2e;
   border: 1px solid #222;
-  transition: all 0.15s;
+  transition: background-color 0.15s, border-color 0.15s;
 }
 
 .next-cell.filled {
@@ -1056,7 +1057,7 @@ kbd {
   font-size: 0.85rem;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, box-shadow 0.2s, transform 0.2s;
   letter-spacing: 0.05em;
 }
 
@@ -1333,28 +1334,63 @@ kbd {
 /* ── Responsive ──────────────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
+  .game-container {
+    padding: 8px;
+  }
+
+  .game-header {
+    margin-bottom: 8px;
+  }
+
   .game-layout {
     flex-direction: column;
     align-items: center;
-    gap: 12px;
-  }
-
-  .side-panel {
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: center;
-    min-width: unset;
     gap: 8px;
   }
 
-  .side-panel .panel-box {
-    flex: 1;
-    min-width: 100px;
+  .side-panel {
+    width: 100%;
+    min-width: unset;
+    gap: 6px;
   }
 
-  .controls-box,
-  .actions-box {
+  .left-panel {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .left-panel .panel-box:first-child {
     display: none;
+  }
+
+  .side-panel .panel-box {
+    min-width: 0;
+    padding: 8px;
+  }
+
+  .right-panel {
+    display: contents;
+  }
+
+  .controls-box {
+    display: none;
+  }
+
+  .actions-box {
+    order: -1;
+    flex-direction: row;
+    width: min(100%, 320px);
+    margin: 0 auto;
+    padding: 8px;
+    background: rgba(17, 17, 40, 0.96);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    animation: none;
+  }
+
+  .actions-box .btn {
+    flex: 1;
+    width: auto;
+    min-height: 44px;
   }
 
   .game-title {
@@ -1362,13 +1398,17 @@ kbd {
   }
 
   .board-container {
-    --cell-size: 28px;
+    --cell-size: clamp(
+      14px,
+      min(calc((100vw - 56px) / 10), calc((100dvh - 430px) / 20)),
+      24px
+    );
   }
 }
 
 @media (max-width: 480px) {
   .game-container {
-    padding: 8px;
+    padding: 8px 8px max(8px, env(safe-area-inset-bottom));
   }
 
   .game-title {
@@ -1379,8 +1419,15 @@ kbd {
     font-size: 0.7rem;
   }
 
-  .board-container {
-    --cell-size: 26px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 </style>
