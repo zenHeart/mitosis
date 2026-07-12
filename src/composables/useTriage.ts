@@ -214,14 +214,8 @@ export async function smartTriage(text: string, opts: SmartTriageOptions = {}): 
     }
   }
 
-  // 3. 降级：关键词已检测到任务意图时，默认走 build，不再反复澄清
-  if (keywordResult.scenario === 'app_create' || keywordResult.scenario === 'app_iterate') {
-    return { action: 'build', scenario: keywordResult.scenario, intent: 'create_app', complexity: 'medium', scope: 'apps-only', basedOn: keywordResult.basedOn, source: 'fallback' }
-  }
-  if (keywordResult.scenario === 'platform') {
-    return { action: 'platform', scenario: 'platform', intent: 'modify_platform', complexity: 'medium', scope: 'platform', source: 'fallback' }
-  }
-  // 澄清最多一次。仍无法判断时保持临时聊天，不创建 Issue。
+  // 澄清最多一次。无法确认目标时不能猜测为创建应用；否则一句模糊话
+  // 就会意外创建 Issue。澄清后仍不明确时保持临时聊天。
   if (opts.clarifyContext) {
     return fallbackChat()
   }
