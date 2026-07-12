@@ -67,6 +67,10 @@ TRUSTED_FILES=(
   worker/verify-build.sh
   scripts/verify/main-pipeline.sh
   scripts/verify/e2e-golden.mjs
+  scripts/verify/production-sha.sh
+  scripts/verify/production-sha.test.sh
+  scripts/verify/step-plan-endpoints.sh
+  scripts/verify/step-plan-endpoints.test.sh
   package.json
   package-lock.json
 )
@@ -75,6 +79,8 @@ for path in "${TRUSTED_FILES[@]}"; do
   expected=$(git rev-parse "$BASE_SHA:$path")
   [[ "$current" == "$expected" ]] || fail "trusted verifier or dependency policy changed: $path"
 done
+
+bash scripts/verify/step-plan-endpoints.sh
 
 export CI=true
 export NODE_ENV=test

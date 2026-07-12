@@ -49,6 +49,9 @@ jobs:
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
+      - name: Enforce Step Plan-only provider endpoints without network access
+        run: bash scripts/verify/step-plan-endpoints.sh
+
       - name: Install locked dependencies
         run: |
           set -Eeuo pipefail
@@ -74,13 +77,32 @@ jobs:
           }
 
           run_gate typecheck npm run typecheck
-          run_gate build npm run build
           run_gate unit-tests npm test -- --reporter=verbose
           run_gate main-pipeline env RUN_BUILD=0 bash scripts/verify/main-pipeline.sh
 
           exit "$failed"
 
-      - name: Build every published application from its lockfile
+      - name: Build the production frontend with its public OAuth client ID
+        env:
+          VITE_GITHUB_CLIENT_ID: ${{ secrets.VITE_GITHUB_CLIENT_ID }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$VITE_GITHUB_CLIENT_ID" =~ ^[A-Za-z0-9]{20,40}$ ]] || {
+            echo '::error::VITE_GITHUB_CLIENT_ID is missing or malformed'
+            exit 1
+          }
+          npm run build
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          client_id = os.environ['VITE_GITHUB_CLIENT_ID'].encode()
+          bundles = list(Path('dist/assets').glob('*.js'))
+          if not bundles or not any(client_id in path.read_bytes() for path in bundles):
+              raise SystemExit('Production bundle does not contain the configured OAuth client ID')
+          PY
+
+      - name: Build every published application from root-locked dependencies
         run: |
           set -Eeuo pipefail
           app_count=0
@@ -94,12 +116,11 @@ jobs:
                 ;;
             esac
 
-            test -f "$app_dir/package-lock.json"
             rm -rf "$app_dir/dist"
             (
               cd "$app_dir"
-              npm ci
-              npm run build
+              "$GITHUB_WORKSPACE/node_modules/.bin/vue-tsc" -b
+              "$GITHUB_WORKSPACE/node_modules/.bin/vite" build
               test -f dist/index.html
             )
             app_count=$((app_count + 1))
@@ -119,6 +140,21 @@ jobs:
           rm -rf _site
           mkdir -p _site
           cp -a dist/. _site/
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          source_sha = os.environ['SOURCE_SHA']
+          index = Path('_site/index.html')
+          html = index.read_text(encoding='utf-8')
+          if 'name="mitosis-source-sha"' in html:
+              raise SystemExit('Untrusted build output already contains the production SHA marker')
+          if '</head>' not in html:
+              raise SystemExit('Deployment index has no closing head element')
+          marker = f'<meta name="mitosis-source-sha" content="{source_sha}">'
+          index.write_text(html.replace('</head>', f'  {marker}\n  </head>', 1), encoding='utf-8')
+          PY
 
           app_count=0
           while IFS= read -r -d '' package_json; do
@@ -140,6 +176,10 @@ jobs:
           fi
 
           test "$(tr -d '\r\n' < _site/mitosis-source-sha.txt)" = "$SOURCE_SHA"
+          grep -qF "<meta name=\"mitosis-source-sha\" content=\"$SOURCE_SHA\">" _site/index.html
+
+      - name: Enforce Step Plan-only endpoints in the exact deployment artifact
+        run: STEP_PLAN_SCAN_PATHS=_site bash scripts/verify/step-plan-endpoints.sh
 
       - name: Upload immutable site artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -161,6 +201,14 @@ jobs:
       name: github-pages
       url: https://mitosis.zenheart.site
     steps:
+      - name: Checkout exact trusted production verifier
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.sha }}
+          path: source
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Download verified site artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -226,16 +274,10 @@ jobs:
           set -Eeuo pipefail
           verified=0
           for attempt in $(seq 1 30); do
-            url="$SITE_URL/mitosis-source-sha.txt?run=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$attempt"
-            if live_source=$(curl --fail --silent --show-error --location \
-              --proto '=https' --tlsv1.2 \
-              --header 'Cache-Control: no-cache' \
-              "$url"); then
-              live_source=$(printf '%s' "$live_source" | tr -d '\r\n')
-              if [ "$live_source" = "$SOURCE_SHA" ]; then
-                verified=1
-                break
-              fi
+            if bash source/scripts/verify/production-sha.sh \
+              "$SITE_URL" "$SOURCE_SHA" "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$attempt"; then
+              verified=1
+              break
             fi
             sleep 10
           done

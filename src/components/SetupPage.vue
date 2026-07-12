@@ -145,7 +145,7 @@ async function copyToken() {
           <div class="step">
             <span class="step-num">4</span>
             <div>
-              <p>在仓库 Secrets 中添加 StepFun API Token（名称: <code>STEP_TOKEN</code>）</p>
+              <p>在仓库 Secrets 中添加 Step Plan Token（名称: <code>STEP_TOKEN</code>）</p>
             </div>
           </div>
         </div>
@@ -159,13 +159,13 @@ async function copyToken() {
       </div>
 
       <div v-else-if="!verified" class="form">
-        <label class="label">StepFun API Token</label>
+        <label class="label">Step Plan Token</label>
         <p class="hint">你的 Token 将用于驱动 AI Agent 构建应用。</p>
         <input
           v-model="stepToken"
           type="password"
           class="input"
-          placeholder="输入你的 StepFun API Token..."
+          placeholder="输入你的 Step Plan Token..."
           :disabled="submitting"
           @keyup.enter="handleSubmit"
         />

@@ -7,7 +7,8 @@ import { chromium } from '@playwright/test'
 const WS_URL = 'ws://127.0.0.1:9223/devtools/browser/5b29ed49-fd1c-41ab-bd4c-2b531ee253d3'
 const TARGET_URL = 'https://mitosis.zenheart.site'
 const SCREENSHOT_DIR = '/Users/zenheart/code/github/mitosis/screenshots'
-const STEP_API = 'https://api.stepfun.com/v1/chat/completions'
+const STEP_API = 'https://api.stepfun.com/step_plan/v1/chat/completions'
+const STEP_ORIGIN = new URL(STEP_API).origin
 
 import fs from 'fs'
 if (!fs.existsSync(SCREENSHOT_DIR)) fs.mkdirSync(SCREENSHOT_DIR, { recursive: true })
@@ -71,7 +72,7 @@ async function main() {
   // ─── Mock GitHub API ──────────────────────────────────
   // unroute 防止重复注册（Chrome 会话跨脚本持久化）
   try { await page.unroute('**/api.github.com/**') } catch {}
-  try { await page.unroute('https://api.stepfun.com/**') } catch {}
+  try { await page.unroute(`${STEP_ORIGIN}/**`) } catch {}
 
   await page.route('**/api.github.com/**', async (route) => {
     const url = new URL(route.request().url())
@@ -134,7 +135,11 @@ async function main() {
   // Mock /api/github/user is covered by the main handler above (Vite proxy → api.github.com/user)
 
   // ─── Mock StepFun API ─────────────────────────────────
-  await page.route(STEP_API, async (route) => {
+  await page.route(`${STEP_ORIGIN}/**`, async (route) => {
+    if (route.request().url() !== STEP_API) {
+      await route.abort('blockedbyclient')
+      throw new Error('Blocked a non-Step-Plan StepFun request in mock verification')
+    }
     const body = route.request().postDataJSON()
     const userMsgs = (body?.messages || []).filter((m) => m.role === 'user')
     const userMsg = userMsgs.length > 0 ? userMsgs[userMsgs.length - 1].content : ''

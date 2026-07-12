@@ -32,7 +32,7 @@
 ## 文档写法
 
 - Secret 名称可以出现，例如 `STEP_TOKEN`、`GITHUB_CLIENT_SECRET`。
-- 真实值必须写成占位符，例如 `<stepfun-api-key>`。
+- 真实值必须写成占位符，例如 `<step-plan-token>`。
 - 不要把终端输出整段复制进长期文档；只写摘要和可复现命令。
 
 ## 网络核验

@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: golden-path-${{ github.event.workflow_run.head_sha || github.sha }}
+  group: github-pages-production
   cancel-in-progress: false
 
 defaults:
@@ -40,6 +40,9 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Enforce Step Plan-only provider endpoints without network access
+        run: bash scripts/verify/step-plan-endpoints.sh
+
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
@@ -56,12 +59,8 @@ jobs:
       - name: Verify deployed revision before browser tests
         run: |
           set -Eeuo pipefail
-          deployed_sha=$(curl --fail --silent --show-error --location \
-            --proto '=https' --tlsv1.2 \
-            --header 'Cache-Control: no-cache' \
-            "$BASE_URL/mitosis-source-sha.txt?run=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT")
-          deployed_sha=$(printf '%s' "$deployed_sha" | tr -d '\r\n')
-          test "$deployed_sha" = "$EXPECTED_SHA"
+          bash scripts/verify/production-sha.sh \
+            "$BASE_URL" "$EXPECTED_SHA" "mock-before-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 
       - name: Run deterministic mocked UX regression
         env:
@@ -72,6 +71,12 @@ jobs:
         run: |
           set -Eeuo pipefail
           node scripts/verify/e2e-golden.mjs
+
+      - name: Verify deployed revision remained stable
+        run: |
+          set -Eeuo pipefail
+          bash scripts/verify/production-sha.sh \
+            "$BASE_URL" "$EXPECTED_SHA" "mock-after-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 
   online-stepfun:
     name: Online StepFun fast-send (GitHub writes blocked)
@@ -87,6 +92,9 @@ jobs:
           ref: ${{ env.EXPECTED_SHA }}
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Enforce Step Plan-only provider endpoints before exposing a provider secret
+        run: bash scripts/verify/step-plan-endpoints.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -104,12 +112,8 @@ jobs:
       - name: Verify deployed revision before exposing a provider secret
         run: |
           set -Eeuo pipefail
-          deployed_sha=$(curl --fail --silent --show-error --location \
-            --proto '=https' --tlsv1.2 \
-            --header 'Cache-Control: no-cache' \
-            "$BASE_URL/mitosis-source-sha.txt?run=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT")
-          deployed_sha=$(printf '%s' "$deployed_sha" | tr -d '\r\n')
-          test "$deployed_sha" = "$EXPECTED_SHA"
+          bash scripts/verify/production-sha.sh \
+            "$BASE_URL" "$EXPECTED_SHA" "online-before-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 
       - name: Prove immediate send reaches real StepFun and renders a response
         env:
@@ -129,7 +133,8 @@ jobs:
           const expectedOrigin = new URL(baseUrl).origin
           const stepToken = process.env.STEP_TOKEN
           const owner = process.env.REPOSITORY_OWNER
-          const prompt = '我想做一个东西，但需求还不明确。请先向我提出一个澄清问题，不要创建任务。'
+          const stepPlanChatUrl = new URL('https://api.stepfun.com/step_plan/v1/chat/completions')
+          const prompt = '请用一句纯文本说明 Mitosis 如何帮助用户澄清需求，不要创建应用、任务或修改平台。'
 
           if (!stepToken || !owner) throw new Error('Required online-gate input is missing')
 
@@ -137,6 +142,7 @@ jobs:
           const githubWrites = []
           const blockedPaths = []
           let proxiedStepFunCalls = 0
+          let upstreamAssistant = ''
           try {
             const context = await browser.newContext()
             await context.addInitScript(({ origin, login }) => {
@@ -179,7 +185,7 @@ jobs:
                 return
               }
 
-              if (url.origin === 'https://api.stepfun.com' && url.pathname === '/step_plan/v1/chat/completions') {
+              if (url.href === stepPlanChatUrl.href) {
                 const corsHeaders = {
                   'access-control-allow-origin': expectedOrigin,
                   'access-control-allow-methods': 'POST, OPTIONS',
@@ -202,7 +208,27 @@ jobs:
                 }
 
                 proxiedStepFunCalls += 1
-                const upstream = await fetch('https://api.stepfun.com/step_plan/v1/chat/completions', {
+                if (proxiedStepFunCalls !== 1) {
+                  await route.fulfill({ status: 409, headers: corsHeaders, contentType: 'application/json', body: '{"error":"duplicate Step Plan request"}' })
+                  return
+                }
+                if (request.headers()['authorization'] !== 'Bearer online-golden-proxy-isolated') {
+                  await route.fulfill({ status: 401, headers: corsHeaders, contentType: 'application/json', body: '{"error":"browser credential isolation failed"}' })
+                  return
+                }
+                let requestJson
+                try {
+                  requestJson = JSON.parse(requestBody.toString('utf8'))
+                } catch {
+                  await route.fulfill({ status: 400, headers: corsHeaders, contentType: 'application/json', body: '{"error":"invalid request JSON"}' })
+                  return
+                }
+                const userMessages = (requestJson.messages || []).filter((message) => message.role === 'user')
+                if (userMessages.at(-1)?.content !== prompt) {
+                  await route.fulfill({ status: 400, headers: corsHeaders, contentType: 'application/json', body: '{"error":"prompt mismatch"}' })
+                  return
+                }
+                const upstream = await fetch(stepPlanChatUrl, {
                   method: 'POST',
                   headers: {
                     authorization: `Bearer ${stepToken}`,
@@ -213,6 +239,18 @@ jobs:
                 })
                 const responseBody = Buffer.from(await upstream.arrayBuffer())
                 const contentType = upstream.headers.get('content-type') || 'application/json'
+                if (upstream.ok) {
+                  let responseJson
+                  try {
+                    responseJson = JSON.parse(responseBody.toString('utf8'))
+                  } catch {
+                    throw new Error('Step Plan returned invalid JSON')
+                  }
+                  upstreamAssistant = responseJson.choices?.[0]?.message?.content?.trim() || ''
+                  if (!upstreamAssistant || upstreamAssistant === '(empty response)') {
+                    throw new Error('Step Plan returned an empty assistant response')
+                  }
+                }
                 console.log(`StepFun proxy: ${url.pathname}; status=${upstream.status}`)
                 await route.fulfill({
                   status: upstream.status,
@@ -235,6 +273,10 @@ jobs:
             if (new URL(page.url()).origin !== expectedOrigin) {
               throw new Error(`Unexpected navigation origin: ${new URL(page.url()).origin}`)
             }
+            const loadedSha = await page.locator('meta[name="mitosis-source-sha"]').getAttribute('content')
+            if (loadedSha !== process.env.EXPECTED_SHA) {
+              throw new Error(`Loaded page revision mismatch: expected ${process.env.EXPECTED_SHA}, received ${loadedSha || 'missing'}`)
+            }
 
             const input = page.locator('textarea.chat-input')
             const send = page.locator('button.send-btn')
@@ -244,7 +286,7 @@ jobs:
 
             const isStepFun = (url) => {
               const parsed = new URL(url)
-              return parsed.origin === 'https://api.stepfun.com' && parsed.pathname === '/step_plan/v1/chat/completions'
+              return parsed.href === stepPlanChatUrl.href
             }
             const requestPromise = page.waitForRequest(
               (request) => request.method() === 'POST' && isStepFun(request.url()),
@@ -269,6 +311,10 @@ jobs:
               assistantCountBefore,
               { timeout: 30_000 },
             )
+            const renderedAssistant = ((await page.locator('.message.assistant .message-content').last().textContent()) || '').trim()
+            if (renderedAssistant !== upstreamAssistant) {
+              throw new Error('Rendered assistant response does not match the trusted upstream response')
+            }
 
             if (githubWrites.length > 0) {
               throw new Error(`Golden prompt attempted a GitHub mutation: ${githubWrites.join(', ')}`)
@@ -276,8 +322,8 @@ jobs:
             if (blockedPaths.length > 0) {
               throw new Error(`Golden page attempted blocked external paths: ${blockedPaths.join(', ')}`)
             }
-            if (proxiedStepFunCalls < 1) {
-              throw new Error('No StepFun request reached the trusted test proxy')
+            if (proxiedStepFunCalls !== 1) {
+              throw new Error(`Expected exactly one Step Plan request, received ${proxiedStepFunCalls}`)
             }
 
             console.log('ONLINE_STEPFUN_FAST_SEND: PASS')
@@ -286,3 +332,9 @@ jobs:
             await browser.close()
           }
           NODE
+
+      - name: Verify deployed revision remained stable
+        run: |
+          set -Eeuo pipefail
+          bash scripts/verify/production-sha.sh \
+            "$BASE_URL" "$EXPECTED_SHA" "online-after-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"

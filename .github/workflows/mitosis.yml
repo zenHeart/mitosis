@@ -142,6 +142,10 @@ jobs:
           persist-credentials: false
           clean: true
 
+      - name: Enforce Step Plan-only provider endpoints before exposing STEP_TOKEN
+        shell: bash
+        run: bash scripts/verify/step-plan-endpoints.sh
+
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
@@ -242,6 +246,8 @@ jobs:
           umask 077
           PLAN_SCHEMA='{"type":"object","properties":{"tasks":{"type":"array","minItems":1,"maxItems":6,"items":{"type":"object","properties":{"title":{"type":"string","minLength":1,"maxLength":160},"detail":{"type":"string","minLength":1,"maxLength":1200},"verification":{"type":"string","minLength":1,"maxLength":500}},"required":["title","detail","verification"],"additionalProperties":false}},"complexity":{"type":"string","enum":["simple","complex"]}},"required":["tasks","complexity"],"additionalProperties":false}'
 
+          # Claude appends /v1/messages to the base below, yielding the required
+          # https://api.stepfun.com/step_plan/v1/messages endpoint.
           sudo -u mitosis-agent env -i \
             HOME=/home/mitosis-agent \
             PATH="$PATH" \
@@ -292,6 +298,8 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          # Claude appends /v1/messages to the base below, yielding the required
+          # https://api.stepfun.com/step_plan/v1/messages endpoint.
           sudo -u mitosis-agent env -i \
             HOME=/home/mitosis-agent \
             PATH="$PATH" \

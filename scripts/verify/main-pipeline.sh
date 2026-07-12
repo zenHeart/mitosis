@@ -8,6 +8,22 @@ cd "$(dirname "$0")/../.." || exit 2
 FAIL=0
 note() { printf '  %s\n' "$1"; }
 
+echo "== 0. StepFun 只能使用 Step Plan 端点（纯静态、无网络）=="
+if bash scripts/verify/step-plan-endpoints.sh && bash scripts/verify/step-plan-endpoints.test.sh; then
+  note "PASS"
+else
+  note "FAIL: 发现普通计费或非 Step Plan 端点"
+  FAIL=1
+fi
+
+echo "== 0b. 线上版本标记校验器离线负向测试 =="
+if bash scripts/verify/production-sha.test.sh; then
+  note "PASS"
+else
+  note "FAIL: production SHA 校验器存在假绿"
+  FAIL=1
+fi
+
 echo "== 1. 无硬编码 token/secret（仅扫描发往浏览器的 app 代码）=="
 # 仅扫 src/ 与 worker/src/（真正会打包/运行的代码）；排除文档与 detection 脚本本身
 if grep -rniE "(ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})" \
@@ -59,7 +75,13 @@ else note "PASS"; fi
 if [ "${RUN_BUILD:-0}" = "1" ]; then
   echo "== 5. typecheck + build =="
   if npm run typecheck >/tmp/mp-tc.log 2>&1 && npm run build >/tmp/mp-build.log 2>&1; then
-    note "PASS"; else note "FAIL: typecheck/build（见 /tmp/mp-*.log）"; FAIL=1; fi
+    if STEP_PLAN_SCAN_PATHS=dist bash scripts/verify/step-plan-endpoints.sh; then
+      note "PASS"
+    else
+      note "FAIL: 构建产物含非 Step Plan 地址"
+      FAIL=1
+    fi
+  else note "FAIL: typecheck/build（见 /tmp/mp-*.log）"; FAIL=1; fi
 fi
 
 echo
