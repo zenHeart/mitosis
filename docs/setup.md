@@ -112,12 +112,12 @@ npx wrangler deploy
 
 只把真实 secret 值写入 Cloudflare secret store，不写入仓库。
 
-## 4. StepFun Token
+## 4. Step Plan Token
 
 GitHub Actions 中的 Claude Code 使用 StepFun：
 
 ```bash
-gh secret set STEP_TOKEN --repo <github-user-or-org>/mitosis --body "<stepfun-api-key>"
+gh secret set STEP_TOKEN --repo <github-user-or-org>/mitosis --body "<step-plan-token>"
 ```
 
 CI 使用：
@@ -127,7 +127,7 @@ ANTHROPIC_API_KEY=${{ secrets.STEP_TOKEN }}
 ANTHROPIC_BASE_URL=https://api.stepfun.com/step_plan
 ```
 
-如需改用 StepFun 官方 `.ai` endpoint，先用 `/status` 和最小文件写入任务验证 Claude Code 当前配置，不要只改文档。
+本项目禁止切换到普通 API 或官方 `.ai` endpoint：所有本地、远程和调试请求必须继续使用 Step Plan 前缀；Anthropic SDK 的 base URL 只能保持上面的值，最终路径为 `/step_plan/v1/messages`。
 
 ## 5. 本地 Claude Code
 

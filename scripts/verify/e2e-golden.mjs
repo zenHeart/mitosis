@@ -19,15 +19,27 @@ import { dirname, resolve } from 'node:path'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5173'
+const EXPECTED_SHA = process.env.EXPECTED_SHA || ''
 // 真实登录态模式：设置 REAL_TOKEN（+可选 REAL_LOGIN）后，使用真实 GitHub token、
 // 不再 mock GitHub API。配合 BASE_URL=https://mitosis.zenheart.site 可对线上做真实验证。
 // （本沙箱无外网，需在有网络的本机或 CI runner 上运行。）
 const REAL = !!process.env.REAL_TOKEN
-const REAL_STEPFUN = !!process.env.REAL_STEPFUN // 真实 StepFun（观测真实配额错误）
+const REAL_STEPFUN = process.env.REAL_STEPFUN === '1' // 仅显式 1 才允许真实 Step Plan
+const STEP_PLAN_CHAT_COMPLETIONS_URL = 'https://api.stepfun.com/step_plan/v1/chat/completions'
+const STEP_PLAN_ORIGIN = new URL(STEP_PLAN_CHAT_COMPLETIONS_URL).origin
 const results = []
 const rec = (name, pass, detail = '') => results.push({ name, pass, detail })
 
 const OWNER = { login: process.env.REAL_LOGIN || 'zenHeart', id: 12345, avatar_url: 'https://avatars.githubusercontent.com/u/12345?v=4', html_url: 'https://github.com/zenHeart', name: process.env.REAL_LOGIN || 'zenHeart' }
+
+async function verifyPageRevision(page) {
+  if (!EXPECTED_SHA) return
+  if (!/^[0-9a-f]{40}$/.test(EXPECTED_SHA)) throw new Error('EXPECTED_SHA is invalid')
+  const actual = await page.locator('meta[name="mitosis-source-sha"]').getAttribute('content')
+  if (actual !== EXPECTED_SHA) {
+    throw new Error(`Loaded page revision mismatch: expected ${EXPECTED_SHA}, received ${actual || 'missing'}`)
+  }
+}
 
 async function seedOwner(ctx) {
   await ctx.addInitScript(([u, real, tok]) => {
@@ -48,10 +60,18 @@ async function mockGitHub(page, { authed }) {
   })
 }
 async function mockStepFunQuota(page) {
-  if (REAL_STEPFUN) return // 真实模式：直连真实 StepFun（观测真实配额/故障）
-  await page.route('https://api.stepfun.com/**', (route) =>
-    route.fulfill({ status: 429, contentType: 'application/json',
-      body: JSON.stringify({ error: { message: 'You exceeded your current quota, please check your plan and billing details', type: 'insufficient_quota' } }) }))
+  const observed = { exactCalls: 0, unexpected: [] }
+  await page.route(`${STEP_PLAN_ORIGIN}/**`, (route) => {
+    if (route.request().url() !== STEP_PLAN_CHAT_COMPLETIONS_URL) {
+      observed.unexpected.push(route.request().url())
+      return route.abort('blockedbyclient')
+    }
+    observed.exactCalls += 1
+    if (REAL_STEPFUN) return route.continue()
+    return route.fulfill({ status: 402, contentType: 'application/json',
+      body: JSON.stringify({ error: { message: 'You exceeded your current Step Plan credit', type: 'insufficient_quota' } }) })
+  })
+  return observed
 }
 
 async function run() {
@@ -59,10 +79,11 @@ async function run() {
 
   // ── G1: 匿名 Gallery 渲染 + 登录按钮可见 ──
   try {
-    const ctx = await browser.newContext()
+    const ctx = await browser.newContext({ serviceWorkers: 'block' })
     const page = await ctx.newPage()
     await mockGitHub(page, { authed: false })
     await page.goto(BASE_URL + '/', { waitUntil: 'domcontentloaded', timeout: 20000 })
+    await verifyPageRevision(page)
     await page.waitForTimeout(1500)
     const loginBtn = page.locator('button:has-text("使用 GitHub 登录")')
     await page.screenshot({ path: '/tmp/shot-gallery.png', fullPage: true }).catch(() => {})
@@ -72,9 +93,10 @@ async function run() {
 
   // ── G3: Owner Workspace 渲染（侧边栏 + 输入框）──
   try {
-    const ctx = await browser.newContext(); await seedOwner(ctx)
+    const ctx = await browser.newContext({ serviceWorkers: 'block' }); await seedOwner(ctx)
     const page = await ctx.newPage(); await mockGitHub(page, { authed: true })
     await page.goto(BASE_URL + '/', { waitUntil: 'domcontentloaded', timeout: 20000 })
+    await verifyPageRevision(page)
     await page.waitForTimeout(1500)
     const ok = (await page.locator('.sidebar').count()) > 0 && (await page.locator('textarea.chat-input').count()) > 0
     await page.screenshot({ path: '/tmp/shot-workspace.png' }).catch(() => {})
@@ -84,10 +106,11 @@ async function run() {
 
   // ── G4: 截图 bug —— 配额错误时不死胡同（无原始英文泄露 + 有恢复出口）──
   try {
-    const ctx = await browser.newContext(); await seedOwner(ctx)
+    const ctx = await browser.newContext({ serviceWorkers: 'block' }); await seedOwner(ctx)
     const page = await ctx.newPage()
-    await mockGitHub(page, { authed: true }); await mockStepFunQuota(page)
+    await mockGitHub(page, { authed: true }); const stepPlan = await mockStepFunQuota(page)
     await page.goto(BASE_URL + '/', { waitUntil: 'domcontentloaded', timeout: 20000 })
+    await verifyPageRevision(page)
     await page.waitForTimeout(1200)
     await page.locator('textarea.chat-input').fill('优化 mitosis 支持发送渲染图片')
     await page.locator('button.send-btn').click()
@@ -98,17 +121,19 @@ async function run() {
     const hasRecovery =
       (await page.locator('button:has-text("重试"), button:has-text("更新"), button:has-text("建任务"), button:has-text("创建平台"), button:has-text("直接")').count()) > 0 ||
       /已创建平台|平台变更任务|平台构建任务|额度|配额已用尽|请更新.*token|稍后重试/i.test(body)
-    rec('G4 配额错误不死胡同（截图 bug）', !rawLeak && hasRecovery,
-      `rawLeak=${rawLeak} hasRecovery=${hasRecovery}`)
+    const endpointSafe = stepPlan.unexpected.length === 0 && stepPlan.exactCalls === 1
+    rec('G4 配额错误不死胡同（截图 bug）', !rawLeak && hasRecovery && endpointSafe,
+      `rawLeak=${rawLeak} hasRecovery=${hasRecovery} stepPlanCalls=${stepPlan.exactCalls} unexpected=${stepPlan.unexpected.length}`)
     await ctx.close()
   } catch (e) { rec('G4 配额错误不死胡同（截图 bug）', false, String(e).slice(0, 120)) }
 
   // ── G5: 移动端 Workspace + 侧边栏开关 + 触控目标 ──
   try {
-    const ctx = await browser.newContext(); await seedOwner(ctx)
+    const ctx = await browser.newContext({ serviceWorkers: 'block' }); await seedOwner(ctx)
     const page = await ctx.newPage(); await mockGitHub(page, { authed: true })
     await page.setViewportSize({ width: 375, height: 812 })
     await page.goto(BASE_URL + '/', { waitUntil: 'domcontentloaded', timeout: 20000 })
+    await verifyPageRevision(page)
     await page.waitForTimeout(1500)
     // Workspace 侧边栏切换按钮可见（移动端）
     const toggleVisible = (await page.locator('.sidebar-toggle-mobile').count()) > 0

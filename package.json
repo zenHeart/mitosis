@@ -12,8 +12,8 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:e2e": "playwright test",
-    "verify:mvp:local": "npm run typecheck && npm run build && RUN_BUILD=1 bash scripts/verify/main-pipeline.sh && BASE_URL=http://127.0.0.1:5173 node scripts/verify/e2e-golden.mjs",
-    "verify:mvp:real": "GITHUB_MCP_PAT=$GITHUB_MCP_PAT STEP_TOKEN=$STEP_TOKEN npx playwright test tests/build-flow.spec.ts tests/platform-build.spec.ts tests/setup-flow.spec.ts tests/non-owner.spec.ts --reporter=list"
+    "verify:mvp:local": "bash scripts/verify/step-plan-endpoints.sh && npm run typecheck && npm run build && RUN_BUILD=1 bash scripts/verify/main-pipeline.sh && BASE_URL=http://127.0.0.1:5173 node scripts/verify/e2e-golden.mjs",
+    "verify:mvp:real": "bash scripts/verify/step-plan-endpoints.sh && GITHUB_MCP_PAT=$GITHUB_MCP_PAT STEP_TOKEN=$STEP_TOKEN npx playwright test tests/build-flow.spec.ts tests/platform-build.spec.ts tests/setup-flow.spec.ts tests/non-owner.spec.ts --reporter=list"
   },
   "dependencies": {
     "@lucide/vue": "^1.23.0",

@@ -83,9 +83,9 @@ export function formatStepFunError(err: unknown): FormattedError {
     ) {
       return {
         title: '⏱️ 请求超时或额度已用尽',
-        detail: 'StepFun API 响应超时（15s）或当前额度/配额已耗尽。',
+        detail: 'Step Plan 请求超时（15s）或订阅 Credit 已耗尽。',
         kind: 'quota',
-        suggestion: '请稍后重试，或检查 StepFun 账户余额后更新 token。你也可以直接创建 Issue 让我帮你构建。',
+        suggestion: '请稍后重试，或检查 Step Plan 订阅 Credit 后更新 token。不要切换到普通 API 余额；你也可以直接创建 Issue。',
       }
     }
 

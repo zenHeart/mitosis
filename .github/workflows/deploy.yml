@@ -2,75 +2,288 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches:
-      - master
+    branches: [master]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: github-pages-production
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  NODE_VERSION: '22.23.1'
+  SITE_URL: https://mitosis.zenheart.site
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  build:
+    name: Verify and build immutable site artifact
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout trusted master
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Assert checked out revision
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
-      - name: Build platform
-        run: npm run build
+      - name: Enforce Step Plan-only provider endpoints without network access
+        run: bash scripts/verify/step-plan-endpoints.sh
+
+      - name: Install locked dependencies
+        run: |
+          set -Eeuo pipefail
+          npm ci
+
+      - name: Run release gates
+        run: |
+          set -uo pipefail
+          failed=0
+
+          run_gate() {
+            local label="$1"
+            shift
+            echo "::group::$label"
+            if "$@"; then
+              echo "$label: PASS"
+            else
+              local status=$?
+              echo "::error::$label failed with exit code $status"
+              failed=1
+            fi
+            echo "::endgroup::"
+          }
+
+          run_gate typecheck npm run typecheck
+          run_gate unit-tests npm test -- --reporter=verbose
+          run_gate main-pipeline env RUN_BUILD=0 bash scripts/verify/main-pipeline.sh
+
+          exit "$failed"
+
+      - name: Build the production frontend with its public OAuth client ID
         env:
           VITE_GITHUB_CLIENT_ID: ${{ secrets.VITE_GITHUB_CLIENT_ID }}
-          # 自定义域名 OAuth 代理：workers.dev 在中国大陆被墙（docs/setup.md「国内网络访问」）
-          VITE_OAUTH_PROXY_URL: https://oauth.zenheart.site
-
-      - name: Build apps
         run: |
-          cd "$GITHUB_WORKSPACE"
-          for app_dir in apps/*/; do
-            [ -d "$app_dir" ] || continue
-            for ver_dir in "$app_dir"v*/; do
-              [ -d "$ver_dir" ] || continue
-              [ -f "$ver_dir/package.json" ] || continue
-              echo "Building $(basename "$app_dir") $(basename "$ver_dir")..."
-              cd "$ver_dir"
-              npm ci --silent 2>/dev/null || npm install --silent 2>/dev/null || true
-              npm run build 2>&1 | tail -1
-              cd "$GITHUB_WORKSPACE"
-            done
+          set -Eeuo pipefail
+          [[ "$VITE_GITHUB_CLIENT_ID" =~ ^[A-Za-z0-9]{20,40}$ ]] || {
+            echo '::error::VITE_GITHUB_CLIENT_ID is missing or malformed'
+            exit 1
+          }
+          npm run build
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          client_id = os.environ['VITE_GITHUB_CLIENT_ID'].encode()
+          bundles = list(Path('dist/assets').glob('*.js'))
+          if not bundles or not any(client_id in path.read_bytes() for path in bundles):
+              raise SystemExit('Production bundle does not contain the configured OAuth client ID')
+          PY
+
+      - name: Build every published application from root-locked dependencies
+        run: |
+          set -Eeuo pipefail
+          app_count=0
+          while IFS= read -r -d '' package_json; do
+            app_dir=${package_json%/package.json}
+            case "$app_dir" in
+              apps/*/v[0-9]*) ;;
+              *)
+                echo "::error::Unexpected application path: $app_dir"
+                exit 1
+                ;;
+            esac
+
+            rm -rf "$app_dir/dist"
+            (
+              cd "$app_dir"
+              "$GITHUB_WORKSPACE/node_modules/.bin/vue-tsc" -b
+              "$GITHUB_WORKSPACE/node_modules/.bin/vite" build
+              test -f dist/index.html
+            )
+            app_count=$((app_count + 1))
+          done < <(find apps -mindepth 3 -maxdepth 3 -type f -name package.json -print0 | sort -z)
+
+          if [ "$app_count" -eq 0 ]; then
+            echo "::error::No publishable applications were found"
+            exit 1
+          fi
+
+      - name: Assemble a clean deployment tree
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          test -f dist/index.html
+          rm -rf _site
+          mkdir -p _site
+          cp -a dist/. _site/
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          source_sha = os.environ['SOURCE_SHA']
+          index = Path('_site/index.html')
+          html = index.read_text(encoding='utf-8')
+          if 'name="mitosis-source-sha"' in html:
+              raise SystemExit('Untrusted build output already contains the production SHA marker')
+          if '</head>' not in html:
+              raise SystemExit('Deployment index has no closing head element')
+          marker = f'<meta name="mitosis-source-sha" content="{source_sha}">'
+          index.write_text(html.replace('</head>', f'  {marker}\n  </head>', 1), encoding='utf-8')
+          PY
+
+          app_count=0
+          while IFS= read -r -d '' package_json; do
+            app_dir=${package_json%/package.json}
+            test -f "$app_dir/dist/index.html"
+            mkdir -p "_site/$app_dir"
+            cp -a "$app_dir/dist/." "_site/$app_dir/"
+            app_count=$((app_count + 1))
+          done < <(find apps -mindepth 3 -maxdepth 3 -type f -name package.json -print0 | sort -z)
+
+          test "$app_count" -gt 0
+          printf '%s\n' "$SOURCE_SHA" > _site/mitosis-source-sha.txt
+          printf '%s\n' 'mitosis.zenheart.site' > _site/CNAME
+
+          symlink=$(find _site -type l -print -quit)
+          if [ -n "$symlink" ]; then
+            echo "::error::Deployment artifact contains a symbolic link: $symlink"
+            exit 1
+          fi
+
+          test "$(tr -d '\r\n' < _site/mitosis-source-sha.txt)" = "$SOURCE_SHA"
+          grep -qF "<meta name=\"mitosis-source-sha\" content=\"$SOURCE_SHA\">" _site/index.html
+
+      - name: Enforce Step Plan-only endpoints in the exact deployment artifact
+        run: STEP_PLAN_SCAN_PATHS=_site bash scripts/verify/step-plan-endpoints.sh
+
+      - name: Upload immutable site artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: site-${{ github.sha }}
+          path: _site/
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    name: Replace gh-pages and verify production SHA
+    needs: build
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    environment:
+      name: github-pages
+      url: https://mitosis.zenheart.site
+    steps:
+      - name: Checkout exact trusted production verifier
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.sha }}
+          path: source
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download verified site artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: site-${{ github.sha }}
+          path: artifact
+
+      - name: Checkout gh-pages publisher branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: gh-pages
+          path: publisher
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify downloaded artifact provenance
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          test -f artifact/index.html
+          test -f artifact/mitosis-source-sha.txt
+          test "$(tr -d '\r\n' < artifact/mitosis-source-sha.txt)" = "$SOURCE_SHA"
+
+          symlink=$(find artifact -type l -print -quit)
+          if [ -n "$symlink" ]; then
+            echo "::error::Downloaded artifact contains a symbolic link: $symlink"
+            exit 1
+          fi
+
+      - name: Replace gh-pages and verify the remote branch
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          gh auth setup-git
+          git -C publisher config user.name github-actions[bot]
+          git -C publisher config user.email 41898282+github-actions[bot]@users.noreply.github.com
+
+          git -C publisher rm -r --ignore-unmatch .
+          git -C publisher clean -fdx
+          cp -a artifact/. publisher/
+          git -C publisher add -A
+
+          if git -C publisher diff --cached --quiet; then
+            echo "gh-pages already contains the artifact for $SOURCE_SHA"
+          else
+            git -C publisher commit -m "deploy: $SOURCE_SHA"
+            git -C publisher push origin HEAD:gh-pages
+          fi
+
+          git -C publisher fetch --no-tags origin gh-pages
+          remote_source=$(git -C publisher show origin/gh-pages:mitosis-source-sha.txt | tr -d '\r\n')
+          remote_subject=$(git -C publisher log -1 --format=%s origin/gh-pages)
+
+          test "$remote_source" = "$SOURCE_SHA"
+          test "$remote_subject" = "deploy: $SOURCE_SHA"
+
+      - name: Verify the live site serves this source SHA
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          verified=0
+          for attempt in $(seq 1 30); do
+            if bash source/scripts/verify/production-sha.sh \
+              "$SITE_URL" "$SOURCE_SHA" "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$attempt"; then
+              verified=1
+              break
+            fi
+            sleep 10
           done
 
-      - name: Prepare deployment
-        run: |
-          mkdir -p deploy
-          cp -r dist/* deploy/
-          # Copy built apps (exclude node_modules, only copy actual app dist dirs)
-          if [ -d apps ]; then
-            find apps -type d -name dist -not -path "*/node_modules/*" -exec sh -c '
-              dest="deploy/$(dirname "$1")"
-              mkdir -p "$dest"
-              cp -r "$1"/* "$dest/"
-            ' _ {} \;
+          if [ "$verified" -ne 1 ]; then
+            echo "::error::Production did not serve source SHA $SOURCE_SHA within the verification window"
+            exit 1
           fi
-          # CNAME is already in dist if tracked, or add it
-          echo "mitosis.zenheart.site" > deploy/CNAME
-          echo "Deploy contents:"
-          find deploy -type f | sort | head -20
-
-      - name: Deploy to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./deploy
-          publish_branch: gh-pages
-          force_orphan: false
-          keep_files: true
+          echo "Production source SHA verified: $SOURCE_SHA"

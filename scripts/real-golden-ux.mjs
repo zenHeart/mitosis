@@ -7,7 +7,8 @@ import { chromium } from '@playwright/test'
 const WS_URL = 'ws://127.0.0.1:9223/devtools/browser/5b29ed49-fd1c-41ab-bd4c-2b531ee253d3'
 const TARGET_URL = 'https://mitosis.zenheart.site'
 const SCREENSHOT_DIR = '/Users/zenheart/code/github/mitosis/screenshots/real-golden'
-const STEP_API = 'https://api.stepfun.com/v1/chat/completions'
+const STEP_API = 'https://api.stepfun.com/step_plan/v1/chat/completions'
+const STEP_ORIGIN = new URL(STEP_API).origin
 
 import fs from 'fs'
 if (!fs.existsSync(SCREENSHOT_DIR)) fs.mkdirSync(SCREENSHOT_DIR, { recursive: true })
@@ -32,8 +33,18 @@ async function main() {
 
   // 移除所有 mock handlers（使用真实 API）
   try { await page.unroute('**/api.github.com/**') } catch {}
-  try { await page.unroute('https://api.stepfun.com/**') } catch {}
+  try { await page.unroute(`${STEP_ORIGIN}/**`) } catch {}
   try { await page.unroute('**/api.github.com/**') } catch {}
+
+  // This is a real-provider script. Refuse any StepFun request that is not the
+  // exact Step Plan endpoint, even if page code regresses later.
+  await page.route(`${STEP_ORIGIN}/**`, async (route) => {
+    if (route.request().url() !== STEP_API) {
+      await route.abort('blockedbyclient')
+      throw new Error('Blocked a non-Step-Plan StepFun request')
+    }
+    await route.continue()
+  })
 
   // 注入 API 调用追踪（用于验证真实 API 调用发生）
   await page.addInitScript(() => {

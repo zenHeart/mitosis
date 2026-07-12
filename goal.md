@@ -566,11 +566,11 @@ rg -i "(ghp_|gho_|github_pat_|sk-|AKIA|AIza|eyJ)" \
 
 ### B1 详细说明
 
-- **Token 有效性：** ✅ 已验证（`GET /v1/models` 返回 38 个可用模型）
-- **API 端点可达性：** ✅ 已验证（`api.stepfun.com` 响应正常）
+- **Token 有效性：** 未在本轮重新调用模型核验；禁止用普通 API 路径做探针。
+- **端点强约束：** 直接聊天调用使用 `https://api.stepfun.com/step_plan/v1/chat/completions`；Claude Code 的 `ANTHROPIC_BASE_URL=https://api.stepfun.com/step_plan`，由客户端拼成 `/step_plan/v1/messages`。
 - **错误处理：** ✅ 已验证（`formatStepFunError` 正确识别 quota 错误，UI 显示中文提示 + fallback 创建 Issue）
-- **实际 chat completion：** ⚠️ 阻塞（402 quota exceeded）
-- **代码状态：** 无缺陷，错误处理完善，等待账户充值后重试验证
+- **实际 chat completion：** 本轮未触发；只有端点闸门通过后，才允许 GitHub Actions 使用 Step Plan Credit 做明确授权的真实验证。
+- **计费边界：** 不得以充值普通 API 余额作为恢复建议；普通 `/v1/...` 路径必须在本地、CI 与发布前失败关闭。
 
 ### B2 详细说明
 

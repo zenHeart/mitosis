@@ -16,6 +16,8 @@ import { test, expect, type Page } from '@playwright/test'
 const BASE_URL = process.env.BASE_URL || 'http://127.0.0.1:5173'
 const HAS_GITHUB_PAT = !!process.env.GITHUB_MCP_PAT
 const HAS_STEP_TOKEN = !!process.env.STEP_TOKEN
+const STEP_PLAN_CHAT_COMPLETIONS_URL = 'https://api.stepfun.com/step_plan/v1/chat/completions'
+const STEP_PLAN_ORIGIN = new URL(STEP_PLAN_CHAT_COMPLETIONS_URL).origin
 
 // 模拟的 Issue 状态流转（模拟真实 GitHub API：每次轮询返回当前全部 labels，逐步添加 status labels）
 const STATUS_FLOW = [
@@ -53,13 +55,17 @@ test.describe('C2.4: Platform Build 闭环', () => {
       const method = route.request().method()
 
       // 只拦截和 mock API 请求，其他请求放行
-      if (!url.includes('/api/github/') && !url.includes('api.stepfun.com')) {
+      if (!url.includes('/api/github/') && !url.startsWith(STEP_PLAN_ORIGIN)) {
         await route.continue()
         return
       }
 
       // ── StepFun API mock ──────────────────────────────────
-      if (url.includes('api.stepfun.com') && url.includes('/chat/completions')) {
+      if (url.startsWith(STEP_PLAN_ORIGIN)) {
+        if (url !== STEP_PLAN_CHAT_COMPLETIONS_URL) {
+          await route.abort('blockedbyclient')
+          throw new Error('Blocked a non-Step-Plan StepFun request in platform-build test')
+        }
         const body = await route.request().postDataJSON()
         const userMessage = body.messages?.[body.messages.length - 1]?.content || ''
 

@@ -1,38 +1,340 @@
 name: Golden Path (remote E2E)
 
-# 远程黄金路径验证：在 GitHub runner 上（有外网 + 可注入 secret）用真实 Chromium
-# 驱动已部署站点，验证 MVP 黄金指标。本地沙箱无外网，故远程验证放在 CI。
 on:
   workflow_dispatch:
-    inputs:
-      base_url:
-        description: 目标站点
-        default: https://mitosis.zenheart.site
-        required: false
+  workflow_run:
+    workflows: [Deploy to GitHub Pages]
+    types: [completed]
   schedule:
-    - cron: '0 18 * * *' # 每日巡检
+    - cron: '0 18 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages-production
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  NODE_VERSION: '22.23.1'
+  BASE_URL: https://mitosis.zenheart.site
+  EXPECTED_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
-  golden:
-    runs-on: ubuntu-latest
+  mock-regression:
+    name: Mock UX regression (no real StepFun claim)
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout exact test revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          node-version: 20
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - name: Run golden-path against deployed site
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Enforce Step Plan-only provider endpoints without network access
+        run: bash scripts/verify/step-plan-endpoints.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked dependencies and Chromium
+        run: |
+          set -Eeuo pipefail
+          npm ci
+          npx --no-install playwright install --with-deps chromium
+
+      - name: Verify deployed revision before browser tests
+        run: |
+          set -Eeuo pipefail
+          bash scripts/verify/production-sha.sh \
+            "$BASE_URL" "$EXPECTED_SHA" "mock-before-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+
+      - name: Run deterministic mocked UX regression
         env:
-          BASE_URL: ${{ github.event.inputs.base_url || 'https://mitosis.zenheart.site' }}
-          # 真实登录态（可选）：在仓库 Secrets 配置 E2E_GH_TOKEN（read:user repo）后启用
-          REAL_TOKEN: ${{ secrets.E2E_GH_TOKEN }}
-          REAL_LOGIN: ${{ github.repository_owner }}
-        run: node scripts/verify/e2e-golden.mjs
-      - name: Upload screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
+          # This job intentionally mocks GitHub and StepFun failure responses.
+          # It is a UI regression gate, not evidence of a real provider call.
+          REAL_STEPFUN: ''
+          REAL_TOKEN: ''
+        run: |
+          set -Eeuo pipefail
+          node scripts/verify/e2e-golden.mjs
+
+      - name: Verify deployed revision remained stable
+        run: |
+          set -Eeuo pipefail
+          bash scripts/verify/production-sha.sh \
+            "$BASE_URL" "$EXPECTED_SHA" "mock-after-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+
+  online-stepfun:
+    name: Online StepFun fast-send (GitHub writes blocked)
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact test revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          name: golden-screenshots
-          path: /tmp/shot-*.png
-          if-no-files-found: ignore
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Enforce Step Plan-only provider endpoints before exposing a provider secret
+        run: bash scripts/verify/step-plan-endpoints.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked dependencies and Chromium
+        run: |
+          set -Eeuo pipefail
+          npm ci
+          npx --no-install playwright install --with-deps chromium
+
+      - name: Verify deployed revision before exposing a provider secret
+        run: |
+          set -Eeuo pipefail
+          bash scripts/verify/production-sha.sh \
+            "$BASE_URL" "$EXPECTED_SHA" "online-before-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+
+      - name: Prove immediate send reaches real StepFun and renders a response
+        env:
+          STEP_TOKEN: ${{ secrets.STEP_TOKEN }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$STEP_TOKEN" ]; then
+            echo "::error::STEP_TOKEN is required for the online StepFun golden gate"
+            exit 1
+          fi
+
+          node --input-type=module <<'NODE'
+          import { chromium } from 'playwright'
+
+          const baseUrl = process.env.BASE_URL
+          const expectedOrigin = new URL(baseUrl).origin
+          const stepToken = process.env.STEP_TOKEN
+          const owner = process.env.REPOSITORY_OWNER
+          const stepPlanChatUrl = new URL('https://api.stepfun.com/step_plan/v1/chat/completions')
+          const prompt = '请用一句纯文本说明 Mitosis 如何帮助用户澄清需求，不要创建应用、任务或修改平台。'
+
+          if (!stepToken || !owner) throw new Error('Required online-gate input is missing')
+
+          const browser = await chromium.launch()
+          const githubWrites = []
+          const blockedPaths = []
+          let proxiedStepFunCalls = 0
+          let upstreamAssistant = ''
+          try {
+            const context = await browser.newContext()
+            await context.addInitScript(({ origin, login }) => {
+              if (location.origin !== origin) return
+              sessionStorage.setItem('mitosis_token', 'online-golden-github-isolated')
+              sessionStorage.setItem('mitosis_user', JSON.stringify({
+                login,
+                id: 1,
+                avatar_url: '',
+                html_url: `https://github.com/${login}`,
+                name: login,
+              }))
+              sessionStorage.setItem('mitosis_step_token', 'online-golden-proxy-isolated')
+              localStorage.setItem('mitosis_setup_complete', 'true')
+            }, { origin: expectedOrigin, login: owner })
+
+            const page = await context.newPage()
+            await page.route('**/*', async (route) => {
+              const request = route.request()
+              const url = new URL(request.url())
+
+              const isGitHub =
+                (url.origin === expectedOrigin && url.pathname.startsWith('/api/github/')) ||
+                url.origin === 'https://api.github.com'
+              if (isGitHub) {
+                if (request.method() !== 'GET') {
+                  githubWrites.push(`${request.method()} ${url.pathname}`)
+                  await route.fulfill({ status: 403, contentType: 'application/json', body: '{"message":"blocked by online golden gate"}' })
+                  return
+                }
+                if (url.pathname.endsWith('/user')) {
+                  await route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ login: owner, id: 1, avatar_url: '', html_url: `https://github.com/${owner}`, name: owner }),
+                  })
+                  return
+                }
+                await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+                return
+              }
+
+              if (url.href === stepPlanChatUrl.href) {
+                const corsHeaders = {
+                  'access-control-allow-origin': expectedOrigin,
+                  'access-control-allow-methods': 'POST, OPTIONS',
+                  'access-control-allow-headers': 'authorization, content-type',
+                  'vary': 'Origin',
+                }
+                if (request.method() === 'OPTIONS') {
+                  await route.fulfill({ status: 204, headers: corsHeaders, body: '' })
+                  return
+                }
+                if (request.method() !== 'POST') {
+                  await route.fulfill({ status: 405, headers: corsHeaders, contentType: 'application/json', body: '{"error":"method not allowed"}' })
+                  return
+                }
+
+                const requestBody = request.postDataBuffer()
+                if (!requestBody) {
+                  await route.fulfill({ status: 400, headers: corsHeaders, contentType: 'application/json', body: '{"error":"missing request body"}' })
+                  return
+                }
+
+                proxiedStepFunCalls += 1
+                if (proxiedStepFunCalls !== 1) {
+                  await route.fulfill({ status: 409, headers: corsHeaders, contentType: 'application/json', body: '{"error":"duplicate Step Plan request"}' })
+                  return
+                }
+                if (request.headers()['authorization'] !== 'Bearer online-golden-proxy-isolated') {
+                  await route.fulfill({ status: 401, headers: corsHeaders, contentType: 'application/json', body: '{"error":"browser credential isolation failed"}' })
+                  return
+                }
+                let requestJson
+                try {
+                  requestJson = JSON.parse(requestBody.toString('utf8'))
+                } catch {
+                  await route.fulfill({ status: 400, headers: corsHeaders, contentType: 'application/json', body: '{"error":"invalid request JSON"}' })
+                  return
+                }
+                const userMessages = (requestJson.messages || []).filter((message) => message.role === 'user')
+                if (userMessages.at(-1)?.content !== prompt) {
+                  await route.fulfill({ status: 400, headers: corsHeaders, contentType: 'application/json', body: '{"error":"prompt mismatch"}' })
+                  return
+                }
+                const upstream = await fetch(stepPlanChatUrl, {
+                  method: 'POST',
+                  headers: {
+                    authorization: `Bearer ${stepToken}`,
+                    'content-type': 'application/json',
+                  },
+                  body: requestBody,
+                  signal: AbortSignal.timeout(45_000),
+                })
+                const responseBody = Buffer.from(await upstream.arrayBuffer())
+                const contentType = upstream.headers.get('content-type') || 'application/json'
+                if (upstream.ok) {
+                  let responseJson
+                  try {
+                    responseJson = JSON.parse(responseBody.toString('utf8'))
+                  } catch {
+                    throw new Error('Step Plan returned invalid JSON')
+                  }
+                  upstreamAssistant = responseJson.choices?.[0]?.message?.content?.trim() || ''
+                  if (!upstreamAssistant || upstreamAssistant === '(empty response)') {
+                    throw new Error('Step Plan returned an empty assistant response')
+                  }
+                }
+                console.log(`StepFun proxy: ${url.pathname}; status=${upstream.status}`)
+                await route.fulfill({
+                  status: upstream.status,
+                  headers: { ...corsHeaders, 'content-type': contentType },
+                  body: responseBody,
+                })
+                return
+              }
+
+              if (url.origin === expectedOrigin) {
+                await route.continue()
+                return
+              }
+
+              blockedPaths.push(url.pathname)
+              await route.abort('blockedbyclient')
+            })
+            await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 20_000 })
+
+            if (new URL(page.url()).origin !== expectedOrigin) {
+              throw new Error(`Unexpected navigation origin: ${new URL(page.url()).origin}`)
+            }
+            const loadedSha = await page.locator('meta[name="mitosis-source-sha"]').getAttribute('content')
+            if (loadedSha !== process.env.EXPECTED_SHA) {
+              throw new Error(`Loaded page revision mismatch: expected ${process.env.EXPECTED_SHA}, received ${loadedSha || 'missing'}`)
+            }
+
+            const input = page.locator('textarea.chat-input')
+            const send = page.locator('button.send-btn')
+            await input.waitFor({ state: 'visible', timeout: 15_000 })
+            await send.waitFor({ state: 'visible', timeout: 15_000 })
+            const assistantCountBefore = await page.locator('.message.assistant').count()
+
+            const isStepFun = (url) => {
+              const parsed = new URL(url)
+              return parsed.href === stepPlanChatUrl.href
+            }
+            const requestPromise = page.waitForRequest(
+              (request) => request.method() === 'POST' && isStepFun(request.url()),
+              { timeout: 15_000 },
+            )
+            const responsePromise = page.waitForResponse(
+              (response) => response.request().method() === 'POST' && isStepFun(response.url()),
+              { timeout: 45_000 },
+            )
+
+            await input.fill(prompt)
+            await send.click()
+            const [request, response] = await Promise.all([requestPromise, responsePromise])
+
+            console.log(`Observed real StepFun request: ${request.method()} ${new URL(request.url()).pathname}; status=${response.status()}`)
+            if (response.status() < 200 || response.status() >= 300) {
+              throw new Error(`StepFun returned non-success status ${response.status()}`)
+            }
+
+            await page.waitForFunction(
+              (before) => document.querySelectorAll('.message.assistant').length > before,
+              assistantCountBefore,
+              { timeout: 30_000 },
+            )
+            const renderedAssistant = ((await page.locator('.message.assistant .message-content').last().textContent()) || '').trim()
+            if (renderedAssistant !== upstreamAssistant) {
+              throw new Error('Rendered assistant response does not match the trusted upstream response')
+            }
+
+            if (githubWrites.length > 0) {
+              throw new Error(`Golden prompt attempted a GitHub mutation: ${githubWrites.join(', ')}`)
+            }
+            if (blockedPaths.length > 0) {
+              throw new Error(`Golden page attempted blocked external paths: ${blockedPaths.join(', ')}`)
+            }
+            if (proxiedStepFunCalls !== 1) {
+              throw new Error(`Expected exactly one Step Plan request, received ${proxiedStepFunCalls}`)
+            }
+
+            console.log('ONLINE_STEPFUN_FAST_SEND: PASS')
+            await context.close()
+          } finally {
+            await browser.close()
+          }
+          NODE
+
+      - name: Verify deployed revision remained stable
+        run: |
+          set -Eeuo pipefail
+          bash scripts/verify/production-sha.sh \
+            "$BASE_URL" "$EXPECTED_SHA" "online-after-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
