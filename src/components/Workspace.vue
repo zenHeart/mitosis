@@ -1314,7 +1314,7 @@ function handleNewChat() {
         :is-owner="isOwner"
         :thinking="thinking"
         :building="building"
-        @send="handleSend"
+        @send="handleSend($event)"
         @images="(files) => { pendingImages = files }"
       />
     </main>
