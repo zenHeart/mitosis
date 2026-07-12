@@ -16,8 +16,12 @@ if grep -rniE "(ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_
 else note "PASS"; fi
 
 echo "== 2. CI Owner 门控未被破坏 =="
-if grep -qE '\$\{\{\s*github\.event\.(issue|comment)\.user\.login|\$ACTOR.*\$REPO_OWNER' .github/workflows/mitosis.yml 2>/dev/null; then
-  note "PASS"; else note "FAIL: mitosis.yml owner 门控缺失"; FAIL=1; fi
+if grep -qF 'github.actor == github.repository_owner' .github/workflows/mitosis.yml 2>/dev/null &&
+   grep -qF "authorized = body.strip == '/create'" .github/workflows/mitosis.yml 2>/dev/null; then
+  note "PASS"
+else
+  note "FAIL: mitosis.yml 缺少仓库 Owner 门控或精确 /create 命令校验"; FAIL=1
+fi
 
 echo "== 3. DOMPurify ALLOWED_ATTR 白名单内无 on* 事件 =="
 # 仅提取 ALLOWED_ATTR = [...] 数组本体，避免误伤同文件的 FORBID_ATTR
