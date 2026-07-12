@@ -32,6 +32,7 @@ REQUIRED_APP_FILES = %w[
   src/App.vue
   src/assets/main.css
 ].freeze
+APP_PRODUCT_FILES = %w[src/App.vue src/assets/main.css].freeze
 
 def fail!(message)
   warn(message)
@@ -96,7 +97,146 @@ def metadata!(path)
   assert_sha!(metadata['base_sha'], 'base SHA')
   fail!('Invalid issue number.') unless metadata['issue_number'].is_a?(Integer) && metadata['issue_number'].positive?
   fail!('Invalid request kind.') unless %w[platform app].include?(metadata['kind'])
+  if metadata['kind'] == 'app'
+    fail!('Invalid app name.') unless APP_NAME.match?(metadata['app_name'].to_s)
+    fail!('Invalid app version.') unless metadata['version'].to_s.match?(/\Av\d+\z/)
+    expected_target = "apps/#{metadata['app_name']}/#{metadata['version']}/"
+    fail!('Invalid app target prefix.') unless metadata['target_prefix'] == expected_target
+  end
+  if metadata.key?('source_prefix')
+    expected_source = %r{\Aapps/#{Regexp.escape(metadata['app_name'].to_s)}/v\d+/\z}
+    fail!('Invalid app source prefix.') unless metadata['kind'] == 'app' && metadata['source_prefix'].match?(expected_source)
+    fail!('App source and target must differ.') if metadata['source_prefix'] == metadata['target_prefix']
+  end
   metadata
+end
+
+def canonical_app_package(workspace, metadata)
+  root_package = read_json(File.join(workspace, 'package.json'))
+  dependencies = { 'vue' => root_package.dig('dependencies', 'vue') }
+  dev_dependencies = %w[@vitejs/plugin-vue typescript vite vue-tsc].to_h do |name|
+    [name, root_package.dig('devDependencies', name)]
+  end
+  fail!('Trusted root app dependencies are incomplete.') if (dependencies.values + dev_dependencies.values).any?(&:nil?)
+
+  JSON.pretty_generate(
+    {
+      'name' => "#{metadata['app_name']}-#{metadata['version']}",
+      'version' => "#{metadata['version'].delete_prefix('v')}.0.0",
+      'private' => true,
+      'type' => 'module',
+      'scripts' => {
+        'dev' => 'vite',
+        'build' => 'vue-tsc -b && vite build',
+        'preview' => 'vite preview'
+      },
+      'dependencies' => dependencies,
+      'devDependencies' => dev_dependencies
+    }
+  ) + "\n"
+end
+
+def new_app_scaffold(workspace, metadata)
+  app_name = metadata['app_name']
+  {
+    'index.html' => <<~HTML,
+      <!doctype html>
+      <html lang="zh-CN">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>#{app_name}</title>
+        </head>
+        <body>
+          <div id="app"></div>
+          <script type="module" src="/src/main.ts"></script>
+        </body>
+      </html>
+    HTML
+    'vite.config.ts' => <<~TYPESCRIPT,
+      import { defineConfig } from 'vite'
+      import vue from '@vitejs/plugin-vue'
+
+      export default defineConfig({
+        plugins: [vue()],
+        base: './',
+      })
+    TYPESCRIPT
+    'tsconfig.json' => JSON.pretty_generate(
+      {
+        'compilerOptions' => {
+          'target' => 'ES2022',
+          'useDefineForClassFields' => true,
+          'module' => 'ESNext',
+          'lib' => ['ES2022', 'DOM', 'DOM.Iterable'],
+          'skipLibCheck' => true,
+          'moduleResolution' => 'bundler',
+          'allowImportingTsExtensions' => true,
+          'isolatedModules' => true,
+          'moduleDetection' => 'force',
+          'noEmit' => true,
+          'strict' => true,
+          'noUnusedLocals' => true,
+          'noUnusedParameters' => true,
+          'forceConsistentCasingInFileNames' => true
+        },
+        'include' => ['src/**/*.ts', 'src/**/*.vue']
+      }
+    ) + "\n",
+    'package.json' => canonical_app_package(workspace, metadata),
+    'src/main.ts' => <<~TYPESCRIPT,
+      import { createApp } from 'vue'
+      import App from './App.vue'
+      import './assets/main.css'
+
+      createApp(App).mount('#app')
+    TYPESCRIPT
+    'src/App.vue' => <<~VUE,
+      <template>
+        <main class="app-shell">
+          <h1>#{app_name}</h1>
+        </main>
+      </template>
+    VUE
+    'src/assets/main.css' => <<~CSS
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body,
+      #app {
+        min-height: 100%;
+        margin: 0;
+      }
+
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+    CSS
+  }
+end
+
+def app_baseline_files(workspace, metadata)
+  return new_app_scaffold(workspace, metadata) unless metadata['source_prefix']
+
+  source_root = File.join(workspace, metadata['source_prefix'])
+  fail!('App iteration source is missing.') unless File.directory?(source_root)
+  REQUIRED_APP_FILES.to_h do |relative|
+    source = File.join(source_root, relative)
+    fail!("App iteration source is missing #{relative}.") unless File.file?(source)
+    fail!("App iteration source #{relative} is a symlink.") if File.lstat(source).symlink?
+    content = relative == 'package.json' ? canonical_app_package(workspace, metadata) : File.binread(source)
+    [relative, content]
+  end
 end
 
 def ensure_no_symlinks!(path)
@@ -229,6 +369,12 @@ def grant(argv)
     ensure_no_symlinks!(apps_root)
     fail!('App target must be new.') if File.exist?(target)
     FileUtils.mkdir_p(target, mode: 0o755)
+    app_baseline_files(workspace, metadata).each do |relative, content|
+      destination = File.join(target, relative)
+      FileUtils.mkdir_p(File.dirname(destination), mode: 0o755)
+      File.open(destination, File::WRONLY | File::CREAT | File::TRUNC, 0o644) { |file| file.write(content) }
+      FileUtils.chmod(0o644, destination)
+    end
     FileUtils.chown_R(options['user'], options['group'], target)
   end
 end
@@ -328,6 +474,20 @@ def validate_app_package!(workspace, metadata)
   fail!('Generated app devDependencies are not pinned to the trusted root set.') unless package.fetch('devDependencies', {}) == allowed_dev_dependencies
 end
 
+def validate_app_agent_change!(workspace, metadata)
+  target = File.join(workspace, metadata['target_prefix'])
+  baseline = app_baseline_files(workspace, metadata)
+  changed_product_file = APP_PRODUCT_FILES.any? do |relative|
+    content = baseline.fetch(relative)
+    File.binread(File.join(target, relative)) != content
+  end
+  target_files = Dir.glob(File.join(target, '**', '*'), File::FNM_DOTMATCH)
+                    .select { |path| File.file?(path) }
+                    .map { |path| Pathname.new(path).relative_path_from(Pathname.new(target)).to_s }
+  added_product_file = (target_files - baseline.keys).any? { |relative| relative.start_with?('src/') }
+  fail!('Agent did not make a product change beyond the trusted app scaffold.') unless changed_product_file || added_product_file
+end
+
 def validate_paths!(workspace, base_sha, metadata, paths)
   fail!('Candidate made no changes.') if paths.empty?
   paths.each do |path|
@@ -352,7 +512,10 @@ def validate_paths!(workspace, base_sha, metadata, paths)
     fail!('Binary candidate files are forbidden.') if bytes.include?("\0") || !bytes.dup.force_encoding(Encoding::UTF_8).valid_encoding?
   end
 
-  validate_app_package!(workspace, metadata) if metadata['kind'] == 'app'
+  if metadata['kind'] == 'app'
+    validate_app_package!(workspace, metadata)
+    validate_app_agent_change!(workspace, metadata)
+  end
 end
 
 def added_lines(patch)

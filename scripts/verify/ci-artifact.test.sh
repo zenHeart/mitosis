@@ -7,9 +7,15 @@ TMP_ROOT=$(mktemp -d)
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
 WORKSPACE="$TMP_ROOT/workspace"
-mkdir -p "$WORKSPACE/apps/tetris-game/v3"
-printf '{}\n' > "$WORKSPACE/package.json"
-printf '<template>v3</template>\n' > "$WORKSPACE/apps/tetris-game/v3/App.vue"
+mkdir -p "$WORKSPACE/apps/tetris-game/v3/src/assets"
+printf '%s\n' '{"dependencies":{"vue":"^3.5.0"},"devDependencies":{"@vitejs/plugin-vue":"^5.2.0","typescript":"~5.7.0","vite":"^6.0.0","vue-tsc":"^2.2.0"}}' > "$WORKSPACE/package.json"
+printf '<div id="app"></div>\n' > "$WORKSPACE/apps/tetris-game/v3/index.html"
+printf 'export default {}\n' > "$WORKSPACE/apps/tetris-game/v3/vite.config.ts"
+printf '{}\n' > "$WORKSPACE/apps/tetris-game/v3/tsconfig.json"
+printf '%s\n' '{"private":true,"scripts":{"dev":"vite","build":"vue-tsc -b && vite build","preview":"vite preview","typecheck":"vue-tsc -b --noEmit"}}' > "$WORKSPACE/apps/tetris-game/v3/package.json"
+printf 'export {}\n' > "$WORKSPACE/apps/tetris-game/v3/src/main.ts"
+printf '<template>v3</template>\n' > "$WORKSPACE/apps/tetris-game/v3/src/App.vue"
+printf ':root {}\n' > "$WORKSPACE/apps/tetris-game/v3/src/assets/main.css"
 
 git -C "$WORKSPACE" init -q -b master
 git -C "$WORKSPACE" add -A
@@ -38,6 +44,88 @@ ruby -rjson -e '
   abort "wrong target" unless metadata.fetch("target_prefix") == "apps/tetris-game/v4/"
   abort "missing source" unless metadata.fetch("source_prefix") == "apps/tetris-game/v3/"
 ' "$METADATA"
+
+ruby "$ROOT/worker/ci-artifact.rb" grant \
+  --workspace "$WORKSPACE" \
+  --metadata "$METADATA" \
+  --user "$(id -un)" \
+  --group "$(id -gn)"
+for relative in index.html vite.config.ts tsconfig.json src/main.ts src/App.vue src/assets/main.css; do
+  cmp "$WORKSPACE/apps/tetris-game/v3/$relative" "$WORKSPACE/apps/tetris-game/v4/$relative"
+done
+ruby -rjson -e '
+  package = JSON.parse(File.read(ARGV.fetch(0)))
+  abort "non-canonical scripts" unless package.fetch("scripts").keys.sort == %w[build dev preview]
+  abort "wrong version" unless package.fetch("version") == "4.0.0"
+' "$WORKSPACE/apps/tetris-game/v4/package.json"
+
+expect_package_failure() {
+  local workspace=$1
+  local base_sha=$2
+  local metadata=$3
+  local output_dir=$4
+  if ruby "$ROOT/worker/ci-artifact.rb" package \
+    --workspace "$workspace" \
+    --base-sha "$base_sha" \
+    --metadata "$metadata" \
+    --run-id 1 \
+    --run-attempt 1 \
+    --output-dir "$output_dir" >/dev/null 2>&1; then
+    echo 'CI_ARTIFACT_TEST: FAIL — accepted an unchanged trusted scaffold' >&2
+    exit 1
+  fi
+}
+
+expect_package_failure "$WORKSPACE" "$BASE_SHA" "$METADATA" "$TMP_ROOT/unchanged-iteration"
+printf '<template><p>Press P to pause</p></template>\n' > "$WORKSPACE/apps/tetris-game/v4/src/App.vue"
+ruby "$ROOT/worker/ci-artifact.rb" package \
+  --workspace "$WORKSPACE" \
+  --base-sha "$BASE_SHA" \
+  --metadata "$METADATA" \
+  --run-id 1 \
+  --run-attempt 1 \
+  --output-dir "$TMP_ROOT/changed-iteration"
+
+CREATE_WORKSPACE="$TMP_ROOT/create-workspace"
+mkdir -p "$CREATE_WORKSPACE/apps"
+cp "$WORKSPACE/package.json" "$CREATE_WORKSPACE/package.json"
+touch "$CREATE_WORKSPACE/apps/.gitkeep"
+git -C "$CREATE_WORKSPACE" init -q -b master
+git -C "$CREATE_WORKSPACE" add -A
+git -C "$CREATE_WORKSPACE" -c user.name=test -c user.email=test.invalid commit -qm base
+CREATE_BASE_SHA=$(git -C "$CREATE_WORKSPACE" rev-parse HEAD)
+CREATE_ISSUE_JSON="$TMP_ROOT/create-issue.json"
+CREATE_METADATA="$TMP_ROOT/create-metadata.json"
+printf '%s\n' \
+  '{"number":39,"state":"open","title":"build todo","body":"create a useful todo app","labels":[{"name":"app/mvp-validation-todo"}]}' \
+  > "$CREATE_ISSUE_JSON"
+ruby "$ROOT/worker/ci-artifact.rb" prepare \
+  --workspace "$CREATE_WORKSPACE" \
+  --base-sha "$CREATE_BASE_SHA" \
+  --base-branch master \
+  --repository zenHeart/mitosis \
+  --issue-number 39 \
+  --issue-json "$CREATE_ISSUE_JSON" \
+  --metadata "$CREATE_METADATA" \
+  --plan-prompt "$TMP_ROOT/create-plan-prompt.txt"
+ruby "$ROOT/worker/ci-artifact.rb" grant \
+  --workspace "$CREATE_WORKSPACE" \
+  --metadata "$CREATE_METADATA" \
+  --user "$(id -un)" \
+  --group "$(id -gn)"
+for relative in index.html vite.config.ts tsconfig.json package.json src/main.ts src/App.vue src/assets/main.css; do
+  test -f "$CREATE_WORKSPACE/apps/mvp-validation-todo/v0/$relative"
+done
+expect_package_failure "$CREATE_WORKSPACE" "$CREATE_BASE_SHA" "$CREATE_METADATA" "$TMP_ROOT/unchanged-creation"
+printf '<template><main><h1>Todo</h1><button>Add task</button></main></template>\n' \
+  > "$CREATE_WORKSPACE/apps/mvp-validation-todo/v0/src/App.vue"
+ruby "$ROOT/worker/ci-artifact.rb" package \
+  --workspace "$CREATE_WORKSPACE" \
+  --base-sha "$CREATE_BASE_SHA" \
+  --metadata "$CREATE_METADATA" \
+  --run-id 2 \
+  --run-attempt 1 \
+  --output-dir "$TMP_ROOT/changed-creation"
 
 PLAN_RESULT="$TMP_ROOT/plan-result.json"
 PLAN="$TMP_ROOT/plan.json"
