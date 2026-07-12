@@ -857,7 +857,9 @@ watch(dropInterval, () => {
 }
 
 .mitosis-btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: 8px 20px;
   font-size: 0.85rem;
   background: transparent;
