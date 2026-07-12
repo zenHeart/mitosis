@@ -284,6 +284,11 @@ jobs:
           then
             echo 'StepPlan decomposition failed; sanitized provider diagnostics:' >&2
             sed -E 's/(sk-[A-Za-z0-9_-]+|Bearer[[:space:]]+[A-Za-z0-9._-]+)/[REDACTED]/g' "$RUNNER_TEMP/plan-stderr.log" >&2 || true
+            if [[ -s "$RUNNER_TEMP/plan-result.json" ]]; then
+              echo 'Claude structured result (sanitized):' >&2
+              sed -E 's/(sk-[A-Za-z0-9_-]+|Bearer[[:space:]]+[A-Za-z0-9._-]+)/[REDACTED]/g' "$RUNNER_TEMP/plan-result.json" | head -c 4000 >&2 || true
+              printf '\n' >&2
+            fi
             exit 1
           fi
 
