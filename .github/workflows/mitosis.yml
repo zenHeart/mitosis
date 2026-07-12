@@ -353,6 +353,11 @@ jobs:
             exit 1
           fi
 
+          if [[ -s "$RUNNER_TEMP/execution-result.json" ]]; then
+            echo 'Claude execution metadata:'
+            jq -c '{type,subtype,is_error,num_turns,stop_reason,permission_denials,terminal_reason}' "$RUNNER_TEMP/execution-result.json" || true
+          fi
+
           sudo ruby /opt/mitosis-ci/ci-artifact.rb assert-result \
             --result "$RUNNER_TEMP/execution-result.json"
           rm -f "$RUNNER_TEMP/execution-result.json" "$RUNNER_TEMP/execution-stderr.log"
