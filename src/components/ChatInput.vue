@@ -180,6 +180,7 @@ function removeImage(index: number) {
           :disabled="!canSend"
           :title="sendTitle"
           aria-label="发送"
+          aria-keyshortcuts="Enter"
         >
           <span v-if="thinking" class="spinner"></span>
           <Send v-else :size="18" stroke-width="2.5" />
