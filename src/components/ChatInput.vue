@@ -36,16 +36,9 @@ watch(() => props.modelValue, (newVal) => {
   }
 })
 
-// 防抖同步到父组件：减少 Workspace 的 re-render 频率
-let debounceTimer: ReturnType<typeof setTimeout> | null = null
-const DEBOUNCE_MS = 150
-
+// 输入值即时同步到父组件，确保点击发送时父组件不会读到过期内容。
 watch(localInput, (val) => {
-  if (debounceTimer) clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => {
-    emit('update:modelValue', val)
-    debounceTimer = null
-  }, DEBOUNCE_MS)
+  emit('update:modelValue', val)
   // 同步调整 textarea 高度
   nextTick(autoResize)
 })
