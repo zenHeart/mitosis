@@ -24,6 +24,40 @@ else
   FAIL=1
 fi
 
+echo "== 0c. Claude CI 保留受限文件工具且不降级写入模式 =="
+SAFE_MODE_COUNT=$(grep -c -- '--safe-mode' .github/workflows/mitosis.yml 2>/dev/null || true)
+if [ "$SAFE_MODE_COUNT" = "2" ] &&
+   ! grep -q -- '--bare' .github/workflows/mitosis.yml 2>/dev/null &&
+   grep -qF '"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "0"' .github/claude-ci-settings.json 2>/dev/null &&
+   [ "$(grep -cF -- '--permission-mode dontAsk' .github/workflows/mitosis.yml 2>/dev/null || true)" = "1" ] &&
+   [ "$(grep -cF -- '--permission-mode acceptEdits' .github/workflows/mitosis.yml 2>/dev/null || true)" = "1" ] &&
+   [ "$(grep -cF -- '--tools "Read,Glob,Grep"' .github/workflows/mitosis.yml 2>/dev/null || true)" = "1" ] &&
+   [ "$(grep -cF -- '--allowedTools "Read,Glob,Grep"' .github/workflows/mitosis.yml 2>/dev/null || true)" = "1" ] &&
+   [ "$(grep -cF -- '--tools "Read,Write,Edit,Glob,Grep"' .github/workflows/mitosis.yml 2>/dev/null || true)" = "1" ] &&
+   [ "$(grep -cF -- '--allowedTools "Read,Write,Edit,Glob,Grep"' .github/workflows/mitosis.yml 2>/dev/null || true)" = "1" ] &&
+   [ "$(grep -cF -- '--disallowed-tools "Bash,WebFetch,WebSearch,Task,Agent,Skill,NotebookEdit"' .github/workflows/mitosis.yml 2>/dev/null || true)" = "2" ]; then
+  note "PASS"
+else
+  note "FAIL: Claude CI 工具集、禁止项或写入权限模式发生漂移"
+  FAIL=1
+fi
+
+echo "== 0d. 候选元数据与失败关闭契约离线测试 =="
+if bash scripts/verify/ci-artifact.test.sh; then
+  note "PASS"
+else
+  note "FAIL: 候选元数据或 Claude 结果门控存在回归"
+  FAIL=1
+fi
+
+echo "== 0e. Claude 事件日志隐私负向测试 =="
+if bash scripts/verify/claude-stream-log.test.sh; then
+  note "PASS"
+else
+  note "FAIL: Claude 日志可能泄露 Issue、模型文本或工具输入"
+  FAIL=1
+fi
+
 echo "== 1. 无硬编码 token/secret（仅扫描发往浏览器的 app 代码）=="
 # 仅扫 src/ 与 worker/src/（真正会打包/运行的代码）；排除文档与 detection 脚本本身
 if grep -rniE "(ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})" \
