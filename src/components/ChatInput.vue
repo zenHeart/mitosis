@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Image, Send } from '@lucide/vue'
 
 const props = defineProps<{
@@ -7,18 +7,25 @@ const props = defineProps<{
   thinking: boolean
   building: boolean
   modelValue: string
+  disabled?: boolean
+  disabledMessage?: string
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
-  (e: 'send', value: string): void
-  (e: 'images', files: { dataUrl: string; name: string }[]): void
+  (e: 'send', value: { text: string; images: { dataUrl: string; name: string }[] }): void
 }>()
 
 // ── 优化：本地 ref 替代 v-model，减少父组件不必要的 re-render ──
 const localInput = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
-const images = ref<{ dataUrl: string; name: string }[]>([])
+interface PendingImage {
+  dataUrl: string
+  name: string
+  previewUrl: string
+}
+
+const images = ref<PendingImage[]>([])
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const imageError = ref('')
 
@@ -54,6 +61,7 @@ function autoResize() {
 // 基于本地 ref 计算发送按钮状态（即时响应，不等待 debounce）
 const sendTitle = computed(() => {
   if (!props.isOwner) return '仅仓库所有者可使用'
+  if (props.disabled) return props.disabledMessage || '当前无法发送'
   if (props.thinking) return 'AI 思考中...'
   if (props.building) return '构建中，请稍候...'
   if (!localInput.value.trim() && images.value.length === 0) return '请输入内容或添加图片'
@@ -61,17 +69,25 @@ const sendTitle = computed(() => {
 })
 
 const canSend = computed(() => {
-  if (!props.isOwner || props.thinking || props.building) return false
+  if (!props.isOwner || props.disabled || props.thinking || props.building) return false
   return localInput.value.trim().length > 0 || images.value.length > 0
 })
 
 function handleSend() {
-  if (!props.isOwner || props.thinking || props.building) return
+  if (!canSend.value) return
   imageError.value = ''
-  emit('images', images.value)
-  emit('send', localInput.value)
-  images.value = [] // 发送后清空图片
+  emit('send', { text: localInput.value, images: images.value.map(image => ({ ...image })) })
 }
+
+function clearImages() {
+  for (const image of images.value) URL.revokeObjectURL(image.previewUrl)
+  images.value = []
+  imageError.value = ''
+}
+
+defineExpose({ clearImages })
+
+onBeforeUnmount(clearImages)
 
 function triggerFileSelect() {
   fileInputRef.value?.click()
@@ -91,7 +107,8 @@ async function onPaste(e: ClipboardEvent) {
   const imageFiles: File[] = []
   for (const item of items) {
     if (item.type.startsWith('image/')) {
-      imageFiles.push(item.getAsFile()!)
+      const file = item.getAsFile()
+      if (file) imageFiles.push(file)
     }
   }
   if (imageFiles.length > 0) {
@@ -104,19 +121,42 @@ async function addImageFiles(files: FileList | File[]) {
   imageError.value = ''
   const MAX_IMAGES = 4
   const MAX_SIZE_MB = 2
-  const oversized: string[] = []
+  let oversized = 0
+  let unsupported = 0
+  let unreadable = 0
+  const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
+  const extensions: Record<string, string> = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+  }
   for (const file of Array.from(files)) {
     if (images.value.length >= MAX_IMAGES) break
-    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-      oversized.push(file.name)
+    if (!allowedTypes.has(file.type)) {
+      unsupported += 1
       continue
     }
-    const dataUrl = await readFileAsDataURL(file)
-    images.value.push({ dataUrl, name: file.name })
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      oversized += 1
+      continue
+    }
+    try {
+      const dataUrl = await readFileAsDataURL(file)
+      images.value.push({
+        dataUrl,
+        name: `attachment-${images.value.length + 1}.${extensions[file.type]}`,
+        previewUrl: URL.createObjectURL(file),
+      })
+    } catch {
+      unreadable += 1
+    }
   }
-  if (oversized.length > 0) {
-    imageError.value = `图片 ${oversized.join('、')} 超过 ${MAX_SIZE_MB}MB 限制，请压缩后重试。`
-  }
+  const errors = []
+  if (oversized) errors.push(`${oversized} 张图片超过 ${MAX_SIZE_MB}MB`)
+  if (unsupported) errors.push(`${unsupported} 张图片格式不支持`)
+  if (unreadable) errors.push(`${unreadable} 张图片读取失败`)
+  if (errors.length) imageError.value = `${errors.join('；')}。请使用 PNG、JPG、WebP 或 GIF。`
 }
 
 function readFileAsDataURL(file: File): Promise<string> {
@@ -129,62 +169,68 @@ function readFileAsDataURL(file: File): Promise<string> {
 }
 
 function removeImage(index: number) {
-  images.value.splice(index, 1)
+  const [removed] = images.value.splice(index, 1)
+  if (removed) URL.revokeObjectURL(removed.previewUrl)
 }
 </script>
 
 <template>
   <div class="input-area">
     <div v-if="isOwner" class="input-wrapper">
+      <div v-if="disabledMessage" class="input-disabled-message" role="note">{{ disabledMessage }}</div>
       <!-- 图片预览区 -->
       <div v-if="images.length" class="image-preview-bar">
-        <div v-for="(img, i) in images" :key="i" class="image-preview-item">
-          <img :src="img.dataUrl" :alt="img.name" class="preview-thumb" />
+        <div v-for="(img, i) in images" :key="img.previewUrl" class="image-preview-item">
+          <img :src="img.previewUrl" :alt="`附件 ${i + 1} 预览`" class="preview-thumb" />
           <button class="remove-img-btn" @click="removeImage(i)" title="移除图片" aria-label="移除图片">✕</button>
         </div>
       </div>
-      <div v-if="imageError" class="image-error">{{ imageError }}</div>
+      <div v-if="imageError" class="image-error" role="alert">{{ imageError }}</div>
       <div class="cursor-glow"></div>
-      <textarea
-        ref="textareaRef"
-        v-model="localInput"
-        class="chat-input"
-        :placeholder="thinking ? 'AI 思考中...' : '描述你想构建的应用...（可粘贴/选择图片）'"
-        :disabled="thinking || building"
-        rows="1"
-        aria-label="输入消息"
-        @keydown.enter.exact.prevent="handleSend"
-        @paste="onPaste"
-        @input="autoResize"
-      />
-      <input
-        ref="fileInputRef"
-        type="file"
-        accept="image/*"
-        class="hidden-file-input"
-        @change="onFileSelected"
-      />
-      <div class="action-btns">
-        <button
-          @click="triggerFileSelect"
-          class="attach-btn"
-          :disabled="thinking || building || images.length >= 4"
-          title="添加图片（最多4张，单张≤2MB）"
-          aria-label="添加图片"
-        >
-          <Image :size="20" stroke-width="2" />
-        </button>
-        <button
-          @click="handleSend"
-          class="send-btn"
-          :disabled="!canSend"
-          :title="sendTitle"
-          aria-label="发送"
-          aria-keyshortcuts="Enter"
-        >
-          <span v-if="thinking" class="spinner"></span>
-          <Send v-else :size="18" stroke-width="2.5" />
-        </button>
+      <div class="input-row">
+        <textarea
+          ref="textareaRef"
+          v-model="localInput"
+          class="chat-input"
+          :placeholder="thinking ? 'AI 正在处理...' : '描述你想完成的事情，可附图片'"
+          :disabled="disabled || thinking || building"
+          rows="1"
+          aria-label="输入消息"
+          @keydown.enter.exact.prevent="handleSend"
+          @paste="onPaste"
+          @input="autoResize"
+        />
+        <input
+          ref="fileInputRef"
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          class="hidden-file-input"
+          multiple
+          @change="onFileSelected"
+        />
+        <div class="action-btns">
+          <button
+            @click="triggerFileSelect"
+            class="attach-btn"
+            :disabled="disabled || thinking || building || images.length >= 4"
+            title="添加图片（最多 4 张，单张不超过 2MB）"
+            :aria-label="images.length ? `添加图片，已选择 ${images.length} 张` : '添加图片'"
+          >
+            <Image :size="20" stroke-width="2" />
+            <span v-if="images.length" class="image-count" aria-hidden="true">{{ images.length }}</span>
+          </button>
+          <button
+            @click="handleSend"
+            class="send-btn"
+            :disabled="!canSend"
+            :title="sendTitle"
+            aria-label="发送"
+            aria-keyshortcuts="Enter"
+          >
+            <span v-if="thinking" class="spinner"></span>
+            <Send v-else :size="18" stroke-width="2.5" />
+          </button>
+        </div>
       </div>
     </div>
     <div v-else class="read-only-banner">
@@ -231,6 +277,16 @@ function removeImage(index: number) {
   opacity: 1;
 }
 
+.input-disabled-message {
+  margin: 0 0 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 /* 图片预览区 */
 .image-preview-bar {
   display: flex;
@@ -259,8 +315,8 @@ function removeImage(index: number) {
   position: absolute;
   top: 2px;
   right: 2px;
-  width: 20px;
-  height: 20px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: none;
   background: rgba(0, 0, 0, 0.6);
@@ -273,6 +329,7 @@ function removeImage(index: number) {
   line-height: 1;
   padding: 0;
   transition: background 0.15s;
+  touch-action: manipulation;
 }
 
 .remove-img-btn:hover {
@@ -291,10 +348,13 @@ function removeImage(index: number) {
   display: flex;
   align-items: flex-end;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 .chat-input {
   flex: 1;
+  min-width: 0;
+  min-height: 44px;
   background: transparent;
   border: none;
   color: var(--text-primary);
@@ -320,6 +380,7 @@ function removeImage(index: number) {
 }
 
 .attach-btn {
+  position: relative;
   width: 44px;
   height: 44px;
   border-radius: 10px;
@@ -332,6 +393,24 @@ function removeImage(index: number) {
   justify-content: center;
   transition: background 0.15s, color 0.15s;
   flex-shrink: 0;
+}
+
+.image-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--bg-secondary);
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .attach-btn:hover:not(:disabled) {
@@ -410,5 +489,22 @@ function removeImage(index: number) {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@media (pointer: coarse) {
+  .remove-img-btn {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 </style>

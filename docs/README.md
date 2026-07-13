@@ -9,7 +9,7 @@
 | 1 | [product/overview.md](product/overview.md) | 产品目标、MVP 范围、自举闭环 |
 | 2 | [architecture.md](architecture.md) | 代码结构、数据流、技术架构 |
 | 3 | [setup.md](setup.md) | GitHub OAuth、StepFun、Cloudflare Worker 配置 |
-| 4 | [agent-loop.md](agent-loop.md) | CI Agent Loop 和 `--bare` 执行路径 |
+| 4 | [agent-loop.md](agent-loop.md) | 单次 Plan/Execute、候选 artifact、独立 verifier 和人工发布闸门 |
 | 5 | [quality.md](quality.md) | P1/P2/P3/F 质量标准和验收门控 |
 | 6 | [security.md](security.md) | 密钥、敏感信息和本地文件规则 |
 | 7 | [decisions.md](decisions.md) | ADR 决策记录 |

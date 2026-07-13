@@ -20,17 +20,6 @@ const createStorage = () => ({
 Object.defineProperty(globalThis, 'sessionStorage', { value: createStorage(), writable: true })
 Object.defineProperty(globalThis, 'localStorage', { value: createStorage(), writable: true })
 
-// ─── Window mock ────────────────────────────────────────────
-Object.defineProperty(globalThis, 'window', {
-  value: {
-    location: {
-      origin: 'https://mitosis.zenheart.site',
-      href: 'https://mitosis.zenheart.site/',
-    },
-  },
-  writable: true,
-})
-
 // ─── Per-test cleanup ──────────────────────────────────────
 beforeEach(() => {
   store.clear()

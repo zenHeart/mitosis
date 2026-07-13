@@ -6,9 +6,30 @@ const MAX_RETRIES = 1
 const RETRY_BASE_DELAY = 1000
 export const STEP_PLAN_CHAT_COMPLETIONS_URL = 'https://api.stepfun.com/step_plan/v1/chat/completions'
 
-export interface StepFunMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string
+export type StepFunUserContent = string | Array<
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail: 'low' | 'high' } }
+>
+
+export type StepFunMessage =
+  | { role: 'system' | 'assistant'; content: string }
+  | { role: 'user'; content: StepFunUserContent }
+
+export interface StepFunImageInput {
+  dataUrl: string
+  name: string
+}
+
+/** Build an official OpenAI-compatible multipart user message without persisting image bytes. */
+export function buildStepFunUserContent(text: string, images: StepFunImageInput[]): StepFunUserContent {
+  if (images.length === 0) return text
+  return [
+    { type: 'text', text },
+    ...images.map(image => ({
+      type: 'image_url' as const,
+      image_url: { url: image.dataUrl, detail: 'low' as const },
+    })),
+  ]
 }
 
 export interface StepFunOptions {
@@ -171,20 +192,8 @@ async function callStepFun(
   )
 
   if (!res.ok) {
-    const errText = await res.text()
-    let errMsg = `StepFun API error: ${res.status}`
-    try {
-      const errJson = JSON.parse(errText)
-      if (errJson.error?.message) {
-        // 保留状态码前缀，确保 formatStepFunError 能通过 /401/ 等模式识别鉴权错误
-        errMsg = `${res.status} — ${errJson.error.message}`
-      } else {
-        errMsg = `${errMsg} — ${errText.slice(0, 200)}`
-      }
-    } catch {
-      errMsg = `${errMsg} — ${errText.slice(0, 200)}`
-    }
-    throw new Error(errMsg)
+    await res.text()
+    throw new Error(`StepFun API error: ${res.status}`)
   }
 
   const data: StepFunResponse = await res.json()
@@ -260,17 +269,8 @@ export async function generateImage(
   )
 
   if (!res.ok) {
-    const errText = await res.text()
-    let errMsg = `Image API error: ${res.status}`
-    try {
-      const errJson = JSON.parse(errText)
-      if (errJson.error?.message) {
-        errMsg = `${res.status} — ${errJson.error.message}`
-      }
-    } catch {
-      errMsg = `${errMsg} — ${errText.slice(0, 200)}`
-    }
-    throw new Error(errMsg)
+    await res.text()
+    throw new Error(`Image API error: ${res.status}`)
   }
 
   const data = await res.json()

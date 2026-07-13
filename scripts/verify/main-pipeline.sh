@@ -92,13 +92,17 @@ if printf '%s' "$ALLOWED_BLOCK" | grep -qiE "on(click|error|load|mouse|focus|blu
 else note "PASS"; fi
 
 echo "== 3b. 前端创建 Issue 后自动评论 /create 触发 CI =="
-# 验证 Workspace.vue 中 createBuild/createPlatformBuild 在 createIssue 之后调用 createIssueComment('/create')
-if grep -qE "createIssueComment\(.*,\s*'/create'\)" src/components/Workspace.vue 2>/dev/null; then
-  # 进一步验证调用的位置在 createIssue 之后（同函数内）
-  if awk '/createIssue\(/,/\}$/' src/components/Workspace.vue 2>/dev/null | grep -q "createIssueComment"; then
-    note "PASS"; else note "FAIL: createIssueComment 未在 createIssue 后调用"; FAIL=1; fi
+# 对每条 Issue 创建路径逐一断言后续存在对应触发；兼容 macOS 自带 Bash 3。
+if ruby -e '
+  lines = File.readlines(ARGV.fetch(0))
+  creates = lines.each_index.select { |index| lines[index].include?("const issue = await createIssue(") }
+  triggers = lines.each_index.select { |index| lines[index].include?("await createIssueComment(token, repo.value, issue.number, '\''/create'\'')") }
+  valid = !creates.empty? && creates.length == triggers.length && creates.zip(triggers).all? { |create, trigger| trigger > create }
+  exit(valid ? 0 : 1)
+' src/components/Workspace.vue; then
+  note "PASS"
 else
-  note "FAIL: Workspace.vue 缺少 createIssueComment('/create') 调用"; FAIL=1
+  note "FAIL: createIssue 与自动 /create 触发路径数量或顺序不一致"; FAIL=1
 fi
 
 echo "== 4. 消息渲染经过 sanitize =="

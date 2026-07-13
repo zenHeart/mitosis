@@ -205,6 +205,13 @@ export const useSessionStore = defineStore('session', {
           getIssue(token, repo, issueNumber),
           getIssueComments(token, repo, issueNumber),
         ])
+        if (this.activeSession?.issueNumber !== issueNumber) return false
+        const active = this.sessions.find(session => session.issueNumber === issueNumber)
+        if (active) {
+          active.labels = issue.labels.map(label => label.name)
+          active.status = issue.state
+          active.updatedAt = new Date().toISOString()
+        }
         const msgs: Message[] = []
         // Issue body 作为第一条消息（需求描述/AI 分析等上下文）
         if (issue.body) {
@@ -216,8 +223,9 @@ export const useSessionStore = defineStore('session', {
             sanitized: true,
           })
         }
-        // Comments 作为后续消息
-        msgs.push(...comments.map((c) => ({
+        // 内部控制评论只用于触发工作流，不是用户聊天内容。
+        const visibleComments = comments.filter(c => !/^\/(?:create|start|stop|status)\s*$/i.test(c.body.trim()))
+        msgs.push(...visibleComments.map((c) => ({
           id: `msg-${c.id}`,
           role: 'user' as const,
           content: markdownToHtml(c.body),
@@ -230,11 +238,14 @@ export const useSessionStore = defineStore('session', {
         if (session) {
           session.messageCount = this.messages.length
         }
+        return true
       } catch (e) {
+        if (this.activeSession?.issueNumber !== issueNumber) return false
         this.error = e instanceof Error ? e.message : 'Failed to load messages'
         this.messages = []
+        return false
       } finally {
-        this.loading = false
+        if (this.activeSession?.issueNumber === issueNumber) this.loading = false
       }
     },
 
@@ -290,10 +301,10 @@ export const useSessionStore = defineStore('session', {
       const labels = session.labels || []
       if (labels.includes('status:cancelled')) return '已停止'
       if (labels.includes('status:failed')) return '构建失败'
+      if (session.status === 'closed') return '已关闭'
       if (labels.includes('status:review')) return '等待审查'
       if (labels.includes('status:verifying')) return '验证中'
       if (labels.includes('status:building')) return '构建中'
-      if (session.status === 'closed') return '已关闭'
       return '进行中'
     },
 

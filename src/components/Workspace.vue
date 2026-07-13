@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useSessionStore } from '../stores/session'
 import { usePolling } from '../composables/usePolling'
-import { chatWithStepFun, formatStepFunError, generateImage, buildLogoPrompt } from '../composables/useStepFun'
+import {
+  chatWithStepFun,
+  formatStepFunError,
+  type StepFunImageInput,
+  type StepFunMessage,
+} from '../composables/useStepFun'
 import { getSystemPrompt } from '../composables/useSystemPrompts'
-import { sanitize } from '../composables/useSanitize'
+import { markdownToHtml, sanitize } from '../composables/useSanitize'
 import { detectCreateCommand, detectStatusCommand, detectStopCommand, detectStartCommand } from '../composables/useMockGitHub'
 import { smartTriage, type TriageResult } from '../composables/useTriage'
 import { createIssue, createIssueComment, getIssue, updateIssue, getLatestAppVersion } from '../composables/useGitHubAPI'
@@ -31,17 +36,48 @@ const inputText = ref('')
 const building = ref(false)
 const activeIssue = ref<BuildIssue | null>(null)
 const buildProgress = ref<{ step: number; label: string; issueNumber?: number } | null>(null)
+const pollingPaused = ref(false)
+const failedTriggerIssueNumber = ref<number | null>(null)
 const thinking = ref(false)
 const stepToken = ref('')
 const clarifying = ref(false)
 const clarifyingMsg = ref('')
-const triageLog = ref<string[]>([])
 const pendingBuildContext = ref('')
-const pendingImages = ref<{ dataUrl: string; name: string }[]>([])
 const lastErrorKind = ref<'quota' | 'auth' | 'network' | 'server' | 'unknown' | null>(null)
+const retryHasAttachments = ref(false)
 const confirmingPlatform = ref(false)
 const confirmingPlatformTimer = ref<ReturnType<typeof setTimeout> | null>(null)
-const triageAction = ref<'build' | 'platform' | 'chat' | 'clarify' | 'unknown'>('unknown')
+interface ChatSubmission {
+  text: string
+  images: StepFunImageInput[]
+}
+
+interface PendingTask {
+  triage: TriageResult
+  text: string
+  description: string
+  appName: string
+  imageCount: number
+}
+
+const pendingTask = ref<PendingTask | null>(null)
+const failedCreateTask = ref<PendingTask | null>(null)
+const confirmingTask = ref(false)
+const taskConfirmationRef = ref<HTMLElement | null>(null)
+const chatInputRef = ref<{ clearImages: () => void } | null>(null)
+const pendingAppNameValid = computed(() => {
+  if (!pendingTask.value || pendingTask.value.triage.scenario === 'platform') return true
+  return /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/.test(pendingTask.value.appName)
+})
+const pendingTaskLabel = computed(() => {
+  if (!pendingTask.value) return ''
+  if (pendingTask.value.triage.scenario === 'platform') return '平台优化'
+  if (pendingTask.value.triage.scenario === 'app_iterate') return '迭代应用'
+  return '创建应用'
+})
+watch(pendingTask, (task) => {
+  if (task) void nextTick(() => taskConfirmationRef.value?.focus())
+}, { flush: 'post' })
 const sidebarOpen = ref(false)
 const sessionSearch = ref('')
 const collapsedGroups = ref<Record<'quick' | 'platform' | 'apps' | 'closed', boolean>>({
@@ -50,6 +86,7 @@ const collapsedGroups = ref<Record<'quick' | 'platform' | 'apps' | 'closed', boo
   apps: false,
   closed: true,
 })
+const expandedAppGroups = ref<Record<string, boolean>>({})
 
 function toggleSessionGroup(group: keyof typeof collapsedGroups.value) {
   collapsedGroups.value[group] = !collapsedGroups.value[group]
@@ -62,6 +99,14 @@ function toggleSessionGroup(group: keyof typeof collapsedGroups.value) {
 
 function isSessionGroupCollapsed(group: keyof typeof collapsedGroups.value): boolean {
   return collapsedGroups.value[group]
+}
+
+function toggleAppGroup(appName: string) {
+  expandedAppGroups.value[appName] = !expandedAppGroups.value[appName]
+}
+
+function isAppGroupExpanded(appName: string): boolean {
+  return expandedAppGroups.value[appName] ?? false
 }
 
 // 恢复持久化的构建进度
@@ -85,7 +130,7 @@ onMounted(() => {
  * - 提取 HTTP 状态码
  * - 移除原始 JSON/API 响应体
  * - 提供用户友好的中文提示
- * - 完整错误保留在 console.error 中供调试
+ * - 不把原始 API 响应或用户内容写入 console
  */
 function formatUserError(err: unknown): string {
   const e = err instanceof Error ? err : new Error('未知错误')
@@ -118,7 +163,7 @@ function formatUserError(err: unknown): string {
 const displayMessages = computed(() =>
   sessionStore.messages.map(m => ({
     role: m.role,
-    text: m.content,
+    text: m.sanitized ? m.content : markdownToHtml(m.content),
     time: new Date(m.createdAt).toLocaleTimeString(),
   }))
 )
@@ -164,9 +209,9 @@ const quickAccessApps = computed<AppGroup[]>(() => {
     .slice(0, 5)
 })
 
-// 应用会话聚类（open only）
+// 应用会话聚类：保留进行中和已完成历史，方便按应用追溯全部迭代。
 const clusteredAppGroups = computed<AppGroup[]>(() => {
-  const appSessions = sessionStore.groupedSessions.app.filter(s => s.status !== 'closed')
+  const appSessions = sessionStore.groupedSessions.app
   const groups = new Map<string, ChatSession[]>()
   for (const s of appSessions) {
     const name = s.appLabel?.replace('app/', '') || s.title.replace(/^build:\s*/i, '').split(' ')[0] || 'unknown'
@@ -222,6 +267,7 @@ function statusClass(session: ChatSession): string {
 
 // ─── 构建进度持久化 ───────────────────────────────────────
 const BP_STORAGE_PREFIX = 'mitosis_build_progress_'
+const FAILED_TRIGGER_STORAGE_PREFIX = 'mitosis_failed_trigger_'
 
 function persistBuildProgress(progress: { step: number; label: string; issueNumber?: number } | null) {
   if (typeof window === 'undefined') return
@@ -235,6 +281,19 @@ function clearBuildProgress(issueNumber?: number) {
   if (issueNumber) {
     sessionStorage.removeItem(`${BP_STORAGE_PREFIX}${issueNumber}`)
   }
+}
+
+function persistFailedTrigger(issueNumber: number) {
+  if (typeof window !== 'undefined') localStorage.setItem(`${FAILED_TRIGGER_STORAGE_PREFIX}${issueNumber}`, '1')
+}
+
+function clearFailedTrigger(issueNumber: number) {
+  if (typeof window !== 'undefined') localStorage.removeItem(`${FAILED_TRIGGER_STORAGE_PREFIX}${issueNumber}`)
+  if (failedTriggerIssueNumber.value === issueNumber) failedTriggerIssueNumber.value = null
+}
+
+function hasPersistedFailedTrigger(issueNumber: number): boolean {
+  return typeof window !== 'undefined' && localStorage.getItem(`${FAILED_TRIGGER_STORAGE_PREFIX}${issueNumber}`) === '1'
 }
 
 function restoreBuildProgress(): { step: number; label: string; issueNumber: number } | null {
@@ -261,15 +320,18 @@ const SOURCE_LABELS: Record<string, string> = {
   keyword: '关键词', llm: 'AI 分拣', fallback: '降级',
 }
 
-function logTriage(text: string, t: TriageResult) {
-  const summary = text.length > 30 ? text.slice(0, 30) + '…' : text
-  const log = `[TRIAGE] 消息: "${summary}" | 意图: ${INTENT_LABELS[t.intent]} | 决策: ${TRIAGE_LABELS[t.action]}${t.source ? ' | 来源: ' + SOURCE_LABELS[t.source] : ''}${t.basedOn ? ' | based-on: ' + t.basedOn : ''}`
+function logTriage(t: TriageResult) {
+  const log = `[TRIAGE] 意图: ${INTENT_LABELS[t.intent]} | 决策: ${TRIAGE_LABELS[t.action]}${t.source ? ' | 来源: ' + SOURCE_LABELS[t.source] : ''}${t.basedOn ? ' | based-on: present' : ''}`
   console.log(log)
-  triageLog.value.push(log)
 }
 
 const repo = computed(() => authStore.user?.login ? userRepoFullName(authStore.user.login) : REPO_FULL_NAME)
 const isOwner = computed(() => !!authStore.user?.login && authStore.setupComplete)
+const chatInputDisabledMessage = computed(() => {
+  if (!authStore.token) return '登录状态已失效，请重新完成设置后继续。'
+  if (sessionStore.activeSession?.status === 'closed') return '此任务已结束。请新建对话后继续。'
+  return ''
+})
 
 onMounted(async () => {
   if (typeof window !== 'undefined') {
@@ -299,6 +361,7 @@ onMounted(async () => {
   if (authStore.token) {
     await sessionStore.loadSessions(authStore.token, repo.value)
   }
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 // 移动端侧边栏打开时锁定背景滚动，关闭时恢复滚动位置
@@ -317,9 +380,10 @@ watch(sidebarOpen, (open) => {
 
 onBeforeUnmount(() => {
   if (typeof document !== 'undefined') document.body.style.overflow = ''
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 
-function getConversationHistory() {
+function getConversationHistory(): StepFunMessage[] {
   return sessionStore.messages
     .filter(m => m.role === 'user' || m.role === 'assistant')
     .slice(-20)
@@ -329,34 +393,295 @@ function getConversationHistory() {
     }))
 }
 
-async function handleSend(submittedText = '') {
+function redactSensitiveText(value: string): string {
+  return value
+    .replace(/-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/gi, '[私钥已隐藏]')
+    .replace(/!\[[^\]]*\]\((?:data|blob):[^)]+\)/gi, '[图片已隐藏]')
+    .replace(/data:(?:image|audio|video)\/[a-z0-9.+-]+;base64,[a-z0-9+/=_-]+/gi, '[媒体数据已隐藏]')
+    .replace(/blob:[^\s)]+/gi, '[本地链接已隐藏]')
+    .replace(/https?:\/\/[^\s)]+/gi, '[外部链接已隐藏]')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[邮箱已隐藏]')
+    .replace(/(?<!\d)1[3-9]\d{9}(?!\d)/g, '[手机号已隐藏]')
+    .replace(/\+\d[\d(). -]{7,}\d/g, '[国际电话号码已隐藏]')
+    .replace(/((?:phone|telephone|tel|mobile)\s*[:=]\s*)\+?[\d(). -]{7,}\d/gi, '$1[电话号码已隐藏]')
+    .replace(/(?<!\d)\d{17}[\dX](?!\d)/gi, '[身份证号已隐藏]')
+    .replace(/(?<!\d)(?:\d[ -]?){16,19}(?!\d)/g, '[银行卡号已隐藏]')
+    .replace(/((?:客户姓名|客户名|联系人|姓名)\s*[:：]\s*)[^\s,，;；]{2,30}/gi, '$1[姓名已隐藏]')
+    .replace(/((?:负责人|客户|联系人|用户姓名)\s*[:：]?\s*)[赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦许何吕施张孔曹严华金魏陶姜谢邹苏潘范彭鲁韦马苗方俞任袁柳史唐薛雷贺倪罗郝安于傅齐康伍余顾孟黄萧尹姚邵汪毛米戴宋熊纪舒项董梁杜阮蓝季贾江郭梅林钟徐邱高夏蔡田樊胡霍万卢莫房程陆翁段白邓武刘龙叶黎易廖阎庄柴牛温聂曾沙关游乔]?[\u4e00-\u9fff]{2,3}/g, '$1[姓名已隐藏]')
+    .replace(/(^|[\s|,，:：;；])([赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦许何吕施张孔曹严华金魏陶姜谢邹苏潘范彭鲁韦马苗方俞任袁柳史唐薛雷贺倪罗郝安于傅齐康伍余顾孟黄萧尹姚邵汪毛米戴宋熊纪舒项董梁杜阮蓝季贾江郭梅林钟徐邱高夏蔡田樊胡霍万卢莫房程陆翁段白邓武刘龙叶黎易廖阎庄柴牛温聂曾沙关游乔][\u4e00-\u9fff]{1,2})(?=$|[\s|,，;；])/gm, '$1[姓名已隐藏]')
+    .replace(/((?:收货地址|住址|地址)\s*[:：]\s*)[^\n,，;；]{4,80}/gi, '$1[地址已隐藏]')
+    .replace(/((?:full name|customer name|client name|contact name|recipient|name)\s*[:=]\s*)[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}/g, '$1[姓名已隐藏]')
+    .replace(/((?:请问|客户|联系人)\s+)[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}(?=\s+(?:联系电话|电话|地址|phone|tel|address))/g, '$1[姓名已隐藏]')
+    .replace(/((?:my name is|i am|i'm|the user is|user is|contact is|customer is)\s+)[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}/gi, '$1[姓名已隐藏]')
+    .replace(/((?:我叫|我的名字是|联系人是|客户是)\s*)[\u4e00-\u9fff]{2,4}/g, '$1[姓名已隐藏]')
+    .replace(/((?:shipping address|street address|mailing address|address)\s*[:=]\s*)[^\n,;]{5,120}/gi, '$1[地址已隐藏]')
+    .replace(/\b\d{1,6}\s+[A-Za-z0-9.' -]{2,50}\s+(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Lane|Ln|Drive|Dr)\b/gi, '[地址已隐藏]')
+    .replace(/(?:gh[oprsu]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,})/g, '[凭据已隐藏]')
+    .replace(/(?:AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})/g, '[云凭据已隐藏]')
+    .replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, '[JWT 已隐藏]')
+    .replace(/(Bearer\s+)[A-Za-z0-9._~-]+/gi, '$1[凭据已隐藏]')
+    .replace(/((?:token|password|passwd|secret|api[_-]?key|access[_-]?key)\s*[:=]\s*["']?)[^\s"']{8,}/gi, '$1[凭据已隐藏]')
+    .replace(/([?&](?:token|key|secret|password)=)[^&\s]+/gi, '$1[凭据已隐藏]')
+    .trim()
+    .slice(0, 1200)
+}
+
+function hasSensitiveContent(value: string): boolean {
+  return [
+    /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/,
+    /(?:gh[oprsu]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})/,
+    /(?:AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|sk-[A-Za-z0-9_-]{20,})/,
+    /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
+    /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i,
+    /(?<!\d)1[3-9]\d{9}(?!\d)/,
+    /\+\d[\d(). -]{7,}\d/,
+    /(?:phone|telephone|tel|mobile)\s*[:=]\s*\+?[\d(). -]{7,}\d/i,
+    /(?<!\d)\d{17}[\dX](?!\d)/i,
+    /(?<!\d)(?:\d[ -]?){16,19}(?!\d)/,
+    /(?:客户姓名|客户名|联系人|姓名)\s*[:：]\s*[^\s,，;；]{2,30}/i,
+    /(?:负责人|客户|联系人|用户姓名)\s*[:：]\s*[赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦许何吕施张孔曹严华金魏陶姜谢邹苏潘范彭鲁韦马苗方俞任袁柳史唐薛雷贺倪罗郝安于傅齐康伍余顾孟黄萧尹姚邵汪毛米戴宋熊纪舒项董梁杜阮蓝季贾江郭梅林钟徐邱高夏蔡田樊胡霍万卢莫房程陆翁段白邓武刘龙叶黎易廖阎庄柴牛温聂曾沙关游乔]?[\u4e00-\u9fff]{2,3}/,
+    /(^|[\s|,，:：;；])[赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦许何吕施张孔曹严华金魏陶姜谢邹苏潘范彭鲁韦马苗方俞任袁柳史唐薛雷贺倪罗郝安于傅齐康伍余顾孟黄萧尹姚邵汪毛米戴宋熊纪舒项董梁杜阮蓝季贾江郭梅林钟徐邱高夏蔡田樊胡霍万卢莫房程陆翁段白邓武刘龙叶黎易廖阎庄柴牛温聂曾沙关游乔][\u4e00-\u9fff]{1,2}(?=$|[\s|,，;；])/m,
+    /(?:收货地址|住址|地址)\s*[:：]\s*[^\n,，;；]{4,80}/i,
+    /(?:full name|customer name|client name|contact name|recipient|name)\s*[:=]\s*[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}/,
+    /(?:请问|客户|联系人)\s+[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}(?=\s+(?:联系电话|电话|地址|phone|tel|address))/,
+    /(?:my name is|i am|i'm|the user is|user is|contact is|customer is)\s+[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}/i,
+    /(?:我叫|我的名字是|联系人是|客户是)\s*[\u4e00-\u9fff]{2,4}/,
+    /(?:shipping address|street address|mailing address|address)\s*[:=]\s*[^\n,;]{5,120}/i,
+    /\b\d{1,6}\s+[A-Za-z0-9.' -]{2,50}\s+(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Lane|Ln|Drive|Dr)\b/i,
+    /data:(?:image|audio|video)\//i,
+    /blob:/i,
+    /Bearer\s+[A-Za-z0-9._~-]{8,}/i,
+    /(?:token|password|passwd|secret|api[_-]?key|access[_-]?key)\s*[:=]\s*["']?[^\s"']{8,}/i,
+    /https?:\/\/[^/@\s:]+:[^/@\s]+@/i,
+  ].some(pattern => pattern.test(value))
+}
+
+function rejectSensitiveRequest(value: string): boolean {
+  if (!hasSensitiveContent(value)) return false
+  const safeText = redactSensitiveText(value)
+  inputText.value = safeText
+  sessionStore.addMessage({
+    role: 'user',
+    content: safeText || '（检测到敏感内容，原文已隐藏）',
+    createdAt: new Date().toISOString(),
+  })
+  sessionStore.addMessage({
+    role: 'system',
+    content: '为保护你的信息，本次内容未发送、未创建 GitHub Issue。请删除凭据、联系方式、姓名、证件号、银行卡号、地址或内嵌媒体链接后重新描述；截图请先遮盖个人信息。',
+    createdAt: new Date().toISOString(),
+  })
+  return true
+}
+
+async function stagePendingTask(triage: TriageResult, text: string, images: StepFunImageInput[]) {
+  const redactedVisualSummary = redactSensitiveText(triage.visualSummary || '')
+  const visualSummary = redactedVisualSummary && !hasSensitiveContent(redactedVisualSummary)
+    ? redactedVisualSummary
+    : ''
+  const appName = triage.basedOn || extractAppName(text)
+  pendingTask.value = {
+    triage,
+    text,
+    description: visualSummary
+      ? `${text}\n\n## 图片中可见的问题（已脱敏）\n\n${visualSummary}`
+      : text,
+    appName,
+    imageCount: images.length,
+  }
+  buildProgress.value = { step: 0, label: `已识别为${triage.scenario === 'platform' ? '平台优化' : triage.scenario === 'app_iterate' ? '应用迭代' : '应用创建'}，等待确认` }
+}
+
+function alignTriageWithKnownApps(triage: TriageResult, text: string): TriageResult {
+  if (triage.action === 'platform') return triage
+  const lower = text.toLowerCase()
+  const knownApps = Array.from(new Set(
+    sessionStore.sessions
+      .map(session => session.appLabel?.replace(/^app\//, ''))
+      .filter((name): name is string => Boolean(name)),
+  )).sort((a, b) => b.length - a.length)
+  const matched = knownApps.find(name => lower.includes(name.toLowerCase()))
+  const requestsChange = /(?:迭代|优化|修改|更新|增加|添加|修复|继续|改进|调整)/i.test(text)
+  if (!matched || !requestsChange) return triage
+  return {
+    ...triage,
+    action: 'build',
+    scenario: 'app_iterate',
+    intent: 'create_app',
+    complexity: 'medium',
+    scope: 'apps-only',
+    basedOn: matched,
+  }
+}
+
+async function confirmPendingTask() {
+  const task = pendingTask.value
+  if (!task || confirmingTask.value || building.value) return
+  if (hasSensitiveContent(task.description)) {
+    pendingTask.value = null
+    buildProgress.value = { step: -1, label: '检测到敏感内容，任务未创建' }
+    sessionStore.addMessage({
+      role: 'system',
+      content: '任务摘要仍包含敏感信息，已阻止写入 GitHub。请修改需求后重试。',
+      createdAt: new Date().toISOString(),
+    })
+    return
+  }
+  confirmingTask.value = true
+  pendingTask.value = null
+  buildProgress.value = { step: 0, label: '正在创建任务...' }
+  try {
+    let issue: BuildIssue | null
+    if (task.triage.scenario === 'platform') {
+      issue = await createPlatformBuild(task.text, task.description)
+    } else {
+      const basedOn = task.triage.scenario === 'app_iterate' ? task.appName : undefined
+      issue = await createBuild(task.appName, task.description, basedOn, task.triage.scenario)
+    }
+    failedCreateTask.value = issue ? null : task
+  } finally {
+    confirmingTask.value = false
+  }
+}
+
+async function retryFailedCreate() {
+  if (!failedCreateTask.value || building.value) return
+  pendingTask.value = failedCreateTask.value
+  failedCreateTask.value = null
+  await confirmPendingTask()
+}
+
+function cancelPendingTask() {
+  const task = pendingTask.value
+  if (!task) return
+  inputText.value = task.text
+  pendingTask.value = null
+  buildProgress.value = null
+  sessionStore.addMessage({
+    role: 'system',
+    content: '已取消本次任务创建。需求文字已放回输入框，修改后可重新发送。',
+    createdAt: new Date().toISOString(),
+  })
+}
+
+function startIssuePolling(issueNumber: number, token: string) {
+  pollingPaused.value = false
+  start(
+    issueNumber,
+    () => getIssue(token, repo.value, issueNumber),
+    onIssueUpdate,
+    undefined,
+    () => {
+      pollingPaused.value = true
+      building.value = false
+      buildProgress.value = { step: 1, label: '任务仍在远程运行，状态同步已暂停', issueNumber }
+      persistBuildProgress(buildProgress.value)
+    },
+  )
+}
+
+async function refreshActiveIssue() {
+  const issueNumber = buildProgress.value?.issueNumber || sessionStore.activeSession?.issueNumber
+  if (!issueNumber || !authStore.token) return
+  pollingPaused.value = false
+  try {
+    const issue = await getIssue(authStore.token, repo.value, issueNumber)
+    await onIssueUpdate(issue)
+    if (issue.state !== 'closed') startIssuePolling(issueNumber, authStore.token)
+  } catch {
+    pollingPaused.value = true
+    building.value = false
+    buildProgress.value = { step: 1, label: '状态刷新失败，可稍后重试', issueNumber }
+  }
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible' && pollingPaused.value) void refreshActiveIssue()
+}
+
+function syncSessionUrl(issueNumber: number) {
+  const url = new URL(window.location.href)
+  url.searchParams.set('session', String(issueNumber))
+  window.history.replaceState({}, '', url.toString())
+}
+
+function markAutoTriggerFailed(issueNumber: number, error: unknown) {
+  const status = (error instanceof Error ? error.message.match(/(\d{3})/) : null)?.[1]
+  failedTriggerIssueNumber.value = issueNumber
+  persistFailedTrigger(issueNumber)
+  building.value = false
+  buildProgress.value = {
+    step: -1,
+    label: status === '403' ? 'GitHub 授权不足，未能自动启动' : '自动启动失败',
+    issueNumber,
+  }
+  persistBuildProgress(buildProgress.value)
+  sessionStore.addMessage({
+    role: 'system',
+    content: status === '403'
+      ? `Issue #${issueNumber} 已创建，但当前 GitHub 授权缺少评论权限，任务尚未启动。更新授权后点击“重新自动启动”。`
+      : `Issue #${issueNumber} 已创建，但自动启动失败，系统没有把它显示为运行中。请点击“重新自动启动”。`,
+    createdAt: new Date().toISOString(),
+  })
+}
+
+async function retryAutoTrigger() {
+  const issueNumber = failedTriggerIssueNumber.value
+  const token = authStore.token
+  if (!issueNumber || !token || building.value) return
+  building.value = true
+  buildProgress.value = { step: 0, label: '正在重新自动启动...', issueNumber }
+  persistBuildProgress(buildProgress.value)
+  try {
+    await createIssueComment(token, repo.value, issueNumber, '/create')
+    clearFailedTrigger(issueNumber)
+    sessionStore.addMessage({
+      role: 'system',
+      content: `Issue #${issueNumber} 已重新自动启动，正在同步远程状态。`,
+      createdAt: new Date().toISOString(),
+    })
+    startIssuePolling(issueNumber, token)
+    await sessionStore.loadSessions(token, repo.value)
+  } catch (error) {
+    markAutoTriggerFailed(issueNumber, error)
+  }
+}
+
+async function handleSend(submission?: ChatSubmission) {
+  const submittedText = submission?.text ?? inputText.value
+  const images = submission?.images ?? []
   console.log('[MVP_SEND] entered', {
     submitted: Boolean(submittedText.trim()),
+    attachments: images.length,
     owner: isOwner.value,
     auth: Boolean(authStore.token),
     step: Boolean(stepToken.value),
   })
   if (!isOwner.value) return
   if (sessionStore.activeSession?.status === 'closed') return
-  const text = (submittedText || inputText.value).trim()
-  if (!text || building.value || !authStore.token) return
-  lastRetryInput.value = text
-  const images = [...pendingImages.value]
-  pendingImages.value = []
-  const imageSuffix = images.length > 0
-    ? `\n\n## 上传图片（${images.length} 张）\n\n${images.map(i => `![${i.name}](${i.dataUrl})`).join('\n')}`
-    : ''
+  const text = submittedText.trim()
+  if ((!text && images.length === 0) || building.value || !authStore.token) return
+  lastErrorKind.value = null
+  retryHasAttachments.value = false
+  const rawRequestText = text || '请分析我上传的图片，判断这是平台优化、应用创建、应用迭代还是咨询。'
+  if (text && rejectSensitiveRequest(text)) return
+  const requestText = redactSensitiveText(rawRequestText)
+  if (hasSensitiveContent(requestText)) {
+    rejectSensitiveRequest(requestText)
+    return
+  }
+  lastRetryInput.value = requestText
+  pendingTask.value = null
 
   // ── /create 命令：直接触发构建，跳过 StepFun ──
-  const createCmd = detectCreateCommand(text)
+  const createCmd = detectCreateCommand(requestText)
   if (createCmd.triggered) {
-    const rawDescription = createCmd.description || text
+    const rawDescription = createCmd.description || requestText
     // Strip command prefix for app name extraction
     const description = rawDescription.replace(/^\/create\s+/, '').trim() || rawDescription
     const appName = extractAppName(description)
     sessionStore.addMessage({
       role: 'user',
-      content: text,
+      content: requestText,
       createdAt: new Date().toISOString(),
     })
     sessionStore.addMessage({
@@ -365,17 +690,17 @@ async function handleSend(submittedText = '') {
       createdAt: new Date().toISOString(),
     })
     inputText.value = ''
-    await createBuild(appName, description + imageSuffix)
+    await createBuild(appName, description)
     return
   }
 
   // ── /status 命令：查询 agent 状态 ──
-  const statusCmd = detectStatusCommand(text)
+  const statusCmd = detectStatusCommand(requestText)
   if (statusCmd.triggered) {
     const statusResult = await sessionStore.checkAgentStatus(authStore.token, REPO_FULL_NAME, sessionStore.activeSession!.issueNumber)
     sessionStore.addMessage({
       role: 'user',
-      content: text,
+      content: requestText,
       createdAt: new Date().toISOString(),
     })
     sessionStore.addMessage({
@@ -388,13 +713,13 @@ async function handleSend(submittedText = '') {
   }
 
   // ── /stop 命令：停止构建 ──
-  const stopCmd = detectStopCommand(text)
+  const stopCmd = detectStopCommand(requestText)
   if (stopCmd.triggered) {
     const session = sessionStore.activeSession!
     await updateIssue(authStore.token, REPO_FULL_NAME, session.issueNumber, 'closed', [...session.labels, 'status:cancelled'])
     sessionStore.addMessage({
       role: 'user',
-      content: text,
+      content: requestText,
       createdAt: new Date().toISOString(),
     })
     sessionStore.addMessage({
@@ -408,13 +733,13 @@ async function handleSend(submittedText = '') {
   }
 
   // ── /start 命令：重新触发构建 ──
-  const startCmd = detectStartCommand(text)
+  const startCmd = detectStartCommand(requestText)
   if (startCmd.triggered) {
     const session = sessionStore.activeSession!
     await updateIssue(authStore.token, REPO_FULL_NAME, session.issueNumber, 'open', session.labels.filter((l: string) => l !== 'status:cancelled'))
     sessionStore.addMessage({
       role: 'user',
-      content: text,
+      content: requestText,
       createdAt: new Date().toISOString(),
     })
     sessionStore.addMessage({
@@ -436,22 +761,22 @@ async function handleSend(submittedText = '') {
 
   sessionStore.addMessage({
     role: 'user',
-    content: text,
+    content: images.length > 0 ? `${requestText}\n\n📎 已附加 ${images.length} 张图片（原图不会写入会话或 GitHub Issue）` : requestText,
     createdAt: new Date().toISOString(),
   })
   inputText.value = ''
   thinking.value = true
-  triageAction.value = 'unknown'
 
   try {
     // ── 1. 分流：关键词快速通道 → LLM 语义分拣 → 降级澄清（最多一次）──
-    const triage = await smartTriage(text, {
+    let triage = await smartTriage(requestText, {
       stepToken: stepToken.value || undefined,
       clarifyContext: previousBuildContext || undefined,
+      images,
     })
-    logTriage(text, triage)
+    triage = alignTriageWithKnownApps(triage, requestText)
+    logTriage(triage)
     console.log('[MVP_SEND] triage', triage.action)
-    triageAction.value = triage.action
 
     // 分流已有明确去向时清掉澄清上下文，避免污染后续消息
     if (triage.action !== 'clarify') {
@@ -465,8 +790,8 @@ async function handleSend(submittedText = '') {
       const last = sessionStore.messages.at(-1)
       if (!last || !last.content?.startsWith('我需要确认一下你的意图')) {
         // 保存原始上下文，澄清回答时合并使用
-        if (!pendingBuildContext.value && text) {
-          pendingBuildContext.value = text
+        if (!pendingBuildContext.value && requestText) {
+          pendingBuildContext.value = requestText
         }
         clarifyingMsg.value = `我需要确认一下你的意图：
 
@@ -488,74 +813,75 @@ async function handleSend(submittedText = '') {
     // R3 build：直接创建构建，不再依赖 StepFun 输出 BUILD_APP 标记
     // 这样即使模型未按 prompt 输出标记，也能正确触发构建
     if (triage.action === 'build') {
-      const appName = extractAppName(text)
+      if (!text && images.length > 0) {
+        buildProgress.value = { step: 0, label: '已识别为应用任务，等待文字说明' }
+        sessionStore.addMessage({
+          role: 'system',
+          content: '我已用图片判断任务类型，但不会保存或转录图中文字。请补充一句你希望修改或创建什么，图片会保留在输入区。',
+          createdAt: new Date().toISOString(),
+        })
+        return
+      }
       const description = previousBuildContext
-        ? `${previousBuildContext}\n\n## 澄清回答\n\n${text}`
-        : text
+        ? `${previousBuildContext}\n\n## 澄清回答\n\n${requestText}`
+        : requestText
       pendingBuildContext.value = ''
-      await createBuild(appName, description + imageSuffix, triage.basedOn, triage.scenario)
+      await stagePendingTask(triage, description, images)
+      chatInputRef.value?.clearImages()
       return
     }
 
-    // R4/R5 platform + R1/R2 chat：调用 StepFun 生成回复
+    if (triage.action === 'platform') {
+      if (!text && images.length > 0) {
+        buildProgress.value = { step: 0, label: '已识别为平台任务，等待文字说明' }
+        sessionStore.addMessage({
+          role: 'system',
+          content: '我已用图片判断任务类型，但不会保存或转录图中文字。请补充一句要优化的平台体验，图片会保留在输入区。',
+          createdAt: new Date().toISOString(),
+        })
+        return
+      }
+      await stagePendingTask(triage, requestText, images)
+      chatInputRef.value?.clearImages()
+      return
+    }
+
+    // R1/R2 chat：调用 StepFun 生成回复
+    if (images.length > 0) {
+      sessionStore.addMessage({
+        role: 'assistant',
+        content: '图片已用于安全分流。为避免把截图中的姓名、联系方式、地址或凭据写入会话，我不会转录图中文字；请用文字描述你希望我解释的问题。',
+        createdAt: new Date().toISOString(),
+      })
+      chatInputRef.value?.clearImages()
+      return
+    }
     const history = getConversationHistory()
-    const systemPrompt = getSystemPrompt(triage, authStore.user?.login)
+    const systemPrompt = `${getSystemPrompt(triage, authStore.user?.login)}\n\n隐私要求：不得转录或复述图片中的姓名、联系人、邮箱、手机号、证件号、银行卡号、住址、token 或其他凭据。`
 
     console.log('[MVP_SEND] chat-call')
     const response = await chatWithStepFun(stepToken.value, history, { system: systemPrompt })
     const trimmed = response.trim()
+    const redactedResponse = redactSensitiveText(trimmed)
+    const safeResponse = !redactedResponse || hasSensitiveContent(redactedResponse)
+      ? '模型响应包含无法安全展示的敏感信息，内容已全部隐藏。请先遮盖图片中的个人信息后重试。'
+      : redactedResponse
 
     sessionStore.addMessage({
       role: 'assistant',
-      content: trimmed,
+      content: safeResponse,
       createdAt: new Date().toISOString(),
     })
+    chatInputRef.value?.clearImages()
 
-    // platform 需要 BUILD_PLATFORM 标记才触发构建
-    if (triage.action === 'platform') {
-      const platformMatch = trimmed.match(/BUILD_PLATFORM:\s*(.+)/i)
-      if (platformMatch) {
-        await createPlatformBuild(text, platformMatch[1].trim())
-      }
-    }
-    // chat (R1/R2): 直接回复。Issue 只能由明确 build/platform 分流或 /create 创建。
+    // chat (R1/R2): 直接回复。任务类意图已在上方进入显式确认卡。
   } catch (e) {
     const formatted = formatStepFunError(e)
     lastErrorKind.value = formatted.kind
+    retryHasAttachments.value = images.length > 0
 
-    // LLM 失败时：platform/build 自动降级为直连创建，chat 给出可读提示
-    let fallbackContent: string
-    if (triageAction.value === 'platform') {
-      // platform 降级：自动创建平台 Issue
-      try {
-        const issue = await createPlatformBuildDirect(text)
-        if (issue) {
-          fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n⚠️ AI 暂时无法回复，但已为你直接创建了平台构建任务 #${issue.number}。\nCI 将自动构建。\n查看: https://github.com/${repo.value}/issues/${issue.number}`
-          lastErrorKind.value = null
-        } else {
-          fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n💡 ${formatted.suggestion}`
-        }
-      } catch {
-        fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n💡 ${formatted.suggestion}`
-      }
-    } else if (triageAction.value === 'build') {
-      // build 降级：自动创建构建 Issue
-      try {
-        const appName = extractAppName(text)
-        const issue = await createBuild(appName, text)
-        if (issue) {
-          fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n⚠️ AI 暂时无法回复，但已为你直接创建了构建任务 #${issue.number}。\nCI 将自动构建。`
-          lastErrorKind.value = null
-        } else {
-          fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n💡 ${formatted.suggestion}`
-        }
-      } catch {
-        fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n💡 ${formatted.suggestion}`
-      }
-    } else {
-      // chat 降级：不阻断，提示用户可直接建任务
-      fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n试试说：\n- 「帮我做一个 todo 应用」\n- 「优化 tetris-game 的计分系统」\n- 「优化 Mitosis 平台本身」\n\n💡 ${formatted.suggestion}`
-    }
+    // 失败时保持 fail-closed：不绕过确认创建 Issue。
+    const fallbackContent = `${formatted.title}\n\n${formatted.detail}\n\n本次没有创建任务，请重试；自然语言需求识别成功后会先显示确认卡。\n\n💡 ${formatted.suggestion}`
 
     sessionStore.addMessage({
       role: 'system',
@@ -570,6 +896,7 @@ async function handleSend(submittedText = '') {
 /** 恢复操作：重试最后一条消息 */
 const lastRetryInput = ref('')
 async function handleRetry() {
+  if (retryHasAttachments.value) return
   const text = lastRetryInput.value || inputText.value.trim()
   if (!text) return
   lastErrorKind.value = null
@@ -638,8 +965,23 @@ async function createBuild(appName: string, description: string, basedOn?: strin
   activeIssue.value = null
   buildProgress.value = { step: 0, label: '分析需求...' }
   persistBuildProgress(buildProgress.value)
-  const version = basedOn ? 'v1' : 'v0'
   const effectiveScenario = scenario || (basedOn ? 'app_iterate' : 'app_create')
+  let currentVersion = -1
+  if (effectiveScenario === 'app_iterate') {
+    try {
+      currentVersion = await getLatestAppVersion(authStore.token!, repo.value, appName, { required: true })
+    } catch {
+      building.value = false
+      buildProgress.value = { step: -1, label: '无法确认现有应用版本，任务未创建' }
+      sessionStore.addMessage({
+        role: 'system',
+        content: `无法读取 ${appName} 的现有版本，已停止创建任务，避免覆盖或生成错误版本。请确认应用标识和 GitHub 连接后重试。`,
+        createdAt: new Date().toISOString(),
+      })
+      return null
+    }
+  }
+  const version = effectiveScenario === 'app_iterate' ? `v${currentVersion + 1}` : 'v0'
   const labels = effectiveScenario === 'platform'
     ? ['platform']
     : effectiveScenario === 'app_iterate'
@@ -651,26 +993,17 @@ async function createBuild(appName: string, description: string, basedOn?: strin
   try {
     const token = authStore.token!
     const issue = await createIssue(token, repo.value, `build: ${appName} ${version}`, body, labels)
+    syncSessionUrl(issue.number)
+    buildProgress.value = { step: 0, label: '任务已创建，正在启动...', issueNumber: issue.number }
+    persistBuildProgress(buildProgress.value)
 
     // 自动评论 /create 触发 CI Agent Loop
     try {
       await createIssueComment(token, repo.value, issue.number, '/create')
     } catch (commentErr) {
-      const commentStatus = (commentErr instanceof Error ? commentErr.message.match(/(\d{3})/) : null)?.[1]
-      const fallbackUrl = `https://github.com/${repo.value}/issues/${issue.number}`
-      if (commentStatus === '403') {
-        sessionStore.addMessage({
-          role: 'system',
-          content: `⚠️ Issue #${issue.number} 已创建，但当前 Token 无评论权限，无法自动触发构建。\n\n请手动访问 Issue 页面并评论 \`/create\`：\n[在 GitHub 上触发构建](${fallbackUrl})`,
-          createdAt: new Date().toISOString(),
-        })
-      } else {
-        sessionStore.addMessage({
-          role: 'system',
-          content: `⚠️ Issue #${issue.number} 已创建，但自动触发构建失败。\n\n请手动评论 \`/create\`：\n[在 GitHub 上触发构建](${fallbackUrl})`,
-          createdAt: new Date().toISOString(),
-        })
-      }
+      markAutoTriggerFailed(issue.number, commentErr)
+      await sessionStore.loadSessions(token, repo.value)
+      return issue
     }
 
     sessionStore.addMessage({
@@ -679,34 +1012,7 @@ async function createBuild(appName: string, description: string, basedOn?: strin
       createdAt: new Date().toISOString(),
     })
 
-    // 使用 Step Plan Image API 生成应用 logo 并追加到 Issue body
-    const stepTokenVal = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('mitosis_step_token') : '') || ''
-    if (stepTokenVal) {
-      try {
-        const logoPrompt = buildLogoPrompt(appName, description)
-        const logoResult = await generateImage(stepTokenVal, { prompt: logoPrompt })
-        if (logoResult.b64_json) {
-          const logoMarkdown = `\n\n## 应用 Logo\n\n![${appName} logo](data:image/png;base64,${logoResult.b64_json})\n`
-          const currentBody = issue.body || body
-          // 使用 raw GitHub API 更新 issue body（updateIssue 可能不支持 body 参数）
-          const updateRes = await fetch(`https://api.github.com/repos/${repo.value}/issues/${issue.number}`, {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ body: currentBody + logoMarkdown }),
-          })
-          if (!updateRes.ok) {
-            console.warn('[createBuild] 更新 Issue body 添加 logo 失败:', updateRes.status)
-          }
-        }
-      } catch (logoErr) {
-        console.warn('[createBuild] 生成 logo 失败（不影响构建流程）:', logoErr)
-      }
-    }
-
-    start(issue.number, () => getIssue(token, repo.value, issue.number), onIssueUpdate)
+    startIssuePolling(issue.number, token)
     // 刷新会话列表
     await sessionStore.loadSessions(authStore.token!, repo.value)
     return issue
@@ -714,18 +1020,13 @@ async function createBuild(appName: string, description: string, basedOn?: strin
     const err = e instanceof Error ? e : new Error('未知错误')
     const statusMatch = err.message.match(/(\d{3})/)
     const status = statusMatch?.[1]
-    const repoFull = repo.value
-    const title = `build: ${appName} ${version}`
-    const encodedBody = encodeURIComponent(`## 需求描述\n\n${description}${basedOn ? `\n\n## 基于现有应用\n\n基于应用: ${basedOn}` : ''}`)
-    const fallbackUrl = `https://github.com/${repoFull}/issues/new?title=${encodeURIComponent(title)}&body=${encodedBody}&labels=app/${appName}`
-
     // 网络错误分类（Failed to fetch / NetworkError / timeout）
     const isNetworkError = /failed to fetch|networkerror|network\s*error|timeout|cors|typeerror/i.test(err.message)
-    console.error('[createBuild] 错误详情:', err)
+    console.error('[createBuild] request failed', { status: status || 'unknown', network: isNetworkError })
     const fallbackMsg = status === '403'
-      ? `⚠️ 当前 Token 无仓库写入权限（403），无法自动创建构建任务。\n\n请点击下方链接手动创建 Issue（已预填内容），创建后 CI 将自动构建：\n[在 GitHub 上创建构建任务](${fallbackUrl})`
+      ? '当前 GitHub 授权无仓库写入权限（403），任务未创建。更新授权后点击“重新自动创建”。'
       : isNetworkError
-        ? `🌐 网络连接失败，无法创建构建任务。\n\n可能原因：\n- 当前网络无法访问 GitHub API\n- 浏览器扩展（广告拦截/隐私保护）拦截了请求\n- 移动端网络不稳定\n\n请检查网络后重试，或点击下方链接手动创建：\n[在 GitHub 上创建构建任务](${fallbackUrl})`
+        ? '网络连接失败，任务未创建。请检查网络后点击“重新自动创建”。'
         : `❌ 创建任务失败: ${formatUserError(err)}`
 
     sessionStore.addMessage({
@@ -734,43 +1035,35 @@ async function createBuild(appName: string, description: string, basedOn?: strin
       createdAt: new Date().toISOString(),
     })
     building.value = false
-    buildProgress.value = null
+    buildProgress.value = { step: -1, label: '任务创建失败' }
     return null
   }
 }
 
 // 平台变更直接构建（模型判断可执行时触发）
-async function createPlatformBuild(originalText: string, description: string) {
-  if (building.value || !authStore.token || !isOwner.value) return
+async function createPlatformBuild(originalText: string, description: string): Promise<BuildIssue | null> {
+  if (building.value || !authStore.token || !isOwner.value) return null
 
   building.value = true
   activeIssue.value = null
+  buildProgress.value = { step: 0, label: '正在创建平台任务...' }
   const title = `platform: ${originalText.slice(0, 60)}${originalText.length > 60 ? '…' : ''}`
   const body = `## 需求描述\n\n${description}\n\n## 构建信息\n\n- 触发方式: Web 界面（AI 判断可直接执行）`
 
   try {
     const token = authStore.token!
     const issue = await createIssue(token, repo.value, title, body, ['platform'])
+    syncSessionUrl(issue.number)
+    buildProgress.value = { step: 0, label: '任务已创建，正在启动...', issueNumber: issue.number }
+    persistBuildProgress(buildProgress.value)
 
     // 自动评论 /create 触发 CI Agent Loop
     try {
       await createIssueComment(token, repo.value, issue.number, '/create')
     } catch (commentErr) {
-      const commentStatus = (commentErr instanceof Error ? commentErr.message.match(/(\d{3})/) : null)?.[1]
-      const fallbackUrl = `https://github.com/${repo.value}/issues/${issue.number}`
-      if (commentStatus === '403') {
-        sessionStore.addMessage({
-          role: 'system',
-          content: `⚠️ 平台构建 Issue #${issue.number} 已创建，但当前 Token 无评论权限，无法自动触发构建。\n\n请手动评论 \`/create\`：\n[在 GitHub 上触发构建](${fallbackUrl})`,
-          createdAt: new Date().toISOString(),
-        })
-      } else {
-        sessionStore.addMessage({
-          role: 'system',
-          content: `⚠️ 平台构建 Issue #${issue.number} 已创建，但自动触发构建失败。\n\n请手动评论 \`/create\`：\n[在 GitHub 上触发构建](${fallbackUrl})`,
-          createdAt: new Date().toISOString(),
-        })
-      }
+      markAutoTriggerFailed(issue.number, commentErr)
+      await sessionStore.loadSessions(token, repo.value)
+      return issue
     }
 
     sessionStore.addMessage({
@@ -779,18 +1072,15 @@ async function createPlatformBuild(originalText: string, description: string) {
       createdAt: new Date().toISOString(),
     })
 
-    start(issue.number, () => getIssue(token, repo.value, issue.number), onIssueUpdate)
+    startIssuePolling(issue.number, token)
     await sessionStore.loadSessions(authStore.token!, repo.value)
+    return issue
   } catch (e) {
     const err = e instanceof Error ? e : new Error('未知错误')
     const statusMatch = err.message.match(/(\d{3})/)
     const status = statusMatch?.[1]
-    const repoFull = repo.value
-    const encodedBody = encodeURIComponent(`## 需求描述\n\n${description}\n\n## 构建信息\n\n- 触发方式: Web 界面（AI 判断可直接执行）`)
-    const fallbackUrl = `https://github.com/${repoFull}/issues/new?title=${encodeURIComponent(title)}&body=${encodedBody}&labels=platform`
-
     const fallbackMsg = status === '403'
-      ? `⚠️ 当前 Token 无仓库写入权限（403），无法自动创建平台构建任务。\n\n请点击下方链接手动创建：\n[在 GitHub 上创建 Issue](${fallbackUrl})`
+      ? '当前 GitHub 授权无仓库写入权限（403），平台任务未创建。更新授权后点击“重新自动创建”。'
       : `❌ 创建平台构建失败: ${formatUserError(err)}`
 
     sessionStore.addMessage({
@@ -799,6 +1089,8 @@ async function createPlatformBuild(originalText: string, description: string) {
       createdAt: new Date().toISOString(),
     })
     building.value = false
+    buildProgress.value = { step: -1, label: '平台任务创建失败' }
+    return null
   }
 }
 
@@ -808,32 +1100,24 @@ async function createPlatformBuildDirect(originalText: string): Promise<BuildIss
 
   building.value = true
   activeIssue.value = null
+  buildProgress.value = { step: 0, label: '正在创建平台任务...' }
   const title = `platform: ${originalText.slice(0, 60)}${originalText.length > 60 ? '…' : ''}`
   const body = `## 需求描述\n\n${originalText}\n\n## 构建信息\n\n- 触发方式: Web 界面（LLM 不可用，直连兜底）`
 
   try {
     const token = authStore.token!
     const issue = await createIssue(token, repo.value, title, body, ['platform'])
+    syncSessionUrl(issue.number)
+    buildProgress.value = { step: 0, label: '任务已创建，正在启动...', issueNumber: issue.number }
+    persistBuildProgress(buildProgress.value)
 
     // 自动评论 /create 触发 CI Agent Loop
     try {
       await createIssueComment(token, repo.value, issue.number, '/create')
     } catch (commentErr) {
-      const commentStatus = (commentErr instanceof Error ? commentErr.message.match(/(\d{3})/) : null)?.[1]
-      const fallbackUrl = `https://github.com/${repo.value}/issues/${issue.number}`
-      if (commentStatus === '403') {
-        sessionStore.addMessage({
-          role: 'system',
-          content: `⚠️ 平台构建 Issue #${issue.number} 已创建，但当前 Token 无评论权限，无法自动触发构建。\n\n请手动评论 \`/create\`：\n[在 GitHub 上触发构建](${fallbackUrl})`,
-          createdAt: new Date().toISOString(),
-        })
-      } else {
-        sessionStore.addMessage({
-          role: 'system',
-          content: `⚠️ 平台构建 Issue #${issue.number} 已创建，但自动触发构建失败。\n\n请手动评论 \`/create\`：\n[在 GitHub 上触发构建](${fallbackUrl})`,
-          createdAt: new Date().toISOString(),
-        })
-      }
+      markAutoTriggerFailed(issue.number, commentErr)
+      await sessionStore.loadSessions(token, repo.value)
+      return issue
     }
 
     sessionStore.addMessage({
@@ -842,7 +1126,7 @@ async function createPlatformBuildDirect(originalText: string): Promise<BuildIss
       createdAt: new Date().toISOString(),
     })
 
-    start(issue.number, () => getIssue(token, repo.value, issue.number), onIssueUpdate)
+    startIssuePolling(issue.number, token)
     await sessionStore.loadSessions(authStore.token!, repo.value)
     return issue
   } catch (e) {
@@ -853,7 +1137,7 @@ async function createPlatformBuildDirect(originalText: string): Promise<BuildIss
     const encodedBody = encodeURIComponent(`## 需求描述\n\n${originalText}\n\n## 构建信息\n\n- 触发方式: Web 界面（LLM 不可用，直连兜底）`)
     const fallbackUrl = `https://github.com/${repoFull}/issues/new?title=${encodeURIComponent(title)}&body=${encodedBody}&labels=platform`
 
-    console.error('[createPlatformBuildDirect] 错误详情:', err)
+    console.error('[createPlatformBuildDirect] request failed', { status: status || 'unknown' })
     const fallbackMsg = status === '403'
       ? `⚠️ 当前 Token 无仓库写入权限（403），无法自动创建平台构建任务。\n\n请点击下方链接手动创建：\n[在 GitHub 上创建 Issue](${fallbackUrl})`
       : `❌ 创建平台构建失败: ${formatUserError(err)}`
@@ -864,6 +1148,7 @@ async function createPlatformBuildDirect(originalText: string): Promise<BuildIss
       createdAt: new Date().toISOString(),
     })
     building.value = false
+    buildProgress.value = { step: -1, label: '平台任务创建失败' }
     return null
   }
 }
@@ -871,27 +1156,36 @@ async function createPlatformBuildDirect(originalText: string): Promise<BuildIss
 async function onIssueUpdate(issue: BuildIssue) {
   const previousLabels = new Set(activeIssue.value?.labels.map(label => label.name) || [])
   activeIssue.value = issue
+  pollingPaused.value = false
   // 同步更新 session store 中的 labels，使侧边栏状态实时一致（C6.3）
   const session = sessionStore.sessions.find(s => s.issueNumber === issue.number)
   if (session) {
     session.labels = issue.labels.map(l => l.name)
+    session.status = issue.state
     session.updatedAt = new Date().toISOString()
     sessionStore._writeCache(sessionStore.sessions)
   }
   const labels = new Set(issue.labels.map(label => label.name))
-  const appName = extractAppNameFromIssue(issue)
+  if (issue.state === 'closed' || Array.from(labels).some(label => label.startsWith('status:'))) {
+    clearFailedTrigger(issue.number)
+  }
+  const isPlatformIssue = labels.has('platform')
+  const appName = isPlatformIssue ? 'platform' : extractAppNameFromIssue(issue)
   // 从 apps 目录获取真实最新版本（不依赖 issue 标题）
-  const latestVer = await getLatestAppVersion(authStore.token!, repo.value, appName)
-  const version = latestVer > 0 ? `v${latestVer}` : 'v0'
+  const latestVer = isPlatformIssue ? 0 : await getLatestAppVersion(authStore.token!, repo.value, appName)
+  const isIteration = labels.has('update')
+  const displayedVersion = issue.state === 'closed' ? latestVer : isIteration ? latestVer + 1 : latestVer
+  const version = `v${Math.max(0, displayedVersion)}`
   const appUrl = `https://mitosis.zenheart.site/apps/${appName}/${version}/`
   const issueUrl = `https://github.com/${repo.value}/issues/${issue.number}`
+  const targetName = isPlatformIssue ? 'Mitosis 平台变更' : `${appName} ${version}`
 
-  if (labels.has('status:review')) {
-    buildProgress.value = { step: 3, label: '等待审查', issueNumber: issue.number }
+  if (labels.has('status:cancelled')) {
+    buildProgress.value = { step: -1, label: '已停止', issueNumber: issue.number }
     persistBuildProgress(buildProgress.value)
     sessionStore.addMessage({
       role: 'system',
-      content: `✅ ${appName} ${version} 已通过自动验证，等待人工审查。\n[前往 GitHub 审查](${issueUrl})\n合入 master 后访问: ${appUrl}`,
+      content: `🛑 ${targetName} 已停止。([Issue #${issue.number}](${issueUrl}))`,
       createdAt: new Date().toISOString(),
     })
     building.value = false
@@ -904,7 +1198,37 @@ async function onIssueUpdate(issue: BuildIssue) {
     persistBuildProgress(buildProgress.value)
     sessionStore.addMessage({
       role: 'system',
-      content: `❌ ${appName} ${version} 自动验证失败，请查看 [Issue #${issue.number}](${issueUrl}) 和 Actions 日志。`,
+      content: `❌ ${targetName} 自动验证失败，请查看 [Issue #${issue.number}](${issueUrl}) 和 Actions 日志。`,
+      createdAt: new Date().toISOString(),
+    })
+    building.value = false
+    stopAll()
+    return
+  }
+
+  if (issue.state === 'closed') {
+    buildProgress.value = { step: 4, label: '已完成', issueNumber: issue.number }
+    persistBuildProgress(buildProgress.value)
+    sessionStore.addMessage({
+      role: 'system',
+      content: isPlatformIssue
+        ? `Issue #${issue.number} 已关闭。平台变更流程已结束。`
+        : `Issue #${issue.number} 已关闭。应用版本路径: ${appUrl}`,
+      createdAt: new Date().toISOString(),
+    })
+    building.value = false
+    stopAll()
+    return
+  }
+
+  if (labels.has('status:review')) {
+    buildProgress.value = { step: 3, label: '等待审查', issueNumber: issue.number }
+    persistBuildProgress(buildProgress.value)
+    sessionStore.addMessage({
+      role: 'system',
+      content: isPlatformIssue
+        ? `✅ ${targetName} 已通过自动验证，等待人工审查。\n[前往 GitHub 审查](${issueUrl})\n合入 master 后将自动部署到线上。`
+        : `✅ ${targetName} 已通过自动验证，等待人工审查。\n[前往 GitHub 审查](${issueUrl})\n合入 master 后访问: ${appUrl}`,
       createdAt: new Date().toISOString(),
     })
     building.value = false
@@ -917,7 +1241,7 @@ async function onIssueUpdate(issue: BuildIssue) {
     persistBuildProgress(buildProgress.value)
     sessionStore.addMessage({
       role: 'system',
-      content: `🔎 正在验证 ${appName} ${version}... ([Issue #${issue.number}](${issueUrl}))`,
+      content: `🔎 正在验证 ${targetName}... ([Issue #${issue.number}](${issueUrl}))`,
       createdAt: new Date().toISOString(),
     })
     return
@@ -928,23 +1252,12 @@ async function onIssueUpdate(issue: BuildIssue) {
     persistBuildProgress(buildProgress.value)
     sessionStore.addMessage({
       role: 'system',
-      content: `🔨 正在构建 ${appName} ${version}... ([Issue #${issue.number}](${issueUrl}))`,
+      content: `🔨 正在构建 ${targetName}... ([Issue #${issue.number}](${issueUrl}))`,
       createdAt: new Date().toISOString(),
     })
     return
   }
 
-  if (issue.state === 'closed') {
-    buildProgress.value = { step: 4, label: '已完成', issueNumber: issue.number }
-    persistBuildProgress(buildProgress.value)
-    sessionStore.addMessage({
-      role: 'system',
-      content: `Issue #${issue.number} 已关闭。应用版本路径: ${appUrl}`,
-      createdAt: new Date().toISOString(),
-    })
-    building.value = false
-    stopAll()
-  }
 }
 
 function extractAppNameFromIssue(issue: BuildIssue): string {
@@ -953,6 +1266,15 @@ function extractAppNameFromIssue(issue: BuildIssue): string {
 
   const titleMatch = issue.title.match(/^build:\s*([a-z0-9-]+)/i)
   return titleMatch?.[1]?.toLowerCase() || extractAppName(issue.title)
+}
+
+function stableFallbackAppSlug(input: string): string {
+  let hash = 2166136261
+  for (const character of input) {
+    hash ^= character.codePointAt(0) || 0
+    hash = Math.imul(hash, 16777619)
+  }
+  return `app-${(hash >>> 0).toString(36)}`
 }
 
 function extractAppName(input: string): string {
@@ -974,22 +1296,60 @@ function extractAppName(input: string): string {
     '画板': 'paint',
     '聊天': 'chat-app',
     '涂鸦': 'doodle',
+    'todo': 'todo-app',
+    '待办': 'todo-app',
+    '计算器': 'calculator',
+    '记账': 'expense-tracker',
+    '天气': 'weather-app',
+    '番茄钟': 'pomodoro-timer',
+    '番茄': 'pomodoro-timer',
   }
   const aliasMatch = Object.keys(chineseAliases).find(name => cleaned.includes(name))
   if (aliasMatch) return chineseAliases[aliasMatch]
 
-  // 3. 通用中文名提取（返回原始中文，供后续处理）
-  const chineseMatch = cleaned.match(/([一-鿿]+(?:游戏|应用|工具|编辑器|方块|蛇|鸟|棋|牌|世界|模拟器|平台|管家|系统|大战))/)
-  if (chineseMatch) return chineseMatch[1]
-
-  // 4. 已知英文应用名精确匹配（在通用正则之前）
-  const knownEnglishMatch = cleaned.match(/(snake-game|tetris-game|todo-app|breakout|flappy-bird|flappy|paint|chat-app|doodle|pixel-art|2048|pong)/i)
+  // 3. 已知英文应用名（允许出现在自然语言句子中）。
+  const knownEnglishMatch = cleaned.match(/(snake-game|tetris-game|todo-app|calculator|breakout|flappy-bird|flappy|paint|chat-app|doodle|pixel-art|2048|pong)/i)
   if (knownEnglishMatch) return knownEnglishMatch[1].toLowerCase()
 
-  // 5. 通用英文 slug 提取
-  const slug = cleaned.toLowerCase().replace(/[^a-z0-9一-龥]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
-  if (/^-+$/.test(slug)) return 'my-app'
-  return slug || 'my-app'
+  // 4. 通用英文名只从 “name app/game/tool” 提取，避免把整句需求变成超长 label。
+  const genericEnglish = cleaned.match(/\b([a-z][a-z0-9-]{1,32})\s+(?:app|game|tool)\b/i)?.[1]
+  if (genericEnglish) return genericEnglish.endsWith('-app') ? genericEnglish : `${genericEnglish}-app`
+
+  // 5. 无法可靠提取时使用稳定且安全的临时 slug；确认卡允许用户在创建前修改。
+  return stableFallbackAppSlug(cleaned)
+}
+
+function restoreSessionProgress(session: ChatSession) {
+  const labels = new Set(session.labels || [])
+  const issueNumber = session.issueNumber
+  const hasRemoteStatus = session.status === 'closed' || Array.from(labels).some(label => label.startsWith('status:'))
+  if (hasRemoteStatus) clearFailedTrigger(issueNumber)
+  if (labels.has('status:cancelled')) {
+    buildProgress.value = { step: -1, label: '已停止', issueNumber }
+    building.value = false
+  } else if (labels.has('status:failed')) {
+    buildProgress.value = { step: -1, label: '构建失败', issueNumber }
+    building.value = false
+  } else if (session.status === 'closed') {
+    buildProgress.value = { step: 4, label: '已完成', issueNumber }
+    building.value = false
+  } else if (labels.has('status:review')) {
+    buildProgress.value = { step: 3, label: '等待人工审查', issueNumber }
+    building.value = false
+  } else if (labels.has('status:verifying')) {
+    buildProgress.value = { step: 2, label: '验证中', issueNumber }
+    building.value = true
+  } else if (labels.has('status:building')) {
+    buildProgress.value = { step: 1, label: '构建中', issueNumber }
+    building.value = true
+  } else if (hasPersistedFailedTrigger(issueNumber)) {
+    failedTriggerIssueNumber.value = issueNumber
+    buildProgress.value = { step: -1, label: '自动启动失败', issueNumber }
+    building.value = false
+  } else {
+    buildProgress.value = { step: 0, label: '任务已创建，等待启动', issueNumber }
+    building.value = false
+  }
 }
 
 async function navigateToSession(session: ChatSession) {
@@ -1002,9 +1362,19 @@ async function navigateToSession(session: ChatSession) {
 }
 
 async function loadSession(session: ChatSession, autoOpenApp = false) {
+  stopAll()
   sessionStore.setActiveSession(session)
-  await sessionStore.loadMessages(authStore.token!, repo.value, session.issueNumber)
+  const loaded = await sessionStore.loadMessages(authStore.token!, repo.value, session.issueNumber)
+  if (!loaded || sessionStore.activeSession?.issueNumber !== session.issueNumber) return
   inputText.value = ''
+  pendingTask.value = null
+  failedCreateTask.value = null
+  retryHasAttachments.value = false
+  activeIssue.value = null
+  restoreSessionProgress(session)
+  if (session.status !== 'closed' && !hasPersistedFailedTrigger(session.issueNumber)) {
+    startIssuePolling(session.issueNumber, authStore.token!)
+  }
   // 从 URL ?session= 恢复时，如果会话关联了应用，自动打开应用页面
   if (autoOpenApp && session.appLabel) {
     await openAppSession(session)
@@ -1035,7 +1405,12 @@ function handleNewChat() {
   clarifying.value = false
   clarifyingMsg.value = ''
   pendingBuildContext.value = ''
-  triageLog.value = []
+  pendingTask.value = null
+  failedCreateTask.value = null
+  confirmingTask.value = false
+  pollingPaused.value = false
+  retryHasAttachments.value = false
+  failedTriggerIssueNumber.value = null
 }
 </script>
 
@@ -1044,10 +1419,16 @@ function handleNewChat() {
     <!-- 移动端侧边栏遮罩 -->
     <div v-if="sidebarOpen" class="sidebar-overlay" @click="sidebarOpen = false"></div>
     <!-- 移动端侧边栏开关 -->
-    <button class="sidebar-toggle-mobile" @click="sidebarOpen = !sidebarOpen" aria-label="打开菜单">
+    <button
+      class="sidebar-toggle-mobile"
+      @click="sidebarOpen = !sidebarOpen"
+      :aria-label="sidebarOpen ? '关闭菜单' : '打开菜单'"
+      :aria-expanded="sidebarOpen"
+      aria-controls="workspace-sidebar"
+    >
       <PanelLeft :size="22" stroke-width="2" />
     </button>
-    <aside class="sidebar" :class="{ open: sidebarOpen }">
+    <aside id="workspace-sidebar" class="sidebar" :class="{ open: sidebarOpen }">
       <div class="sidebar-header">
         <div class="sidebar-header-left">
           <h2><Dna :size="20" stroke-width="2" /> Mitosis</h2>
@@ -1056,9 +1437,16 @@ function handleNewChat() {
           </button>
         </div>
         <div class="user-info">
-          <img v-if="authStore.user?.avatar_url" :src="authStore.user.avatar_url" class="avatar" />
+          <img
+            v-if="authStore.user?.avatar_url"
+            :src="authStore.user.avatar_url"
+            :alt="`${authStore.user.login} 的头像`"
+            width="28"
+            height="28"
+            class="avatar"
+          />
           <span class="username">{{ authStore.user?.login }}</span>
-          <button @click="authStore.logout" class="logout-btn" title="退出登录">⏻</button>
+          <button @click="authStore.logout" class="logout-btn" title="退出登录" aria-label="退出登录">⏻</button>
         </div>
       </div>
       <nav class="nav">
@@ -1113,18 +1501,18 @@ function handleNewChat() {
               <span class="group-chevron" aria-hidden="true">{{ isSessionGroupCollapsed('quick') ? '＋' : '－' }}</span>
             </button>
             <div v-show="!isSessionGroupCollapsed('quick')" class="session-group-items">
-              <a
+              <div
                 v-for="group in quickAccessApps"
                 :key="'qa-' + group.appName"
-                href="#"
                 class="session-item app-group quick-access-item"
-                @click.prevent="navigateToSession(group.latest)"
               >
-                <component :is="Smartphone" :size="16" stroke-width="2" />
-                <span class="session-title">{{ group.appName }}</span>
-                <span class="session-time">{{ relativeTime(group.latest.updatedAt) }}</span>
+                <button class="session-main-btn" @click="navigateToSession(group.latest)">
+                  <Smartphone :size="16" stroke-width="2" />
+                  <span class="session-title">{{ group.appName }}</span>
+                  <span class="session-time">{{ relativeTime(group.latest.updatedAt) }}</span>
+                </button>
                 <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
-              </a>
+              </div>
             </div>
           </template>
 
@@ -1158,18 +1546,38 @@ function handleNewChat() {
               <span class="group-chevron" aria-hidden="true">{{ isSessionGroupCollapsed('apps') ? '＋' : '－' }}</span>
             </button>
             <div v-show="!isSessionGroupCollapsed('apps')" class="session-group-items">
-              <a
-                v-for="group in clusteredAppGroups"
-                :key="group.appName"
-                href="#"
-                class="session-item app-group"
-                :class="{ active: sessionStore.activeSession?.issueNumber === group.latest.issueNumber }"
-                @click.prevent="navigateToSession(group.latest)"
-              >
-                <component :is="Smartphone" :size="16" stroke-width="2" />
-                <span class="session-title app-name-title" :title="group.appName">{{ group.appName }}</span>
-                <button class="session-open-btn" @click.stop="openAppSession(group.latest)" title="打开应用">打开</button>
-              </a>
+              <div v-for="group in clusteredAppGroups" :key="group.appName" class="app-cluster">
+                <div
+                  class="session-item app-group"
+                  :class="{ active: group.sessions.some(session => sessionStore.activeSession?.issueNumber === session.issueNumber) }"
+                >
+                  <button
+                    class="app-group-toggle"
+                    :aria-expanded="isAppGroupExpanded(group.appName)"
+                    :aria-label="`${isAppGroupExpanded(group.appName) ? '收起' : '展开'} ${group.appName} 的 ${group.sessions.length} 个会话`"
+                    @click="toggleAppGroup(group.appName)"
+                  >
+                    <span class="app-group-chevron" aria-hidden="true">{{ isAppGroupExpanded(group.appName) ? '▾' : '▸' }}</span>
+                    <Smartphone :size="16" stroke-width="2" />
+                    <span class="session-title app-name-title" :title="group.appName">{{ group.appName }}</span>
+                    <span class="session-count">{{ group.sessions.length }}</span>
+                  </button>
+                  <button class="session-open-btn" @click="openAppSession(group.latest)" title="打开最新版本">打开</button>
+                </div>
+                <div v-show="isAppGroupExpanded(group.appName)" class="app-session-list">
+                  <button
+                    v-for="session in group.sessions"
+                    :key="session.issueNumber"
+                    class="nested-session-item"
+                    :class="{ active: sessionStore.activeSession?.issueNumber === session.issueNumber }"
+                    @click="navigateToSession(session)"
+                  >
+                    <span class="session-title">{{ session.title }}</span>
+                    <span class="session-time">{{ relativeTime(session.updatedAt) }}</span>
+                    <span class="session-status" :class="statusClass(session)">{{ sessionStore.getSessionDisplayStatus(session) }}</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </template>
 
@@ -1267,8 +1675,51 @@ function handleNewChat() {
             <span></span><span></span><span></span>
           </div>
         </div>
+        <section
+          v-if="pendingTask"
+          ref="taskConfirmationRef"
+          class="task-confirmation"
+          aria-label="确认识别到的任务"
+          tabindex="-1"
+        >
+          <div class="task-confirmation-header">
+            <span class="task-type-badge">{{ pendingTaskLabel }}</span>
+            <span class="task-confidence">已自动分拣</span>
+          </div>
+          <h3>确认后开始执行</h3>
+          <p class="task-summary">{{ pendingTask.text }}</p>
+          <div class="task-meta">
+            <span v-if="pendingTask.imageCount">已分析 {{ pendingTask.imageCount }} 张图片，原图不保存</span>
+          </div>
+          <label v-if="pendingTask.triage.scenario !== 'platform'" class="task-app-field">
+            <span>应用标识</span>
+            <input
+              v-model.trim="pendingTask.appName"
+              name="app-slug"
+              maxlength="48"
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+              aria-describedby="app-slug-hint"
+              :aria-invalid="!pendingAppNameValid"
+            />
+          </label>
+          <p v-if="pendingTask.triage.scenario !== 'platform'" id="app-slug-hint" class="task-app-hint" :class="{ error: !pendingAppNameValid }">
+            {{ pendingAppNameValid ? '用于应用目录，可在开始前修改。' : '仅支持 1–48 位小写字母、数字和连字符，首尾不能是连字符。' }}
+          </p>
+          <p v-if="pendingTask.description !== pendingTask.text" class="task-visual-summary">
+            {{ pendingTask.description.split('## 图片中可见的问题（已脱敏）').at(-1)?.trim() }}
+          </p>
+          <div class="task-actions">
+            <button class="task-confirm-btn" :disabled="confirmingTask || !pendingAppNameValid" @click="confirmPendingTask">
+              <Hammer :size="17" stroke-width="2" />
+              {{ confirmingTask ? '正在创建...' : '确认并开始' }}
+            </button>
+            <button class="task-edit-btn" :disabled="confirmingTask" @click="cancelPendingTask">修改需求</button>
+          </div>
+        </section>
         <!-- 构建进度指示器 -->
-        <div v-if="buildProgress" class="build-progress">
+        <div v-if="buildProgress" class="build-progress" :class="{ failed: buildProgress.step < 0 }" role="status" aria-live="polite">
           <div class="build-progress-steps">
             <div class="build-step" :class="{ active: buildProgress.step >= 0, done: buildProgress.step > 0 }">
               <component :is="ClipboardList" :size="18" stroke-width="2" class="step-icon" />
@@ -1290,13 +1741,41 @@ function handleNewChat() {
               <span class="step-label">审查</span>
             </div>
           </div>
-          <p class="build-progress-status">{{ buildProgress.label }}</p>
+          <p class="build-progress-status">
+            {{ buildProgress.label }}
+            <a
+              v-if="buildProgress.issueNumber"
+              :href="`https://github.com/${repo}/issues/${buildProgress.issueNumber}`"
+              target="_blank"
+              rel="noopener noreferrer"
+            >Issue #{{ buildProgress.issueNumber }}</a>
+          </p>
+          <button v-if="pollingPaused" class="status-refresh-btn" @click="refreshActiveIssue">
+            <RefreshCw :size="15" stroke-width="2" /> 刷新状态
+          </button>
+          <button
+            v-if="failedTriggerIssueNumber === buildProgress.issueNumber"
+            class="status-refresh-btn"
+            :disabled="building"
+            @click="retryAutoTrigger"
+          >
+            <RefreshCw :size="15" stroke-width="2" /> 重新自动启动
+          </button>
+          <button
+            v-if="failedCreateTask && !buildProgress.issueNumber"
+            class="status-refresh-btn"
+            :disabled="building"
+            @click="retryFailedCreate"
+          >
+            <RefreshCw :size="15" stroke-width="2" /> 重新自动创建
+          </button>
         </div>
       </div>
       <!-- 错误恢复操作栏 -->
       <div v-if="lastErrorKind && !thinking && !building" class="recovery-bar">
         <span class="recovery-label">恢复操作：</span>
-        <button @click="handleRetry" class="recovery-btn retry-btn"><RefreshCw :size="16" stroke-width="2" /> 重试</button>
+        <button v-if="!retryHasAttachments" @click="handleRetry" class="recovery-btn retry-btn"><RefreshCw :size="16" stroke-width="2" /> 重试</button>
+        <span v-else class="recovery-label">图片仍保留在输入区，请点击发送重试。</span>
         <button v-if="lastErrorKind === 'auth'" @click="handleUpdateToken" class="recovery-btn"><Key :size="16" stroke-width="2" /> 更新 Token</button>
         <template v-if="lastErrorKind === 'quota' || lastErrorKind === 'unknown'">
           <button
@@ -1318,12 +1797,14 @@ function handleNewChat() {
         <button @click="openAppSession(sessionStore.activeSession)" class="app-nav-open-btn">打开应用 →</button>
       </div>
       <ChatInput
+        ref="chatInputRef"
         v-model="inputText"
         :is-owner="isOwner"
         :thinking="thinking"
         :building="building"
-        @send="handleSend($event)"
-        @images="(files) => { pendingImages = files }"
+        :disabled="Boolean(chatInputDisabledMessage)"
+        :disabled-message="chatInputDisabledMessage"
+        @send="handleSend"
       />
     </main>
   </div>
@@ -1351,6 +1832,7 @@ function handleNewChat() {
 .sidebar-header {
   padding: 1rem;
   border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
 }
 
 .sidebar-header-left {
@@ -1442,6 +1924,7 @@ function handleNewChat() {
 
 .nav {
   padding: 0.75rem;
+  flex: 0 0 auto;
 }
 
 .new-chat-btn {
@@ -1467,8 +1950,10 @@ function handleNewChat() {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0 0.75rem;
+  padding-bottom: 1rem;
   margin-top: 0.25rem;
   scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
 }
 
 .sessions-list h3 {
@@ -1539,6 +2024,75 @@ function handleNewChat() {
 
 .session-item.app-session {
   cursor: default;
+}
+
+.session-main-btn,
+.app-group-toggle,
+.nested-session-item {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.session-main-btn,
+.app-group-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0;
+  text-align: left;
+}
+
+.session-main-btn:focus-visible,
+.app-group-toggle:focus-visible,
+.nested-session-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.app-cluster {
+  margin-bottom: 0.2rem;
+}
+
+.app-group-chevron {
+  width: 0.75rem;
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.app-session-list {
+  margin: 0.15rem 0 0.5rem 1.05rem;
+  padding-left: 0.55rem;
+  border-left: 1px solid var(--border);
+}
+
+.nested-session-item {
+  width: 100%;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.2rem 0.5rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.nested-session-item:hover,
+.nested-session-item.active {
+  background: var(--bg-tertiary);
+}
+
+.nested-session-item.active {
+  color: var(--accent);
+}
+
+.nested-session-item .session-status {
+  grid-column: 1 / -1;
+  justify-self: start;
 }
 
 .session-item.closed {
@@ -2225,6 +2779,156 @@ function handleNewChat() {
 }
 
 /* ── Build Progress Indicator ── */
+.task-confirmation {
+  align-self: flex-start;
+  width: min(100%, 560px);
+  padding: 1rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--accent-subtle), var(--bg-secondary) 70%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.task-confirmation-header,
+.task-meta,
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.task-confirmation-header {
+  justify-content: space-between;
+  margin-bottom: 0.65rem;
+}
+
+.task-type-badge {
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.task-confidence,
+.task-meta {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.task-confirmation h3 {
+  margin: 0 0 0.45rem;
+  font-size: 1rem;
+}
+
+.task-summary,
+.task-visual-summary {
+  margin: 0;
+  color: var(--text-primary);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.task-meta {
+  margin-top: 0.65rem;
+}
+
+.task-app-field {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.task-app-field input {
+  width: min(100%, 320px);
+  min-height: 42px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.task-app-field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.task-app-hint {
+  margin: 0.3rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
+.task-app-hint.error {
+  color: var(--error);
+}
+
+.task-visual-summary {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.task-actions {
+  margin-top: 0.9rem;
+}
+
+.task-confirm-btn,
+.task-edit-btn {
+  min-height: 44px;
+  padding: 0.55rem 0.9rem;
+  border-radius: 9px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.task-confirm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.task-edit-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.task-confirm-btn:hover:not(:disabled) {
+  box-shadow: 0 4px 12px var(--accent-glow);
+  transform: translateY(-1px);
+}
+
+.task-edit-btn:hover:not(:disabled) {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+}
+
+.task-confirm-btn:focus-visible,
+.task-edit-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.task-confirm-btn:disabled,
+.task-edit-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 .build-progress {
   align-self: flex-start;
   background: var(--bg-secondary);
@@ -2234,6 +2938,11 @@ function handleNewChat() {
   max-width: 420px;
   width: 100%;
   animation: buildSlideIn 0.4s ease-out;
+}
+
+.build-progress.failed {
+  border-color: var(--error);
+  background: var(--error-tint);
 }
 
 @keyframes buildSlideIn {
@@ -2325,6 +3034,35 @@ function handleNewChat() {
   font-size: 0.8rem;
   color: var(--text-secondary);
   margin: 0;
+}
+
+.build-progress-status a {
+  margin-left: 0.35rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.status-refresh-btn {
+  min-height: 40px;
+  margin: 0.65rem auto 0;
+  padding: 0.45rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.status-refresh-btn:hover {
+  background: var(--accent-subtle);
+}
+
+.status-refresh-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 @keyframes stepPulse {
@@ -2465,6 +3203,22 @@ function handleNewChat() {
   .sidebar-toggle-mobile {
     min-width: 44px;
     min-height: 44px;
+  }
+}
+
+.task-confirmation:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

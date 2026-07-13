@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  buildStepFunUserContent,
   chatWithStepFun,
   STEP_PLAN_CHAT_COMPLETIONS_URL,
   STEP_PLAN_IMAGE_GENERATION_URL,
@@ -50,6 +51,25 @@ describe('chatWithStepFun', () => {
 
   it('pins image generation to the Step Plan endpoint', () => {
     expect(STEP_PLAN_IMAGE_GENERATION_URL).toBe(EXPECTED_IMAGE_URL)
+  })
+
+  it('sends attached images as Step Plan multipart content', async () => {
+    const content = buildStepFunUserContent('分析界面问题', [{
+      name: 'screen.png',
+      dataUrl: 'data:image/png;base64,dGVzdA==',
+    }])
+
+    await chatWithStepFun('test-step-token', [{ role: 'user', content }])
+
+    const [, init] = fetchMock.mock.calls[0]
+    const body = JSON.parse(String(init.body))
+    expect(body.messages[0].content).toEqual([
+      { type: 'text', text: '分析界面问题' },
+      {
+        type: 'image_url',
+        image_url: { url: 'data:image/png;base64,dGVzdA==', detail: 'low' },
+      },
+    ])
   })
 
   it('does not call StepFun when token is empty', async () => {
