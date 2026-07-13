@@ -67,6 +67,53 @@ testWithAuth.describe('C2: Anonymous User Gallery', () => {
       await anonymousPage.waitForURL(/\/apps\//, { timeout: 10000 })
     }
   })
+
+  testWithAuth('known apps render immediately and keep friendly names after API enrichment', async ({ anonymousPage }: { anonymousPage: Page }) => {
+    let releaseApps: () => void = () => {}
+    const appsGate = new Promise<void>((resolve) => {
+      releaseApps = resolve
+    })
+    await anonymousPage.route('**/api/github/**', async (route) => {
+      const path = new URL(route.request().url()).pathname
+      if (path.endsWith('/contents/apps')) {
+        await appsGate
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([
+            { type: 'dir', name: 'tetris-game' },
+            { type: 'dir', name: 'mvp-validation-todo' },
+            { type: 'dir', name: 'snake-game' },
+          ]),
+        })
+        return
+      }
+      if (path.includes('/contents/apps/')) {
+        const version = path.endsWith('/tetris-game') ? 'v5' : 'v0'
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([{ type: 'dir', name: version }]),
+        })
+        return
+      }
+      await route.fulfill({ status: 403, body: '{}' })
+    })
+
+    await anonymousPage.goto('/')
+
+    await expect(anonymousPage.getByRole('button', { name: /俄罗斯方块 v4/ })).toBeVisible()
+    await expect(anonymousPage.getByRole('button', { name: /MVP 待办应用 v0/ })).toBeVisible()
+    await expect(anonymousPage.locator('.apps-grid--skeleton')).toHaveCount(0)
+
+    releaseApps()
+    await expect(anonymousPage.getByRole('button', { name: /snake-game v0/ })).toBeVisible({ timeout: 10000 })
+    const enrichedTetris = anonymousPage.getByRole('button', { name: /俄罗斯方块 v5/ })
+    await expect(enrichedTetris).toBeVisible()
+    await expect(anonymousPage.getByRole('button', { name: /MVP 待办应用 v0/ })).toBeVisible()
+    await enrichedTetris.click()
+    await expect(anonymousPage).toHaveURL(/\/apps\/tetris-game\/v5\/$/)
+  })
 })
 
 // ============================================================
