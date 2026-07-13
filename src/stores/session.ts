@@ -206,6 +206,12 @@ export const useSessionStore = defineStore('session', {
           getIssueComments(token, repo, issueNumber),
         ])
         if (this.activeSession?.issueNumber !== issueNumber) return false
+        const active = this.sessions.find(session => session.issueNumber === issueNumber)
+        if (active) {
+          active.labels = issue.labels.map(label => label.name)
+          active.status = issue.state
+          active.updatedAt = new Date().toISOString()
+        }
         const msgs: Message[] = []
         // Issue body 作为第一条消息（需求描述/AI 分析等上下文）
         if (issue.body) {

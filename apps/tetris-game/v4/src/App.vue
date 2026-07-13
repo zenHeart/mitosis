@@ -575,7 +575,12 @@ watch(dropInterval, () => {
             <button class="ctrl-btn" @click="rotate" :aria-label="'旋转'" title="旋转">↻</button>
             <button class="ctrl-btn" @click="moveDown" :aria-label="'下移'" title="下移">▼</button>
             <button class="ctrl-btn" @click="hardDrop" :aria-label="'落底'" title="落底">⏬</button>
-            <button class="ctrl-btn pause-btn" @click="togglePause" :aria-label="isPaused ? '继续游戏' : '暂停游戏'" title="暂停">
+            <button
+              class="ctrl-btn pause-btn"
+              @click="togglePause"
+              :aria-label="isPaused ? '继续游戏' : '暂停游戏'"
+              :title="isPaused ? '继续游戏' : '暂停游戏'"
+            >
               {{ isPaused ? '▶' : '⏸' }}
             </button>
           </div>
@@ -654,6 +659,8 @@ watch(dropInterval, () => {
   background: var(--bg-secondary);
   padding: 4px;
   gap: 2px;
+  touch-action: none;
+  overscroll-behavior: contain;
 }
 
 .board-row {

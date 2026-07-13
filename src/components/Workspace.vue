@@ -412,6 +412,8 @@ function redactSensitiveText(value: string): string {
     .replace(/((?:收货地址|住址|地址)\s*[:：]\s*)[^\n,，;；]{4,80}/gi, '$1[地址已隐藏]')
     .replace(/((?:full name|customer name|client name|contact name|recipient|name)\s*[:=]\s*)[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}/g, '$1[姓名已隐藏]')
     .replace(/((?:请问|客户|联系人)\s+)[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}(?=\s+(?:联系电话|电话|地址|phone|tel|address))/g, '$1[姓名已隐藏]')
+    .replace(/((?:my name is|i am|i'm|the user is|user is|contact is|customer is)\s+)[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}/gi, '$1[姓名已隐藏]')
+    .replace(/((?:我叫|我的名字是|联系人是|客户是)\s*)[\u4e00-\u9fff]{2,4}/g, '$1[姓名已隐藏]')
     .replace(/((?:shipping address|street address|mailing address|address)\s*[:=]\s*)[^\n,;]{5,120}/gi, '$1[地址已隐藏]')
     .replace(/\b\d{1,6}\s+[A-Za-z0-9.' -]{2,50}\s+(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Lane|Ln|Drive|Dr)\b/gi, '[地址已隐藏]')
     .replace(/(?:gh[oprsu]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,})/g, '[凭据已隐藏]')
@@ -442,6 +444,8 @@ function hasSensitiveContent(value: string): boolean {
     /(?:收货地址|住址|地址)\s*[:：]\s*[^\n,，;；]{4,80}/i,
     /(?:full name|customer name|client name|contact name|recipient|name)\s*[:=]\s*[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}/,
     /(?:请问|客户|联系人)\s+[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}(?=\s+(?:联系电话|电话|地址|phone|tel|address))/,
+    /(?:my name is|i am|i'm|the user is|user is|contact is|customer is)\s+[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}/i,
+    /(?:我叫|我的名字是|联系人是|客户是)\s*[\u4e00-\u9fff]{2,4}/,
     /(?:shipping address|street address|mailing address|address)\s*[:=]\s*[^\n,;]{5,120}/i,
     /\b\d{1,6}\s+[A-Za-z0-9.' -]{2,50}\s+(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Lane|Ln|Drive|Dr)\b/i,
     /data:(?:image|audio|video)\//i,
@@ -1318,11 +1322,9 @@ function extractAppName(input: string): string {
 function restoreSessionProgress(session: ChatSession) {
   const labels = new Set(session.labels || [])
   const issueNumber = session.issueNumber
-  if (hasPersistedFailedTrigger(issueNumber)) {
-    failedTriggerIssueNumber.value = issueNumber
-    buildProgress.value = { step: -1, label: '自动启动失败', issueNumber }
-    building.value = false
-  } else if (labels.has('status:cancelled')) {
+  const hasRemoteStatus = session.status === 'closed' || Array.from(labels).some(label => label.startsWith('status:'))
+  if (hasRemoteStatus) clearFailedTrigger(issueNumber)
+  if (labels.has('status:cancelled')) {
     buildProgress.value = { step: -1, label: '已停止', issueNumber }
     building.value = false
   } else if (labels.has('status:failed')) {
@@ -1340,6 +1342,10 @@ function restoreSessionProgress(session: ChatSession) {
   } else if (labels.has('status:building')) {
     buildProgress.value = { step: 1, label: '构建中', issueNumber }
     building.value = true
+  } else if (hasPersistedFailedTrigger(issueNumber)) {
+    failedTriggerIssueNumber.value = issueNumber
+    buildProgress.value = { step: -1, label: '自动启动失败', issueNumber }
+    building.value = false
   } else {
     buildProgress.value = { step: 0, label: '任务已创建，等待启动', issueNumber }
     building.value = false

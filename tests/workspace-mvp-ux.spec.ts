@@ -110,6 +110,10 @@ test('failed automatic trigger is fail-closed and can be retried without exposin
         : { status: 201, contentType: 'application/json', body: '{"id":2}' })
       return
     }
+    if (request.method() === 'GET' && url.pathname.endsWith('/issues/78')) {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(issue(78, ['platform'])) })
+      return
+    }
     await fulfillGitHub(route, [issue(78, ['platform'])])
   })
 
@@ -126,7 +130,7 @@ test('failed automatic trigger is fail-closed and can be retried without exposin
   await expect(page.getByRole('button', { name: '重新自动启动' })).toBeVisible()
   await page.getByRole('button', { name: '重新自动启动' }).click()
   await expect.poll(() => triggerAttempts).toBe(2)
-  await expect(page.getByRole('status')).toContainText(/构建中|已重新自动启动/)
+  await expect(page.getByRole('status')).toContainText(/构建中|重新自动启动/)
 })
 
 test('failed issue creation preserves a one-click automatic retry', async ({ page }) => {
@@ -328,6 +332,7 @@ test('task-like text with an image still uses multimodal triage before confirmat
 
 test('closed review session restores as completed instead of waiting for review', async ({ page }) => {
   await prepareOwner(page)
+  await page.addInitScript(() => localStorage.setItem('mitosis_failed_trigger_91', '1'))
   const closedIssue = { ...issue(91, ['platform', 'status:review']), state: 'closed' }
   await page.route('**/api/github/**', async (route) => {
     const request = route.request()
@@ -353,6 +358,8 @@ test('closed review session restores as completed instead of waiting for review'
   await expect(status).not.toContainText('等待人工审查')
   await expect(page.locator('.closed-session-item')).toContainText('已关闭')
   await expect(page.locator('.closed-session-item')).not.toContainText('等待审查')
+  await expect(page.getByRole('button', { name: '重新自动启动' })).toHaveCount(0)
+  expect(await page.evaluate(() => localStorage.getItem('mitosis_failed_trigger_91'))).toBeNull()
 })
 
 test('reopened session hides internal control comments and immediately resumes status polling', async ({ page }) => {
@@ -520,6 +527,13 @@ test('sensitive user text is blocked before Step Plan, persistence, or GitHub wr
   const simulatedInternationalPhone = ['+1', '555', '010', '2020'].join(' ')
   const simulatedEnglishAddress = ['1', 'Example', 'Street'].join(' ')
   await input.fill(`请问 ${simulatedEnglishName} 联系电话 ${simulatedInternationalPhone} 地址 ${simulatedEnglishAddress} 应该如何设置？`)
+  await page.getByRole('button', { name: '发送' }).click()
+  await expect(page.locator('.messages')).toContainText('本次内容未发送')
+  expect(providerWrites).toBe(0)
+  await input.fill(`My name is ${simulatedEnglishName}. How should I configure this?`)
+  await page.getByRole('button', { name: '发送' }).click()
+  await expect(page.locator('.messages')).toContainText('本次内容未发送')
+  await input.fill('我叫张三，请问如何设置？')
   await page.getByRole('button', { name: '发送' }).click()
   await expect(page.locator('.messages')).toContainText('本次内容未发送')
   expect(providerWrites).toBe(0)
