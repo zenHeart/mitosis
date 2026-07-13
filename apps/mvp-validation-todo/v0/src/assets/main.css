@@ -1,0 +1,259 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background-color: #f7f8fa;
+  color: #1f2328;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+/* Theme tokens */
+:root {
+  --color-bg: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-text: #1f2328;
+  --color-muted: #57606a;
+  --color-border: #d0d7de;
+  --color-primary: #0969da;
+  --color-primary-hover: #0550ae;
+  --color-danger: #cf222e;
+  --color-danger-hover: #a40e26;
+  --radius: 8px;
+  --shadow: 0 1px 2px rgba(31, 35, 40, 0.06), 0 4px 12px rgba(31, 35, 40, 0.08);
+}
+
+/* App shell */
+.todo-app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.app-title {
+  font-size: 1.5rem;
+  margin: 0 0 16px;
+}
+
+/* Input group */
+.todo-input-group {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.todo-input {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.todo-input:focus {
+  outline: 3px solid rgba(9, 105, 218, 0.35);
+  outline-offset: 0;
+  border-color: var(--color-primary);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: #ffffff;
+  background: var(--color-primary);
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+}
+
+.btn-primary:hover {
+  background: var(--color-primary-hover);
+}
+
+.btn-danger {
+  background: var(--color-danger);
+}
+
+.btn-danger:hover {
+  background: var(--color-danger-hover);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+/* Filter tabs */
+.todo-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.filter-tab {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.filter-tab.active {
+  background: var(--color-primary);
+  color: #ffffff;
+  border-color: var(--color-primary);
+}
+
+/* List */
+.todo-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.todo-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.todo-item-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.todo-checkbox {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  accent-color: var(--color-primary);
+}
+
+.todo-text {
+  word-break: break-word;
+}
+
+.todo-item.completed .todo-text {
+  text-decoration: line-through;
+  color: var(--color-muted);
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  color: var(--color-muted);
+  margin: 24px 0;
+}
+
+/* Count */
+.todo-count {
+  text-align: center;
+  color: var(--color-muted);
+  margin: 0 0 16px;
+}
+
+/* Mitosis anchor */
+.mitosis-anchor {
+  display: block;
+  text-align: center;
+  color: var(--color-primary);
+  text-decoration: none;
+  padding: 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius);
+}
+
+.mitosis-anchor:hover,
+.mitosis-anchor:focus {
+  background: rgba(9, 105, 218, 0.06);
+  outline: none;
+}
+
+.mitosis-anchor:focus-visible {
+  outline: 3px solid rgba(9, 105, 218, 0.35);
+  outline-offset: 2px;
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+  .todo-app {
+    padding: 16px 12px 40px;
+  }
+
+  .app-title {
+    font-size: 1.25rem;
+  }
+
+  .todo-input-group {
+    flex-direction: column;
+  }
+
+  .todo-filters {
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    width: 100%;
+  }
+
+  .todo-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .todo-item .btn {
+    align-self: flex-end;
+    margin-top: 8px;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .filter-tab,
+  .mitosis-anchor {
+    transition: none;
+  }
+}
