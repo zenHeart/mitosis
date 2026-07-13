@@ -149,9 +149,17 @@ export async function listApps(token: string, repo: string): Promise<AppInfo[]> 
  * 获取单个 app 的最新版本号（从 GitHub contents/apps/{appName} 目录读取）
  * 不依赖 issue 标题中的版本信息，避免 CI 不更新标题导致版本错误
  */
-export async function getLatestAppVersion(token: string, repo: string, appName: string): Promise<number> {
+export async function getLatestAppVersion(
+  token: string,
+  repo: string,
+  appName: string,
+  options: { required?: boolean } = {},
+): Promise<number> {
   // GitHub apps 目录只包含 ASCII slug（如 tetris-game），非 ASCII 或含空格的名称直接跳过
-  if (!/^[a-z0-9-]+$/.test(appName)) return 0
+  if (!/^[a-z0-9-]+$/.test(appName)) {
+    if (options.required) throw new Error('App version lookup failed')
+    return 0
+  }
 
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
@@ -160,16 +168,26 @@ export async function getLatestAppVersion(token: string, repo: string, appName: 
 
   try {
     const res = await fetchWithTimeout(ghUrl(repo, `/contents/apps/${appName}`), { headers })
-    if (!res.ok) return 0
+    if (!res.ok) {
+      if (options.required) throw new Error('App version lookup failed')
+      return 0
+    }
     const items = await res.json()
-    if (!Array.isArray(items)) return 0
+    if (!Array.isArray(items)) {
+      if (options.required) throw new Error('App version lookup failed')
+      return 0
+    }
     const versionDirs = items.filter((v: { type: string; name?: string }) => v.type === 'dir' && v.name?.startsWith('v'))
     const versions = versionDirs
       .map((v: { name?: string }) => Number((v.name || '').replace(/^v/, '')))
       .filter((v: number) => Number.isInteger(v) && v >= 0)
-    if (versions.length === 0) return 0
+    if (versions.length === 0) {
+      if (options.required) throw new Error('App version lookup failed')
+      return 0
+    }
     return versions.sort((a, b) => b - a)[0]
   } catch {
+    if (options.required) throw new Error('App version lookup failed')
     return 0
   }
 }

@@ -7,6 +7,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    environmentOptions: {
+      jsdom: {
+        url: 'https://mitosis.zenheart.site/',
+      },
+    },
     include: ['tests/unit/**/*.{spec,test}.ts'],
     setupFiles: ['tests/setup.ts'],
   },

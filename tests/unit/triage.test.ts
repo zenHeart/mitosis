@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock StepFun：LLM 分拣走 chatWithStepFun，单测中不发真实请求
 vi.mock('../../src/composables/useStepFun', () => ({
+  buildStepFunUserContent: (text: string) => text,
   chatWithStepFun: vi.fn(),
 }))
 
@@ -36,6 +37,7 @@ describe('triageByKeywords', () => {
     expect(triageByKeywords('Mitosis 支持更多的游戏类型').action).toBe('platform')
     expect(triageByKeywords('优化mitosis 输入框移动端样式').action).toBe('platform')
     expect(triageByKeywords('mitosis 平台').action).toBe('platform')
+    expect(triageByKeywords('优化 Mitosis Workspace 聊天体验，修复任务状态显示').action).toBe('platform')
   })
 
   it('identifies questions', () => {
@@ -55,6 +57,10 @@ describe('triageByKeywords', () => {
     const r = triageByKeywords('在 tetris-game 的基础上继续加音效')
     expect(r.action).toBe('build')
     expect(r.basedOn).toBe('tetris-game')
+    const direct = triageByKeywords('优化 tetris-game 的移动端按钮')
+    expect(direct.action).toBe('build')
+    expect(direct.scenario).toBe('app_iterate')
+    expect(direct.basedOn).toBe('tetris-game')
   })
 
   it('keeps non-task messages as chat', () => {
@@ -112,6 +118,29 @@ describe('smartTriage — LLM semantic triage', () => {
     expect(r.action).toBe('platform')
     expect(r.source).toBe('llm')
     expect(r.scope).toBe('platform')
+  })
+
+  it('uses multimodal LLM triage for image-only submissions', async () => {
+    mockChat.mockResolvedValue('{"action":"platform","basedOn":null,"summary":"侧栏无法滚动"}')
+    const r = await smartTriage('', {
+      stepToken: 'sk-test',
+      images: [{ name: 'screen.png', dataUrl: 'data:image/png;base64,dGVzdA==' }],
+    })
+    expect(r.action).toBe('platform')
+    expect(r.source).toBe('llm')
+    expect(r.visualSummary).toBe('侧栏无法滚动')
+    expect(mockChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses multimodal triage for task-like simple tweak text with an image', async () => {
+    mockChat.mockResolvedValue('{"action":"platform","basedOn":null,"summary":""}')
+    const r = await smartTriage('把按钮颜色改一下', {
+      stepToken: 'sk-test',
+      images: [{ name: 'attachment-1.png', dataUrl: 'data:image/png;base64,dGVzdA==' }],
+    })
+    expect(r.action).toBe('platform')
+    expect(r.source).toBe('llm')
+    expect(mockChat).toHaveBeenCalledTimes(1)
   })
 
   it('passes basedOn from LLM result', async () => {

@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test'
 const sessions = Array.from({ length: 28 }, (_, index) => ({
   number: index + 1,
   title: index % 2 ? `todo 应用迭代 ${index + 1}` : `platform: 优化会话 ${index + 1}`,
-  state: 'open',
+  state: index % 4 === 3 ? 'closed' : 'open',
   labels: index % 2 ? [{ name: 'app/todo-app' }] : [{ name: 'platform' }],
   created_at: new Date(Date.now() - index * 3_600_000).toISOString(),
   updated_at: new Date(Date.now() - index * 3_600_000).toISOString(),
@@ -41,11 +41,22 @@ test('会话侧栏在桌面端可滚动且分组可折叠', async ({ page }) => 
   expect(metrics.clientHeight).toBeGreaterThan(0)
   expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight)
   expect(metrics.overflowY).toBe('auto')
+  const scrollTop = await sessionList.evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+    return element.scrollTop
+  })
+  expect(scrollTop).toBeGreaterThan(0)
 
   const platformGroup = sessionList.getByRole('button', { name: /平台/ })
   await expect(platformGroup).toHaveAttribute('aria-expanded', 'true')
   await platformGroup.click()
   await expect(platformGroup).toHaveAttribute('aria-expanded', 'false')
+
+  const todoGroup = sessionList.locator('.app-group-toggle').filter({ hasText: 'todo-app' })
+  await expect(todoGroup).toHaveAttribute('aria-expanded', 'false')
+  await todoGroup.click()
+  await expect(todoGroup).toHaveAttribute('aria-expanded', 'true')
+  await expect(sessionList.getByRole('button', { name: /^todo 应用迭代 2 / })).toBeVisible()
 })
 
 test('会话侧栏在移动端打开后仍可滚动', async ({ page }) => {
@@ -82,4 +93,9 @@ test('会话侧栏在移动端打开后仍可滚动', async ({ page }) => {
   expect(metrics.clientHeight).toBeGreaterThan(0)
   expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight)
   expect(metrics.overflowY).toBe('auto')
+  const mobileScrollTop = await sidebar.locator('.sessions-list').evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+    return element.scrollTop
+  })
+  expect(mobileScrollTop).toBeGreaterThan(0)
 })
