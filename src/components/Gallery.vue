@@ -6,7 +6,7 @@ import { useSessionStore } from '../stores/session'
 import { getLoginUrl } from '../composables/useAuth'
 import { REPO_FULL_NAME } from '../config/repo'
 import { listApps } from '../composables/useGitHubAPI'
-import { Wrench, Smartphone, FileText, PanelLeft, Sun, Moon, Package, Gamepad, AlertTriangle } from '@lucide/vue'
+import { Wrench, Smartphone, FileText, PanelLeft, Sun, Moon, Package, Gamepad, AlertTriangle, X } from '@lucide/vue'
 import { useDarkMode } from '../composables/useDarkMode'
 
 const props = defineProps<{
@@ -15,7 +15,8 @@ const props = defineProps<{
 
 // ── 本地 fallback 数据（当 GitHub API 不可用时使用）─────────────────
 const LOCAL_APPS: AppInfo[] = [
-  { id: 'tetris-game', name: '俄罗斯方块 v2', latestVersion: 2, url: '/apps/tetris-game/v2/', createdAt: '' },
+  { id: 'tetris-game', name: '俄罗斯方块', latestVersion: 4, url: '/apps/tetris-game/v4/', createdAt: '' },
+  { id: 'mvp-validation-todo', name: 'MVP 待办应用', latestVersion: 0, url: '/apps/mvp-validation-todo/v0/', createdAt: '' },
 ]
 
 // ── State ──────────────────────────────────────────────────────────
@@ -71,7 +72,9 @@ async function loadApps() {
 
   try {
     const apiApps = await listApps(authStore.token || '', REPO_FULL_NAME)
-    apps.value = apiApps.length > 0 ? apiApps : LOCAL_APPS
+    const merged = new Map(LOCAL_APPS.map(app => [app.id, app]))
+    for (const app of apiApps) merged.set(app.id, app)
+    apps.value = Array.from(merged.values())
   } catch (e) {
     apps.value = LOCAL_APPS
     // 不掩盖 fallback：保留 API 错误信息，让用户知道正在使用本地数据

@@ -47,6 +47,9 @@ testWithAuth.describe('C2: Anonymous User Gallery', () => {
     const bodyText = await anonymousPage.locator('body').textContent()
     expect(bodyText).toContain('探索')
     expect(bodyText).toContain('应用')
+    expect(bodyText).toContain('俄罗斯方块')
+    expect(bodyText).toContain('v4')
+    expect(bodyText).toContain('MVP 待办应用')
 
     const loginBtn = anonymousPage.locator('button:has-text("使用 GitHub 登录")')
     await expect(loginBtn).toBeVisible()
