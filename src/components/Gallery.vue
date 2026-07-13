@@ -73,7 +73,10 @@ async function loadApps() {
   try {
     const apiApps = await listApps(authStore.token || '', REPO_FULL_NAME)
     const merged = new Map(LOCAL_APPS.map(app => [app.id, app]))
-    for (const app of apiApps) merged.set(app.id, app)
+    for (const app of apiApps) {
+      const localApp = merged.get(app.id)
+      merged.set(app.id, { ...app, name: localApp?.name || app.name })
+    }
     apps.value = Array.from(merged.values())
   } catch (e) {
     apps.value = LOCAL_APPS
@@ -200,7 +203,7 @@ watch(
 
       <section class="apps-section">
         <!-- 加载骨架屏（1.5s shimmer 动画） -->
-        <div v-if="loading" class="apps-grid apps-grid--skeleton">
+        <div v-if="loading && apps.length === 0" class="apps-grid apps-grid--skeleton">
           <div v-for="i in 2" :key="'sk-'+i" class="skeleton-card">
             <div class="skeleton-icon"></div>
             <div class="skeleton-lines">
@@ -221,7 +224,7 @@ watch(
         </div>
 
         <!-- 空状态 -->
-        <div v-else-if="apps.length === 0" class="status empty">
+        <div v-if="apps.length === 0" class="status empty">
           <Package :size="32" stroke-width="1.5" class="empty-icon" />
           <p>暂无应用</p>
           <p class="empty-hint">登录后可以开始构建自己的应用。</p>
