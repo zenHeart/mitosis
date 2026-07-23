@@ -1993,7 +1993,6 @@ function handleNewChat() {
 }
 
 .search-input:focus {
-  border-color: var(--accent);
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
